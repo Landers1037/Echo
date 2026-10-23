@@ -147,3 +147,11 @@ vite.config.ts.timestamp-*
 
 # Turbo Repo
 .turbo
+
+# Echo local data and generated binaries
+notes/
+.echo-dev/
+/dist/
+!/internal/web/dist/
+/internal/web/dist/*
+!/internal/web/dist/.placeholder

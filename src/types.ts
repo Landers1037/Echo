@@ -1,0 +1,9 @@
+export type Metadata = { tags: string[]; group: string }
+export type NoteSummary = { path: string; title: string; metadata: Metadata; revision: string; modified: string; metadataError?: string }
+export type Note = NoteSummary & { content: string }
+export type TreeEntry = { path: string; name: string; type: 'folder' | 'note'; children?: TreeEntry[] }
+export type Settings = { theme: 'light' | 'dark' | 'system'; accent: string; animations: boolean; editorLineNumbers: boolean; previewLineNumbers: boolean; assetsDir: string }
+export type Task = { id: string; notePath: string; noteTitle: string; line: number; text: string; status: 'todo' | 'doing' | 'done'; due?: string; remindAt?: string; repeat?: 'none' | 'daily' | 'weekly' | 'monthly'; timezone?: string; revision: string }
+export type Reminder = { id: string; taskId: string; notePath: string; text: string; due: string; acknowledged: boolean }
+export type TrashEntry = { id: string; path: string; deletedAt: string }
+export type ExportSnapshot = { notes: (Note & { assets: Record<string, string> })[]; missing: string[]; external: string[] }
