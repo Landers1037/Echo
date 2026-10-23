@@ -625,6 +625,9 @@ func (s *Store) updateSettings(settings Settings) error {
 	if !regexp.MustCompile(`^#[0-9a-fA-F]{6}$`).MatchString(settings.Accent) {
 		return fmt.Errorf("强调色需要为 #RRGGBB")
 	}
+	if settings.EditorFontSize < 12 || settings.EditorFontSize > 32 {
+		return fmt.Errorf("编辑器字体大小需要在 12–32 px 之间")
+	}
 	dir, err := cleanRelative(settings.AssetsDir)
 	if err != nil {
 		return err

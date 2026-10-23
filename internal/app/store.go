@@ -22,6 +22,7 @@ type Settings struct {
 	Theme              string `json:"theme"`
 	Accent             string `json:"accent"`
 	Animations         bool   `json:"animations"`
+	EditorFontSize     int    `json:"editorFontSize"`
 	EditorLineNumbers  bool   `json:"editorLineNumbers"`
 	PreviewLineNumbers bool   `json:"previewLineNumbers"`
 	AssetsDir          string `json:"assetsDir"`
@@ -72,7 +73,7 @@ type Conflict struct{ Current Note }
 func (e *Conflict) Error() string { return "笔记已被其他窗口或外部程序修改" }
 
 func defaults() Settings {
-	return Settings{Theme: "system", Accent: "#72967b", Animations: true, EditorLineNumbers: true, PreviewLineNumbers: false, AssetsDir: ".assets"}
+	return Settings{Theme: "system", Accent: "#72967b", Animations: true, EditorFontSize: 14, EditorLineNumbers: true, PreviewLineNumbers: false, AssetsDir: ".assets"}
 }
 func newID() string { var b [12]byte; _, _ = rand.Read(b[:]); return hex.EncodeToString(b[:]) }
 func revision(content []byte) string {
@@ -116,6 +117,9 @@ func Open(root string) (*Store, error) {
 	}
 	if err = s.recoverMigration(); err != nil {
 		return nil, err
+	}
+	if s.state.Settings.EditorFontSize < 12 || s.state.Settings.EditorFontSize > 32 {
+		s.state.Settings.EditorFontSize = defaults().EditorFontSize
 	}
 	if _, err = s.safePath(s.state.Settings.AssetsDir); err != nil {
 		return nil, err

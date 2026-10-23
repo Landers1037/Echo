@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import type { CSSProperties } from 'react'
 import CodeMirror from '@uiw/react-codemirror'
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
 import { languages } from '@codemirror/language-data'
@@ -13,6 +14,7 @@ import { undo, redo } from '@codemirror/commands'
 export type EditorProps = {
   value: string
   onChange: (value: string) => void
+  fontSize: number
   lineNumbers: boolean
   dark: boolean
   onUpload: (file: File) => Promise<string>
@@ -32,6 +34,7 @@ export function Editor(props: EditorProps) {
   const fileInput = useRef<HTMLInputElement>(null)
   const [uploads, setUploads] = useState<Upload[]>([])
   const mounted = useRef(true)
+  useEffect(() => { view.current?.requestMeasure() }, [props.fontSize])
   useEffect(() => {
     mounted.current = true
     const navigate = (event: Event) => {
@@ -145,7 +148,7 @@ export function Editor(props: EditorProps) {
     }),
     EditorView.theme({
       '&': { height: '100%', backgroundColor: 'transparent', color: 'var(--text)' },
-      '.cm-scroller': { fontFamily: 'var(--font-mono)', fontSize: '14px', lineHeight: '1.9', overflow: 'auto' },
+      '.cm-scroller': { fontFamily: 'var(--font-mono)', fontSize: 'var(--editor-font-size, 14px)', lineHeight: '1.9', overflow: 'auto' },
       '.cm-content': { padding: '32px 36px', minHeight: '100%', caretColor: 'var(--accent)' },
       '.cm-gutters': { backgroundColor: 'transparent', color: 'var(--muted)', borderRight: 'none' },
       '.cm-lineNumbers .cm-gutterElement': { paddingLeft: '12px', paddingRight: '8px' },
@@ -171,7 +174,7 @@ export function Editor(props: EditorProps) {
     { icon: Table2, title: '插入表格', action: () => insertText('\n| 列一 | 列二 | 列三 |\n| --- | --- | --- |\n| 内容 | 内容 | 内容 |\n| 内容 | 内容 | 内容 |\n') },
   ]
 
-  return <div className="editor-shell">
+  return <div className="editor-shell" style={{ '--editor-font-size': `${props.fontSize}px` } as CSSProperties}>
     <div className="editor-toolbar" role="toolbar" aria-label="Markdown 快捷操作">
       {tools.map(({ icon: Icon, title, action }) => <button key={title} type="button" className="icon-button" title={title} aria-label={title} onMouseDown={event => event.preventDefault()} onClick={action}><Icon size={16} strokeWidth={1.7} /></button>)}
       <span className="toolbar-separator" />

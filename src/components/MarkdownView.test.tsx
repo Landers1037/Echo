@@ -13,11 +13,13 @@ describe('Markdown rendering', () => {
     expect(screen.getByRole('heading', { name: '六级' })).not.toHaveAttribute('data-heading-line')
     const heading = container.querySelector('h1')!
     heading.focus()
-    rerender(<MarkdownView content={content} notePath="笔记.md" lineNumbers={false} />)
+    rerender(<MarkdownView content={content} notePath="笔记.md" lineNumbers={false} fontSize={20} />)
     expect(heading).toHaveFocus()
-    rerender(<MarkdownView content={content} notePath="笔记.md" lineNumbers={false} exporting />)
+    expect(container.querySelector('.markdown-body')).toHaveStyle({ fontSize: '20px' })
+    rerender(<MarkdownView content={content} notePath="笔记.md" lineNumbers={false} fontSize={20} exporting />)
     expect(container.querySelector('[data-heading-line]')).toBeNull()
     expect(container.querySelector('h1')).not.toHaveAttribute('tabindex')
+    expect(container.querySelector<HTMLElement>('.markdown-body')!.style.fontSize).toBe('')
   })
 
   it('keeps task source line numbers with frontmatter and fenced examples', async () => {

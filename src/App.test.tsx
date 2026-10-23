@@ -1,13 +1,13 @@
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import App from './App'
 import { exportNotes } from './export'
-import type { Note, Settings } from './types'
+import type { Note, Settings, TreeEntry } from './types'
 
 vi.mock('./components/Editor', () => ({
-  Editor: ({ value, onChange }: { value: string; onChange: (value: string) => void }) => <textarea className="cm-editor" aria-label="笔记源码" value={value} onChange={event => onChange(event.target.value)} />,
+  Editor: ({ value, onChange, fontSize }: { value: string; onChange: (value: string) => void; fontSize: number }) => <textarea className="cm-editor" aria-label="笔记源码" style={{ fontSize }} value={value} onChange={event => onChange(event.target.value)} />,
 }))
-vi.mock('./components/MarkdownView', () => ({ MarkdownView: ({ content }: { content: string }) => <article data-testid="preview">{content}</article> }))
+vi.mock('./components/MarkdownView', () => ({ MarkdownView: ({ content, fontSize }: { content: string; fontSize?: number }) => <article data-testid="preview" style={{ fontSize }}>{content}</article> }))
 vi.mock('./components/TasksView', () => ({ TasksView: () => <div data-testid="tasks-view" /> }))
 vi.mock('./export', () => ({ exportNotes: vi.fn(async () => {}) }))
 vi.mock('motion/react', async () => {
@@ -19,7 +19,7 @@ vi.mock('motion/react', async () => {
   return { MotionConfig: ({ children }: { children: React.ReactNode }) => children, AnimatePresence: ({ children }: { children: React.ReactNode }) => children, motion: { div: Div, button: Button } }
 })
 
-const settings: Settings = { theme: 'light', accent: '#72967b', animations: false, editorLineNumbers: true, previewLineNumbers: false, assetsDir: '.assets' }
+const settings: Settings = { theme: 'light', accent: '#72967b', animations: false, editorFontSize: 14, editorLineNumbers: true, previewLineNumbers: false, assetsDir: '.assets' }
 type Write = { path: string; content: string; revision: string; force?: boolean }
 type Batch = { paths: string[]; tags: string[]; group: string; revisions: Record<string, string> }
 type Call = { method: string; path: string; body?: unknown }
@@ -31,8 +31,32 @@ function deferred() {
   return { promise, resolve }
 }
 
-function createServer(extraNotes: Note[] = []) {
+function noteTree(notes: Note[], folders: string[]): TreeEntry[] {
+  const root: TreeEntry[] = []
+  const directories = new Map<string, TreeEntry>()
+  function children(path: string): TreeEntry[] {
+    if (!path) return root
+    if (!directories.has(path)) {
+      const parts = path.split('/')
+      const entry: TreeEntry = { path, name: parts.pop()!, type: 'folder', children: [] }
+      directories.set(path, entry)
+      children(parts.join('/')).push(entry)
+    }
+    return directories.get(path)!.children!
+  }
+  folders.forEach(children)
+  for (const note of notes) {
+    const parts = note.path.split('/')
+    children(parts.slice(0, -1).join('/')).push({ path: note.path, name: parts.at(-1)!, type: 'note' })
+  }
+  return root
+}
+
+function createServer(extraNotes: Note[] = [], initialFolders: string[] = []) {
   let note: Note = { path: '测试.md', title: '测试笔记', metadata: { tags: [], group: '' }, revision: 'v1', modified: '2026-10-22T12:00:00Z', content: '# 初始笔记\n' }
+  const createdNotes: Note[] = []
+  const folders = [...initialFolders]
+  const allNotes = () => [note, ...extraNotes, ...createdNotes]
   let savedSettings = { ...settings }
   let settingsError = false
   let cleanupError = false
@@ -64,8 +88,16 @@ function createServer(extraNotes: Note[] = []) {
       unusedImages = []
       return response({ removedCount, removedBytes: removedCount * 2048, failed: [] })
     }
-    if (url.pathname === '/api/notes' && method === 'GET') return response(url.searchParams.has('path') ? [note, ...extraNotes].find(item => item.path === url.searchParams.get('path')) : [note, ...extraNotes].map(item => ({ ...item, content: '' })))
-    if (url.pathname === '/api/tree') return response([note, ...extraNotes].map(item => ({ path: item.path, name: item.path, type: 'note' })))
+    if (url.pathname === '/api/notes' && method === 'GET') return response(url.searchParams.has('path') ? allNotes().find(item => item.path === url.searchParams.get('path')) : allNotes().map(item => ({ ...item, content: '' })))
+    if (url.pathname === '/api/tree') return response(noteTree(allNotes(), folders))
+    if (url.pathname === '/api/notes' && method === 'POST') {
+      const request = body as { path: string; content: string }
+      if (allNotes().some(item => item.path === request.path)) return response({ error: '目标笔记已经存在' }, 409)
+      const created: Note = { path: request.path, title: request.path.split('/').at(-1)!.replace(/\.md$/i, ''), content: request.content, metadata: { tags: [], group: '' }, revision: `created-${createdNotes.length}`, modified: note.modified }
+      createdNotes.push(created)
+      return response(created, 201)
+    }
+    if (url.pathname === '/api/folders' && method === 'POST') { folders.push((body as { path: string }).path); return response({ ok: true }, 201) }
     if (url.pathname === '/api/groups') return response(['工作'])
     if (url.pathname === '/api/tags') return response(['重点', '项目'])
     if (url.pathname === '/api/tasks' || url.pathname === '/api/reminders') return response([])
@@ -109,6 +141,73 @@ async function openApp(server: ReturnType<typeof createServer>) {
   return editor
 }
 function saveShortcut() { fireEvent.keyDown(window, { key: 's', ctrlKey: true }) }
+
+describe('App creates items inside a folder', () => {
+  it.each([
+    ['会议记录', '验收/子目录/会议记录.md'],
+    ['深入\\会议记录', '验收/子目录/深入/会议记录.md'],
+    ['会议记录.MD', '验收/子目录/会议记录.MD'],
+  ])('saves the current draft, then creates %s under the chosen folder', async (name, path) => {
+    const server = createServer([], ['验收/子目录', '其他目录'])
+    const editor = await openApp(server)
+    fireEvent.change(editor, { target: { value: '# 创建前的草稿\n' } })
+    fireEvent.click(screen.getByRole('button', { name: '验收' }))
+    fireEvent.click(screen.getByRole('button', { name: '管理文件夹 验收/子目录' }))
+    fireEvent.click(within(screen.getByRole('dialog', { name: '文件夹操作' })).getByRole('button', { name: '新建笔记' }))
+    const dialog = screen.getByRole('dialog', { name: '新建笔记' })
+    expect(dialog).toHaveTextContent('创建位置：验收/子目录')
+    fireEvent.change(within(dialog).getByLabelText('笔记名称'), { target: { value: name } })
+    fireEvent.click(within(dialog).getByRole('button', { name: '创建笔记' }))
+    await waitFor(() => expect(screen.getByRole('textbox', { name: '笔记源码' })).toHaveValue(''))
+    await screen.findByRole('button', { name: '会议记录' })
+    expect(server.current().content).toBe('# 创建前的草稿\n')
+    expect(server.calls.filter(call => call.path === '/api/notes' && call.method !== 'GET').map(call => call.method)).toEqual(['PUT', 'POST'])
+    expect(server.calls.find(call => call.path === '/api/notes' && call.method === 'POST')?.body).toEqual({ path, content: '' })
+    expect(screen.getByRole('button', { name: '验收' })).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByRole('button', { name: '子目录' })).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByRole('button', { name: '其他目录' })).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.getByRole('button', { name: '会议记录' })).toBeVisible()
+    expect(screen.getByRole('button', { name: '折叠目录' })).toBeInTheDocument()
+  })
+
+  it('creates nested subdirectories and reveals just their parent directories', async () => {
+    const server = createServer([], ['验收', '其他目录'])
+    const editor = await openApp(server)
+    fireEvent.click(screen.getByRole('button', { name: '管理文件夹 验收' }))
+    fireEvent.click(screen.getByRole('button', { name: '新建目录' }))
+    const dialog = screen.getByRole('dialog', { name: '新建目录' })
+    expect(dialog).toHaveTextContent('创建位置：验收')
+    fireEvent.change(within(dialog).getByLabelText('目录名称'), { target: { value: '项目/资料' } })
+    fireEvent.click(within(dialog).getByRole('button', { name: '创建目录' }))
+    await screen.findByRole('button', { name: '资料' })
+    expect(server.calls.find(call => call.path === '/api/folders' && call.method === 'POST')?.body).toEqual({ path: '验收/项目/资料' })
+    expect(screen.getByRole('button', { name: '验收' })).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByRole('button', { name: '项目' })).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByRole('button', { name: '其他目录' })).toHaveAttribute('aria-expanded', 'false')
+    expect(editor).toHaveValue('# 初始笔记\n')
+  })
+
+  it('cancels without creating anything and keeps root creation independent of the selected folder', async () => {
+    const server = createServer([], ['验收'])
+    await openApp(server)
+    for (const title of ['新建目录', '新建笔记']) {
+      fireEvent.click(screen.getByRole('button', { name: '管理文件夹 验收' }))
+      fireEvent.click(within(screen.getByRole('dialog', { name: '文件夹操作' })).getByRole('button', { name: title }))
+      fireEvent.click(within(screen.getByRole('dialog', { name: title })).getByRole('button', { name: '取消' }))
+    }
+    expect(server.calls.some(call => call.method === 'POST' && ['/api/notes', '/api/folders'].includes(call.path))).toBe(false)
+    fireEvent.click(screen.getByRole('button', { name: '笔记操作' }))
+    const noteMenu = screen.getByRole('dialog', { name: '笔记操作' })
+    expect(within(noteMenu).queryByRole('button', { name: '新建目录' })).not.toBeInTheDocument()
+    expect(within(noteMenu).queryByRole('button', { name: '新建笔记' })).not.toBeInTheDocument()
+    fireEvent.click(within(noteMenu).getByRole('button', { name: '关闭弹窗' }))
+    fireEvent.click(screen.getByRole('button', { name: '新建笔记' }))
+    expect(screen.getByRole('dialog', { name: '新建笔记' })).not.toHaveTextContent('创建位置：验收')
+    fireEvent.change(screen.getByLabelText('笔记路径'), { target: { value: '根目录笔记' } })
+    fireEvent.click(screen.getByRole('button', { name: '创建笔记' }))
+    await waitFor(() => expect(server.calls.find(call => call.path === '/api/notes' && call.method === 'POST')?.body).toEqual({ path: '根目录笔记.md', content: '' }))
+  })
+})
 
 describe('App note navigation', () => {
   it('toggles beside the editing tabs, follows live headings, and navigates duplicate titles by source line', async () => {
@@ -177,6 +276,7 @@ describe('App single-note export', () => {
     const other: Note = { path: '归档/另一篇.md', title: '另一篇笔记', content: '# 另一篇\n', metadata: { tags: [], group: '' }, revision: 'other-v1', modified: '2026-10-22T12:00:00Z' }
     const server = createServer([other])
     const editor = await openApp(server)
+    fireEvent.click(screen.getByRole('button', { name: '归档' }))
     fireEvent.click(screen.getByRole('checkbox', { name: '选择 测试笔记' }))
     fireEvent.click(screen.getByRole('checkbox', { name: '选择 另一篇笔记' }))
     fireEvent.click(screen.getByRole('button', { name: '管理 归档/另一篇.md' }))
@@ -196,6 +296,81 @@ describe('App single-note export', () => {
     await waitFor(() => expect(screen.queryByRole('dialog', { name: '导出笔记' })).not.toBeInTheDocument())
     expect(exportNotes).toHaveBeenLastCalledWith(expect.objectContaining({ paths: ['测试.md', other.path] }))
     expect(editor.value).toBe('# 初始笔记\n')
+  })
+})
+
+describe('App editor font settings', () => {
+  it('previews the size across settings sections, restores the default and discards changes on cancel', async () => {
+    const server = createServer()
+    const editor = await openApp(server)
+    expect(editor).toHaveStyle({ fontSize: '14px' })
+    fireEvent.click(screen.getByRole('tab', { name: '预览' }))
+    expect(screen.getByTestId('preview')).toBeVisible()
+    expect(screen.getByTestId('preview')).toHaveStyle({ fontSize: '14px' })
+    fireEvent.click(screen.getByRole('button', { name: '设置' }))
+    fireEvent.click(screen.getByRole('button', { name: '笔记设置' }))
+    const slider = screen.getByRole('slider', { name: '默认字体大小' })
+    expect(slider).toHaveValue('14')
+    expect(slider).toHaveAttribute('min', '12')
+    expect(slider).toHaveAttribute('max', '32')
+    fireEvent.change(slider, { target: { value: '22' } })
+    expect(editor).toHaveStyle({ fontSize: '22px' })
+    expect(screen.getByTestId('preview')).toHaveStyle({ fontSize: '22px' })
+    expect(screen.getByLabelText('编辑器字体预览')).toHaveStyle({ fontSize: '22px' })
+    fireEvent.click(screen.getByRole('button', { name: '外观设置' }))
+    fireEvent.click(screen.getByRole('button', { name: '笔记设置' }))
+    expect(screen.getByRole('slider', { name: '默认字体大小' })).toHaveValue('22')
+    fireEvent.click(screen.getByRole('button', { name: '恢复默认' }))
+    expect(editor).toHaveStyle({ fontSize: '14px' })
+    expect(screen.getByTestId('preview')).toHaveStyle({ fontSize: '14px' })
+    fireEvent.change(screen.getByRole('slider', { name: '默认字体大小' }), { target: { value: '18' } })
+    fireEvent.click(screen.getByRole('button', { name: '取消' }))
+    expect(editor).toHaveStyle({ fontSize: '14px' })
+    expect(screen.getByTestId('preview')).toHaveStyle({ fontSize: '14px' })
+    expect(editor).toHaveValue('# 初始笔记\n')
+    expect(server.calls.some(call => call.path === '/api/settings' && call.method === 'PUT')).toBe(false)
+  })
+
+  it('persists the chosen size and restores it from the notebook settings after reload', async () => {
+    const server = createServer()
+    await openApp(server)
+    fireEvent.click(screen.getByRole('button', { name: '设置' }))
+    fireEvent.click(screen.getByRole('button', { name: '笔记设置' }))
+    fireEvent.change(screen.getByRole('slider', { name: '默认字体大小' }), { target: { value: '20' } })
+    fireEvent.click(screen.getByRole('button', { name: '保存设置' }))
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: '设置' })).not.toBeInTheDocument())
+    expect(server.savedSettings().editorFontSize).toBe(20)
+    fireEvent.click(screen.getByRole('tab', { name: '预览' }))
+    expect(screen.getByTestId('preview')).toBeVisible()
+    expect(screen.getByTestId('preview')).toHaveStyle({ fontSize: '20px' })
+    expect(JSON.parse(localStorage.getItem('echo:settings')!).editorFontSize).toBe(20)
+    cleanup()
+    localStorage.removeItem('echo:settings')
+    const editor = await openApp(server)
+    expect(editor).toHaveStyle({ fontSize: '20px' })
+    expect(screen.getByTestId('preview')).toHaveStyle({ fontSize: '20px' })
+    fireEvent.click(screen.getByRole('button', { name: '设置' }))
+    fireEvent.click(screen.getByRole('button', { name: '笔记设置' }))
+    expect(screen.getByRole('slider', { name: '默认字体大小' })).toHaveValue('20')
+  })
+
+  it('keeps a failed save editable and restores the persisted size when the dialog closes', async () => {
+    const server = createServer()
+    server.failNextSettings()
+    const editor = await openApp(server)
+    fireEvent.click(screen.getByRole('button', { name: '设置' }))
+    fireEvent.click(screen.getByRole('button', { name: '笔记设置' }))
+    fireEvent.change(screen.getByRole('slider', { name: '默认字体大小' }), { target: { value: '24' } })
+    fireEvent.click(screen.getByRole('button', { name: '保存设置' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('设置写入失败')
+    expect(editor).toHaveStyle({ fontSize: '24px' })
+    expect(screen.getByTestId('preview')).toHaveStyle({ fontSize: '24px' })
+    expect(server.savedSettings().editorFontSize).toBe(14)
+    expect(JSON.parse(localStorage.getItem('echo:settings')!).editorFontSize).toBe(14)
+    expect(screen.getByRole('slider', { name: '默认字体大小' })).toBeEnabled()
+    fireEvent.click(screen.getByRole('button', { name: '关闭弹窗' }))
+    expect(editor).toHaveStyle({ fontSize: '14px' })
+    expect(screen.getByTestId('preview')).toHaveStyle({ fontSize: '14px' })
   })
 })
 

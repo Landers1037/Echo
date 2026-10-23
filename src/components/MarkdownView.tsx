@@ -12,6 +12,7 @@ export type MarkdownViewProps = {
   notePath: string
   assets?: Record<string, string>
   lineNumbers: boolean
+  fontSize?: number
   onNavigate?: (path: string) => void
   onToggleTask?: (line: number, checked: boolean) => void
   exporting?: boolean
@@ -66,8 +67,8 @@ function sourceHeading(tag: 'h1' | 'h2' | 'h3' | 'h4' | 'h5') {
 }
 const previewHeadings = { h1: sourceHeading('h1'), h2: sourceHeading('h2'), h3: sourceHeading('h3'), h4: sourceHeading('h4'), h5: sourceHeading('h5') }
 
-export function MarkdownView({ content, notePath, assets, lineNumbers, onNavigate, onToggleTask, exporting = false }: MarkdownViewProps) {
-  return <div className="markdown-body"><ReactMarkdown remarkPlugins={[remarkGfm, remarkFrontmatter]} skipHtml components={{
+export function MarkdownView({ content, notePath, assets, lineNumbers, fontSize, onNavigate, onToggleTask, exporting = false }: MarkdownViewProps) {
+  return <div className="markdown-body" style={!exporting && fontSize !== undefined ? { fontSize } : undefined}><ReactMarkdown remarkPlugins={[remarkGfm, remarkFrontmatter]} skipHtml components={{
     ...(!exporting ? previewHeadings : {}),
     pre({ children }) { return <>{children}</> },
     code({ className, children, node }) {

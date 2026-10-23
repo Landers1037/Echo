@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { BookOpen, Search, Plus, FolderPlus, FileText, ChevronRight, Folder, MoreHorizontal, LayoutGrid, ListTodo, Settings, Trash2, Tags, FolderOpen, X, ArrowUpRight, LoaderCircle } from 'lucide-react'
 import { motion } from 'motion/react'
 import type { NoteSummary, TreeEntry } from '../types'
@@ -6,6 +6,7 @@ import { Logo } from './Logo'
 
 type Props = {
   notes: NoteSummary[]; tree: TreeEntry[]; groups: string[]; tags: string[]; active: string; view: string; open: boolean
+  revealEntry: { path: string } | null
   search: string; setSearch: (value: string) => void; searchPaths?: string[] | null; group: string | null; setGroup: (value: string | null) => void
   filterTags: string[]; setFilterTags: (value: string[]) => void; selected: string[]; setSelected: (value: string[]) => void
   onSelect: (path: string) => void; onView: (view: 'tasks' | 'board') => void; onCreate: () => void; onFolder: () => void
@@ -16,6 +17,16 @@ type Props = {
 export function Sidebar(p: Props) {
   const [tab, setTab] = useState<'directory' | 'groups'>('directory')
   const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({})
+  useEffect(() => {
+    if (!p.revealEntry) return
+    const parts = p.revealEntry.path.split('/').filter(Boolean)
+    setExpandedFolders(folders => {
+      const next = { ...folders }
+      for (let depth = 1; depth < parts.length; depth++) next[parts.slice(0, depth).join('/')] = true
+      return next
+    })
+    setTab('directory')
+  }, [p.revealEntry])
   const filtered = p.notes.filter(note => (p.group === null || (note.metadata.group || '') === p.group) && p.filterTags.every(tag => note.metadata.tags.includes(tag)) && (!p.search || (p.searchPaths ? p.searchPaths.includes(note.path) : `${note.title} ${note.path}`.toLowerCase().includes(p.search.toLowerCase()))))
   const filtering = p.group !== null || p.filterTags.length > 0 || p.search.length > 0
   const visible = new Set(filtered.map(note => note.path))
