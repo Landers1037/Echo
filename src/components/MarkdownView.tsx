@@ -1,6 +1,7 @@
-import { createContext, useContext, useEffect, useState } from 'react'
-import type { ReactNode } from 'react'
+import { createContext, createElement, useContext, useEffect, useState } from 'react'
+import type { ComponentPropsWithoutRef, ReactNode } from 'react'
 import ReactMarkdown from 'react-markdown'
+import type { ExtraProps } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import remarkFrontmatter from 'remark-frontmatter'
 import { codeToHtml } from 'shiki'
@@ -60,8 +61,14 @@ function TaskCheckbox({ checked, onToggle }: { checked?: boolean; onToggle?: Mar
   return <input type="checkbox" checked={Boolean(checked)} disabled={!onToggle || line < 1} aria-label={checked ? '标记任务为未完成' : '标记任务为完成'} onChange={event => onToggle?.(line, event.target.checked)} />
 }
 
+function sourceHeading(tag: 'h1' | 'h2' | 'h3' | 'h4' | 'h5') {
+  return ({ node, children, ...props }: ComponentPropsWithoutRef<'h1'> & ExtraProps) => createElement(tag, { ...props, 'data-heading-line': node?.position?.start.line, tabIndex: -1 }, children)
+}
+const previewHeadings = { h1: sourceHeading('h1'), h2: sourceHeading('h2'), h3: sourceHeading('h3'), h4: sourceHeading('h4'), h5: sourceHeading('h5') }
+
 export function MarkdownView({ content, notePath, assets, lineNumbers, onNavigate, onToggleTask, exporting = false }: MarkdownViewProps) {
   return <div className="markdown-body"><ReactMarkdown remarkPlugins={[remarkGfm, remarkFrontmatter]} skipHtml components={{
+    ...(!exporting ? previewHeadings : {}),
     pre({ children }) { return <>{children}</> },
     code({ className, children, node }) {
       const code = String(children).replace(/\n$/, '')

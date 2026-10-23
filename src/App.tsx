@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { MotionConfig, AnimatePresence, motion } from 'motion/react'
-import { PanelLeft, ChevronRight, Download, Bell, Sun, Moon, Check, Cloud, LoaderCircle, FileText, Plus, FolderOpen, Tag, MoreHorizontal, Pencil, ArrowRightLeft, Trash2, X, AlertTriangle, RotateCcw, Copy, CheckCheck, BookOpen } from 'lucide-react'
+import { PanelLeft, ChevronRight, Download, Bell, Sun, Moon, Check, Cloud, LoaderCircle, FileText, Plus, FolderOpen, Tag, MoreHorizontal, Pencil, ArrowRightLeft, Trash2, X, AlertTriangle, RotateCcw, Copy, CheckCheck, BookOpen, ListTree } from 'lucide-react'
 import { api, ApiError, json, query } from './api'
 import type { Note, NoteSummary, TreeEntry, Settings, Task, Reminder, TrashEntry } from './types'
 import { Sidebar } from './components/Sidebar'
@@ -10,6 +10,7 @@ import { Modal } from './components/UI'
 import { Select } from './components/Select'
 import { Editor } from './components/Editor'
 import { MarkdownView } from './components/MarkdownView'
+import { NoteOutline } from './components/NoteOutline'
 import { TasksView } from './components/TasksView'
 import { exportNotes } from './export'
 
@@ -36,6 +37,9 @@ export default function App() {
   const [systemDark, setSystemDark] = useState(matchMedia('(prefers-color-scheme: dark)').matches)
   const [view, setView] = useState<'note' | 'tasks' | 'board'>('note')
   const [mode, setMode] = useState<'source' | 'preview'>('source')
+  const [outlineOpen, setOutlineOpen] = useState(false)
+  const outlineButton = useRef<HTMLButtonElement>(null)
+  const sourceArea = useRef<HTMLDivElement>(null)
   const [sidebarOpen, setSidebarOpen] = useState(() => !matchMedia('(max-width: 760px)').matches)
   const [sidebarWidth, setSidebarWidth] = useState(Number(localStorage.getItem('echo:sidebar-width')) || 270)
   const [search, setSearch] = useState('')
@@ -169,6 +173,17 @@ export default function App() {
     })()
   }, [reminders, toast])
   const changeContent = (value: string) => { setContent(value); contentRef.current = value; setDirty(true); dirtyRef.current = true; setSaveError(''); if (noteRef.current) { try { localStorage.setItem(draftKey(noteRef.current.path), JSON.stringify({ content: value, revision: noteRef.current.revision })) } catch { toast('本地草稿空间不足，请及时保存笔记。', true) } } }
+  function navigateHeading(line: number) {
+    if (mode === 'source') {
+      sourceArea.current?.querySelector('.cm-editor')?.dispatchEvent(new CustomEvent('echo:goto-line', { detail: line, bubbles: true }))
+    } else {
+      const heading = previewRef.current?.querySelector<HTMLElement>(`[data-heading-line="${line}"]`)
+      heading?.scrollIntoView({ block: 'start', behavior: settings.animations && !matchMedia('(prefers-reduced-motion: reduce)').matches ? 'smooth' : 'auto' })
+      heading?.focus({ preventScroll: true })
+    }
+    if (matchMedia('(max-width: 760px)').matches) setOutlineOpen(false)
+  }
+  function closeOutline() { setOutlineOpen(false); outlineButton.current?.focus() }
   async function createNote() { const value = await ask({ title: '新建笔记', label: '笔记路径', value: '未命名笔记.md', description: '支持用 / 创建多层目录，例如：工作/项目想法.md', confirm: '创建笔记' }); if (!value?.trim()) return; await saveActive(); const path = /\.md$/i.test(value.trim()) ? value.trim() : `${value.trim()}.md`; const next = await api<Note>('/notes', json('POST', { path, content: '' })); acceptNote(next); setMode('source'); setView('note'); setSidebarOpen(false); await refresh(); toast('笔记已创建。') }
   async function newFolder() { const path = await ask({ title: '新建文件夹', label: '文件夹路径', description: '例如：工作/项目资料', confirm: '创建文件夹' }); if (!path?.trim()) return; await api('/folders', json('POST', { path: path.trim() })); await refresh() }
   async function manageAction(action: 'rename' | 'move' | 'delete') { if (!manage) return; const item = manage; setManage(null); if (action === 'delete') { if (await ask({ title: '移至回收站', description: `${item.path}${item.type === 'folder' ? ' 及其内容' : ''}将移至回收站，可随时恢复。`, confirm: '移至回收站', danger: true }) === null) return; await saveActive(); await api(`/${item.type === 'note' ? 'notes' : 'folders'}?path=${query(item.path)}`, json('DELETE')); if (noteRef.current?.path === item.path || noteRef.current?.path.startsWith(item.path + '/')) { localStorage.removeItem(draftKey(noteRef.current.path)); noteRef.current = null; setNote(null); setContent(''); setDirty(false); dirtyRef.current = false } setSelected(s => s.filter(p => p !== item.path && !p.startsWith(item.path + '/'))); await refresh(); toast('已移至回收站。'); return }
@@ -198,8 +213,13 @@ export default function App() {
       <main className="main-panel"><header className="topbar"><div className="topbar-left"><button className="icon-button" aria-label={sidebarOpen ? '折叠目录' : '展开目录'} title={sidebarOpen ? '折叠目录' : '展开目录'} aria-expanded={sidebarOpen} aria-controls="note-sidebar" onClick={() => setSidebarOpen(open => !open)}><PanelLeft size={18} /></button><div className="breadcrumb"><span>我的空间</span><ChevronRight size={13} /><span>{view === 'note' ? note?.path || '全部笔记' : view === 'tasks' ? '计划与提醒' : '任务看板'}</span></div></div><div className="topbar-actions">{view === 'note' && note && <button className={`save-status ${dirty ? 'unsaved' : 'saved'}`} title={saveError || 'Ctrl+S 保存'} onClick={() => run(saveActive)}>{saving ? <LoaderCircle size={13} className="spin" /> : saveError ? <AlertTriangle size={13} /> : dirty ? <Cloud size={14} /> : <CheckCheck size={14} />}<span>{saving ? '保存中' : saveError ? '保存失败' : dirty ? '待保存' : '已保存'}</span></button>}<button className="icon-button" aria-label={dark ? '切换明亮模式' : '切换暗黑模式'} onClick={() => run(() => saveSettings({ ...settings, theme: dark ? 'light' : 'dark' }))}>{dark ? <Sun size={17} /> : <Moon size={17} />}</button><button className="icon-button notification-button" aria-label="提醒中心" onClick={() => setDialog('reminders')}><Bell size={17} />{reminders.length > 0 && <i />}</button><span className="topbar-divider" /><button className="button export-button" onClick={() => { setExportNotePath(null); setExportScope(selected.length ? 'selected' : note ? 'current' : 'filtered'); setDialog('export') }}><Download size={15} /><span>导出</span></button></div></header>
       {selectedCount > 0 && <div className="selection-bar"><span>已选择 {selectedCount} 篇笔记</span><button onClick={() => openClassification(true)}>批量设置分类</button><button onClick={() => { setExportNotePath(null); setExportScope('selected'); setDialog('export') }}>导出所选</button><button className="icon-button" aria-label="取消选择" onClick={() => setSelected([])}><X size={14} /></button></div>}
       {view === 'note' ? note ? <div className="note-workspace"><section className="note-heading"><div className="note-title-row"><h1 className="note-title">{note.title || note.path.replace(/\.md$/i, '')}</h1><button className="icon-button" aria-label="笔记操作" onClick={() => setManage({ path: note.path, type: 'note' })}><MoreHorizontal size={19} /></button></div><div className="note-meta"><button className="meta-button" onClick={() => openClassification()}><FolderOpen size={13} />{note.metadata.group || '未分组'}<ChevronRight size={11} /></button><span className="meta-divider" />{note.metadata.tags.map(tag => <button className="tag" key={tag} onClick={() => setFilterTags(filterTags.includes(tag) ? filterTags.filter(t => t !== tag) : [...filterTags, tag])}># {tag}</button>)}<button className="tag-add" onClick={() => openClassification()}><Plus size={12} />{note.metadata.tags.length ? '编辑标签' : '添加标签'}</button></div>{note.metadataError && <p className="form-error">文件头格式有误：{note.metadataError}。请在源码中修复后修改分类。</p>}</section>
-        <div className="mode-bar"><div className="mode-tabs" role="tablist" aria-label="编辑模式"><button role="tab" aria-selected={mode === 'source'} className={mode === 'source' ? 'active' : ''} onClick={() => setMode('source')}><span>〈/〉</span>源码</button><button role="tab" aria-selected={mode === 'preview'} className={mode === 'preview' ? 'active' : ''} onClick={() => setMode('preview')}><BookOpen size={13} />预览</button></div></div>
-        <div className="editor-area" style={{ display: mode === 'source' ? undefined : 'none' }}><Editor key={note.path} value={content} onChange={changeContent} lineNumbers={settings.editorLineNumbers} dark={dark} onUpload={upload} onSave={() => run(saveActive)} /></div><div ref={previewRef} className="preview-area" style={{ display: mode === 'preview' ? undefined : 'none' }}><MarkdownView content={content} notePath={note.path} lineNumbers={settings.previewLineNumbers} onNavigate={path => run(() => loadNote(path))} onToggleTask={(line, checked) => run(async () => { await saveActive(); const latest = await api<Task[]>('/tasks'); const task = latest.find(t => t.notePath === note.path && t.line === line); if (!task) throw new Error('任务位置发生变化，请重试。'); await updateTask(task, { status: checked ? 'done' : 'todo' }) })} /></div>
+        <div className="mode-bar"><div className="mode-tabs" role="tablist" aria-label="编辑模式"><button role="tab" aria-selected={mode === 'source'} className={mode === 'source' ? 'active' : ''} onClick={() => setMode('source')}><span>〈/〉</span>源码</button><button role="tab" aria-selected={mode === 'preview'} className={mode === 'preview' ? 'active' : ''} onClick={() => setMode('preview')}><BookOpen size={13} />预览</button></div><button ref={outlineButton} type="button" className="outline-toggle" aria-label="导航" aria-expanded={outlineOpen} aria-controls="note-outline" onClick={() => setOutlineOpen(open => !open)}><ListTree size={15} />导航</button></div>
+        <div className="note-body">
+          {outlineOpen && <NoteOutline key={note.path} content={content} onNavigate={navigateHeading} onClose={closeOutline} />}
+          <div className="note-content">
+            <div ref={sourceArea} className="editor-area" style={{ display: mode === 'source' ? undefined : 'none' }}><Editor key={note.path} value={content} onChange={changeContent} lineNumbers={settings.editorLineNumbers} dark={dark} onUpload={upload} onSave={() => run(saveActive)} /></div><div ref={previewRef} className="preview-area" style={{ display: mode === 'preview' ? undefined : 'none' }}><MarkdownView content={content} notePath={note.path} lineNumbers={settings.previewLineNumbers} onNavigate={path => run(() => loadNote(path))} onToggleTask={(line, checked) => run(async () => { await saveActive(); const latest = await api<Task[]>('/tasks'); const task = latest.find(t => t.notePath === note.path && t.line === line); if (!task) throw new Error('任务位置发生变化，请重试。'); await updateTask(task, { status: checked ? 'done' : 'todo' }) })} /></div>
+          </div>
+        </div>
         <footer className="statusbar"><span><span className="local-dot" /><time dateTime={note.modified} title="最后更新">{new Date(note.modified).toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false })}</time></span><div><span>{content.replace(/\s/g, '').length.toLocaleString()} 字符</span><span>{content.split('\n').length} 行</span><span>UTF-8</span></div></footer></div> : <div className="empty-state"><div className="empty-symbol"><BookOpen size={36} strokeWidth={1.3} /></div><h1>留一点空间，给新的想法。</h1><p>选择一篇笔记，或开始记录你的第一份灵感。</p><button className="button primary" onClick={() => run(createNote)}><Plus size={16} />新建笔记</button></div> : <TasksView tasks={tasks} mode={view} onUpdate={updateTask} onNavigate={task => run(async () => { await loadNote(task.notePath); setMode('source'); setTimeout(() => { const editor = document.querySelector('.cm-editor'); editor?.dispatchEvent(new CustomEvent('echo:goto-line', { detail: task.line, bubbles: true })) }, 50) })} />}
       </main>
     </div>

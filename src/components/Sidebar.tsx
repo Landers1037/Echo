@@ -15,7 +15,7 @@ type Props = {
 
 export function Sidebar(p: Props) {
   const [tab, setTab] = useState<'directory' | 'groups'>('directory')
-  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
+  const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({})
   const filtered = p.notes.filter(note => (p.group === null || (note.metadata.group || '') === p.group) && p.filterTags.every(tag => note.metadata.tags.includes(tag)) && (!p.search || (p.searchPaths ? p.searchPaths.includes(note.path) : `${note.title} ${note.path}`.toLowerCase().includes(p.search.toLowerCase()))))
   const filtering = p.group !== null || p.filterTags.length > 0 || p.search.length > 0
   const visible = new Set(filtered.map(note => note.path))
@@ -26,8 +26,8 @@ export function Sidebar(p: Props) {
     <button className="row-action icon-button" aria-label={`管理 ${note.path}`} onClick={() => p.onManage(note.path, 'note')}><MoreHorizontal size={15} /></button>
   </div>
   const renderTree = (entries: TreeEntry[], depth = 0): React.ReactNode => entries.map(entry => entry.type === 'folder' ? <div key={entry.path}>
-    <div className="folder-row" style={{ paddingLeft: `${14 + depth * 16}px` }}><button className="folder-link" onClick={() => setCollapsed(c => ({ ...c, [entry.path]: !c[entry.path] }))} aria-expanded={!collapsed[entry.path]}><ChevronRight size={13} className={collapsed[entry.path] ? '' : 'rotated'} /><Folder size={15} /><span>{entry.name}</span></button><button className="row-action icon-button" aria-label={`管理文件夹 ${entry.path}`} onClick={() => p.onManage(entry.path, 'folder')}><MoreHorizontal size={15} /></button></div>
-    {!collapsed[entry.path] && renderTree(entry.children || [], depth + 1)}
+    <div className="folder-row" style={{ paddingLeft: `${14 + depth * 16}px` }}><button className="folder-link" onClick={() => setExpandedFolders(folders => ({ ...folders, [entry.path]: !folders[entry.path] }))} aria-expanded={!!expandedFolders[entry.path]}><ChevronRight size={13} className={expandedFolders[entry.path] ? 'rotated' : ''} /><Folder size={15} /><span>{entry.name}</span></button><button className="row-action icon-button" aria-label={`管理文件夹 ${entry.path}`} onClick={() => p.onManage(entry.path, 'folder')}><MoreHorizontal size={15} /></button></div>
+    {expandedFolders[entry.path] && renderTree(entry.children || [], depth + 1)}
   </div> : visible.has(entry.path) ? noteRow(p.notes.find(note => note.path === entry.path) || { path: entry.path, title: entry.name.replace(/\.md$/i, ''), metadata: { tags: [], group: '' }, modified: '', revision: '' }, depth) : null)
   return <><div className={`sidebar-scrim ${p.open ? 'visible' : ''}`} onClick={p.onClose} />
     <aside id="note-sidebar" className={`sidebar ${p.open ? 'open' : ''}`} inert={!p.open}>

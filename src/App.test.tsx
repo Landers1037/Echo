@@ -5,7 +5,7 @@ import { exportNotes } from './export'
 import type { Note, Settings } from './types'
 
 vi.mock('./components/Editor', () => ({
-  Editor: ({ value, onChange }: { value: string; onChange: (value: string) => void }) => <textarea aria-label="笔记源码" value={value} onChange={event => onChange(event.target.value)} />,
+  Editor: ({ value, onChange }: { value: string; onChange: (value: string) => void }) => <textarea className="cm-editor" aria-label="笔记源码" value={value} onChange={event => onChange(event.target.value)} />,
 }))
 vi.mock('./components/MarkdownView', () => ({ MarkdownView: ({ content }: { content: string }) => <article data-testid="preview">{content}</article> }))
 vi.mock('./components/TasksView', () => ({ TasksView: () => <div data-testid="tasks-view" /> }))
@@ -109,6 +109,51 @@ async function openApp(server: ReturnType<typeof createServer>) {
   return editor
 }
 function saveShortcut() { fireEvent.keyDown(window, { key: 's', ctrlKey: true }) }
+
+describe('App note navigation', () => {
+  it('toggles beside the editing tabs, follows live headings, and navigates duplicate titles by source line', async () => {
+    const server = createServer()
+    const editor = await openApp(server)
+    const toggle = screen.getByRole('button', { name: '导航' })
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.getByRole('tablist', { name: '编辑模式' }).nextElementSibling).toBe(toggle)
+    expect(screen.queryByRole('navigation', { name: '笔记导航' })).not.toBeInTheDocument()
+    fireEvent.click(toggle)
+    expect(toggle).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByRole('button', { name: '1 级标题：初始笔记' })).toBeInTheDocument()
+
+    fireEvent.change(editor, { target: { value: '# 重复\n\n##### 重复\n\n###### 不收录' } })
+    expect(screen.queryByRole('button', { name: '1 级标题：初始笔记' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /不收录/ })).not.toBeInTheDocument()
+    const navigate = vi.fn()
+    editor.addEventListener('echo:goto-line', navigate)
+    fireEvent.click(screen.getByRole('button', { name: '5 级标题：重复' }))
+    expect(navigate).toHaveBeenCalledOnce()
+    expect((navigate.mock.calls[0][0] as CustomEvent).detail).toBe(3)
+    expect(screen.getByRole('button', { name: '5 级标题：重复' })).toHaveAttribute('aria-current', 'location')
+
+    fireEvent.click(screen.getByRole('tab', { name: '预览' }))
+    expect(screen.getByRole('navigation', { name: '笔记导航' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '关闭笔记导航' }))
+    expect(toggle).toHaveFocus()
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    fireEvent.click(toggle)
+    fireEvent.click(toggle)
+    expect(screen.queryByRole('navigation', { name: '笔记导航' })).not.toBeInTheDocument()
+  })
+
+  it('shows an empty state and switches to the headings of the newly opened note', async () => {
+    const other: Note = { path: '另一篇.md', title: '另一篇笔记', content: '没有标题的正文', metadata: { tags: [], group: '' }, revision: 'other-v1', modified: '2026-10-22T12:00:00Z' }
+    await openApp(createServer([other]))
+    fireEvent.click(screen.getByRole('button', { name: '导航' }))
+    fireEvent.click(screen.getByRole('button', { name: '1 级标题：初始笔记' }))
+    fireEvent.click(screen.getByRole('button', { name: '另一篇笔记' }))
+    await screen.findByText('暂无标题')
+    expect(screen.queryByRole('button', { name: '1 级标题：初始笔记' })).not.toBeInTheDocument()
+    fireEvent.change(screen.getByRole('textbox', { name: '笔记源码' }), { target: { value: '## 新标题' } })
+    expect(screen.getByRole('button', { name: '2 级标题：新标题' })).not.toHaveAttribute('aria-current')
+  })
+})
 
 describe('App single-note export', () => {
   it('exports the active note from its operations menu and saves its pending draft first', async () => {

@@ -6,6 +6,20 @@ vi.mock('shiki', () => ({ codeToHtml: async (code: string) => `<pre class="shiki
 afterEach(cleanup)
 
 describe('Markdown rendering', () => {
+  it('marks each navigable heading with its source line and keeps exports free of navigation attributes', () => {
+    const content = '---\ntitle: 示例\n---\n# 重复\n\n## 重复\n\n##### 五级\n\n###### 六级\n'
+    const { container, rerender } = render(<MarkdownView content={content} notePath="笔记.md" lineNumbers={false} />)
+    expect([...container.querySelectorAll('[data-heading-line]')].map(heading => [heading.tagName, heading.getAttribute('data-heading-line')])).toEqual([['H1', '4'], ['H2', '6'], ['H5', '8']])
+    expect(screen.getByRole('heading', { name: '六级' })).not.toHaveAttribute('data-heading-line')
+    const heading = container.querySelector('h1')!
+    heading.focus()
+    rerender(<MarkdownView content={content} notePath="笔记.md" lineNumbers={false} />)
+    expect(heading).toHaveFocus()
+    rerender(<MarkdownView content={content} notePath="笔记.md" lineNumbers={false} exporting />)
+    expect(container.querySelector('[data-heading-line]')).toBeNull()
+    expect(container.querySelector('h1')).not.toHaveAttribute('tabindex')
+  })
+
   it('keeps task source line numbers with frontmatter and fenced examples', async () => {
     const toggle = vi.fn()
     const content = '---\necho:\n  tags: [工作]\n---\n# 笔记\n\n```markdown\n- [ ] 示例\n```\n\n- [ ] 真正的任务 <!-- echo-task: {"id":"a"} -->\n  - [x] 子任务\n'

@@ -1,0 +1,20 @@
+.outline-toggle{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:34px;padding:7px 11px;border:1px solid var(--border);color:var(--muted);background:var(--bg);font-size:12px;white-space:nowrap}
+.outline-toggle[aria-expanded=true]{background:var(--accent-soft);border-color:color-mix(in srgb,var(--accent) 45%,var(--border));color:var(--accent)}
+.note-body{position:relative;display:flex;flex:1;min-height:0;min-width:0;overflow:hidden}
+.note-content{display:flex;flex-direction:column;flex:1;min-height:0;min-width:0;order:0}
+.note-outline{display:flex;flex-direction:column;order:1;flex-shrink:0;width:240px;max-width:40%;min-height:0;border-left:1px solid var(--border);background:var(--panel)}
+.note-outline-heading{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 14px 10px;flex-shrink:0}
+.note-outline-heading h2{display:flex;align-items:center;gap:7px;margin:0;font-size:12px;font-weight:600}
+.note-outline-heading h2>svg{color:var(--accent)}
+.note-outline-list{list-style:none;margin:0;padding:0 8px 16px;overflow:auto;min-height:0;scrollbar-width:thin}
+.note-outline-list li{margin:2px 0}
+.note-outline-item{display:block;width:100%;padding:8px 10px;text-align:left;font-size:12px;line-height:1.65;color:var(--muted)}
+.note-outline-item[data-depth="1"]{font-weight:600;color:var(--text)}
+.note-outline-item>span{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}
+.note-outline-item[aria-current=location]{background:var(--accent-soft);color:var(--accent)}
+.note-outline-empty{padding:28px 20px;text-align:center;color:var(--muted)}
+.note-outline-empty>svg{color:var(--accent)}
+.note-outline-empty p{font-size:12px;margin:12px 0 7px}
+.note-outline-empty small{font-size:11px;line-height:1.8}
+.preview-area [data-heading-line]{scroll-margin-top:18px}
+@media(max-width:760px){.note-outline{position:absolute;inset:0 0 0 auto;z-index:10;width:min(260px,calc(100% - 24px));max-width:none;box-shadow:-12px 0 30px #0002}.outline-toggle{min-height:34px;padding:7px 9px}.note-outline-item{padding-top:10px;padding-bottom:10px}}
