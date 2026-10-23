@@ -38,6 +38,9 @@ func fail(w http.ResponseWriter, err error) {
 		return
 	}
 	status := http.StatusBadRequest
+	if errors.Is(err, errStorageChanged) {
+		status = http.StatusConflict
+	}
 	if isNotFound(err) {
 		status = http.StatusNotFound
 	}
@@ -360,6 +363,40 @@ func (h *handler) api(w http.ResponseWriter, r *http.Request) error {
 			}
 			s.changed()
 			jsonResponse(w, 200, map[string]bool{"ok": true})
+			return nil
+		}
+	case "/api/storage":
+		if method == "GET" {
+			usage, err := s.storageUsage()
+			if err != nil {
+				return err
+			}
+			jsonResponse(w, 200, usage)
+			return nil
+		}
+	case "/api/storage/unused-assets":
+		if method == "GET" {
+			unused, err := s.unusedAssets()
+			if err != nil {
+				return err
+			}
+			jsonResponse(w, 200, unused)
+			return nil
+		}
+	case "/api/storage/cleanup":
+		if method == "POST" {
+			var request struct {
+				Token string `json:"token"`
+			}
+			if err := decode(r, &request); err != nil {
+				return err
+			}
+			result, err := s.cleanupAssets(request.Token)
+			if err != nil {
+				return err
+			}
+			s.changed()
+			jsonResponse(w, 200, result)
 			return nil
 		}
 	case "/api/settings":

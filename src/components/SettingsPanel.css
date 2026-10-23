@@ -1,0 +1,54 @@
+.modal.settings-modal{width:880px;height:min(720px,90dvh);padding:0;display:flex;flex-direction:column;overflow:hidden}
+.settings-modal .modal-heading{flex-shrink:0;margin:0;padding:20px 24px;border-bottom:1px solid var(--border)}
+.settings-form{display:flex;flex:1;flex-direction:column;min-height:0}
+.settings-layout{display:grid;grid-template-columns:160px minmax(0,1fr);flex:1;min-height:0}
+.settings-menu{padding:18px 10px;background:var(--panel);border-right:1px solid var(--border)}
+.settings-menu button{display:flex;align-items:center;gap:10px;width:100%;padding:12px;text-align:left;font-size:12px;color:var(--muted);margin-bottom:5px}
+.settings-menu button.active{background:var(--accent-soft);color:var(--accent);font-weight:600}
+.settings-details{min-width:0;overflow:auto;padding:24px 28px;scrollbar-width:thin}
+.settings-fields{border:0;padding:0;margin:0;min-width:0}
+.settings-page-heading{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:23px}
+.settings-page-heading h3{margin:0;font-size:17px;font-weight:600}
+.settings-modal .settings-section{padding-bottom:20px;margin-bottom:20px}
+.settings-modal .settings-section:last-child{border-bottom:0;margin-bottom:0;padding-bottom:0}
+.settings-modal .settings-section h4{display:flex;align-items:center;gap:7px;font-size:12px;font-weight:600;margin:0 0 16px}
+.settings-modal .accent-options{flex-wrap:wrap}
+.settings-save-bar{flex-shrink:0;padding:14px 24px;border-top:1px solid var(--border);background:var(--bg)}
+.settings-save-bar .modal-actions{margin:0}
+.settings-save-bar .form-error{margin:0 0 12px}
+.storage-usage{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:20px}
+.storage-stat{display:flex;flex-direction:column;align-items:flex-start;gap:8px;padding:16px 13px;background:var(--panel);border:1px solid var(--border);border-radius:7px;min-width:0}
+.storage-stat svg{color:var(--accent)}
+.storage-stat>span{font-size:11px;color:var(--muted)}
+.storage-stat strong{font-size:20px;font-weight:600;white-space:nowrap}
+.storage-stat small{font-size:10px}
+.storage-root{margin:0 0 20px;min-width:0}
+.storage-root>span{display:block;font-size:11px;color:var(--muted);margin-bottom:8px}
+.storage-root code{display:block;font:11px/1.7 var(--font-mono);overflow-wrap:anywhere;background:var(--panel);padding:9px 11px;border-radius:5px}
+.storage-cleanup .button{font-size:12px}
+.unused-assets{margin-top:16px;font-size:12px}
+.unused-assets ul{list-style:none;margin:12px 0 16px;padding:0;max-height:160px;overflow:auto;border:1px solid var(--border);border-radius:5px}
+.unused-assets li{display:flex;align-items:center;gap:12px;justify-content:space-between;padding:9px 11px;border-bottom:1px solid var(--border);font-size:11px}
+.unused-assets li:last-child{border-bottom:0}
+.unused-assets li>span{min-width:0;overflow-wrap:anywhere}
+.unused-assets li>small{flex-shrink:0;white-space:nowrap}
+.cleanup-confirm{background:var(--panel);padding:12px;border:1px solid var(--border);border-radius:6px}
+.cleanup-confirm>p{font-size:12px;line-height:1.8;margin:0 0 12px}
+.cleanup-confirm>div{display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end}
+.storage-notice{font-size:12px;color:var(--accent);line-height:1.8;margin-top:16px}
+@media(max-width:760px){
+  .modal.settings-modal{height:min(720px,calc(100dvh - 24px))}
+  .settings-modal .modal-heading{padding:15px 16px}
+  .settings-layout{grid-template-columns:88px minmax(0,1fr)}
+  .settings-menu{padding:12px 5px}
+  .settings-menu button{flex-direction:column;text-align:center;gap:7px;padding:12px 3px;font-size:11px}
+  .settings-details{padding:18px 14px}
+  .settings-page-heading h3{font-size:16px}
+  .settings-modal .theme-options{gap:5px;flex-wrap:wrap}
+  .settings-modal .theme-option{min-width:60px;padding:12px 5px;font-size:11px;gap:8px}
+  .settings-modal .accent-options{gap:10px}
+  .settings-save-bar{padding:12px 16px}
+  .storage-usage{grid-template-columns:1fr;gap:8px}
+  .storage-stat{display:grid;grid-template-columns:20px minmax(0,1fr);gap:5px 9px;padding:12px}
+  .storage-stat strong,.storage-stat small{grid-column:2}
+}

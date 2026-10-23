@@ -1,6 +1,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import App from './App'
+import { exportNotes } from './export'
 import type { Note, Settings } from './types'
 
 vi.mock('./components/Editor', () => ({
@@ -28,10 +29,12 @@ function deferred() {
   return { promise, resolve }
 }
 
-function createServer() {
+function createServer(extraNotes: Note[] = []) {
   let note: Note = { path: '测试.md', title: '测试笔记', metadata: { tags: [], group: '' }, revision: 'v1', modified: '2026-10-22T12:00:00Z', content: '# 初始笔记\n' }
   let savedSettings = { ...settings }
   let settingsError = false
+  let cleanupError = false
+  let unusedImages = [{ path: '.assets/unused.png', size: 2048 }]
   let version = 1
   let nextWriteGate: ReturnType<typeof deferred> | undefined
   let nextConflict: Note | undefined
@@ -50,8 +53,16 @@ function createServer() {
       }
       return response(savedSettings)
     }
-    if (url.pathname === '/api/notes' && method === 'GET') return response(url.searchParams.has('path') ? note : [{ ...note, content: '' }])
-    if (url.pathname === '/api/tree') return response([{ path: note.path, name: note.path, type: 'note' }])
+    if (url.pathname === '/api/storage') return response({ root: 'D:\\EchoNotes', assetsDir: savedSettings.assetsDir, databaseBytes: 2048, noteBytes: 4096, noteCount: 2, assetBytes: 4096 + unusedImages.length * 2048, assetCount: 2 + unusedImages.length })
+    if (url.pathname === '/api/storage/unused-assets') return response({ assetsDir: savedSettings.assetsDir, files: unusedImages, bytes: unusedImages.length * 2048, token: 'scan-v1' })
+    if (url.pathname === '/api/storage/cleanup' && method === 'POST') {
+      if (cleanupError) { cleanupError = false; return response({ error: '笔记或图片资源已变化，请重新检查后清理' }, 409) }
+      const removedCount = unusedImages.length
+      unusedImages = []
+      return response({ removedCount, removedBytes: removedCount * 2048, failed: [] })
+    }
+    if (url.pathname === '/api/notes' && method === 'GET') return response(url.searchParams.has('path') ? [note, ...extraNotes].find(item => item.path === url.searchParams.get('path')) : [note, ...extraNotes].map(item => ({ ...item, content: '' })))
+    if (url.pathname === '/api/tree') return response([note, ...extraNotes].map(item => ({ path: item.path, name: item.path, type: 'note' })))
     if (url.pathname === '/api/groups') return response(['工作'])
     if (url.pathname === '/api/tags') return response(['重点', '项目'])
     if (url.pathname === '/api/tasks' || url.pathname === '/api/reminders') return response([])
@@ -75,10 +86,11 @@ function createServer() {
     }
     throw new Error(`Unexpected request: ${method} ${url.pathname}`)
   })
-  return { fetch, writes, batches, calls, current: () => note, savedSettings: () => savedSettings, failNextSettings: () => { settingsError = true }, delayNextWrite: () => { nextWriteGate = deferred(); return nextWriteGate }, conflictNextWrite: (disk: Note) => { nextConflict = disk } }
+  return { fetch, writes, batches, calls, current: () => note, savedSettings: () => savedSettings, failNextCleanup: () => { cleanupError = true }, failNextSettings: () => { settingsError = true }, delayNextWrite: () => { nextWriteGate = deferred(); return nextWriteGate }, conflictNextWrite: (disk: Note) => { nextConflict = disk } }
 }
 
 beforeEach(() => {
+  vi.mocked(exportNotes).mockClear()
   const values = new Map<string, string>()
   vi.stubGlobal('localStorage', { get length() { return values.size }, clear: () => values.clear(), getItem: (key: string) => values.get(key) ?? null, setItem: (key: string, value: string) => { values.set(key, String(value)) }, removeItem: (key: string) => { values.delete(key) }, key: (index: number) => [...values.keys()][index] ?? null })
   vi.stubGlobal('matchMedia', vi.fn((media: string) => ({ matches: false, media, onchange: null, addListener: vi.fn(), removeListener: vi.fn(), addEventListener: vi.fn(), removeEventListener: vi.fn(), dispatchEvent: vi.fn() })))
@@ -94,6 +106,50 @@ async function openApp(server: ReturnType<typeof createServer>) {
   return editor
 }
 function saveShortcut() { fireEvent.keyDown(window, { key: 's', ctrlKey: true }) }
+
+describe('App single-note export', () => {
+  it('exports the active note from its operations menu and saves its pending draft first', async () => {
+    const server = createServer()
+    const editor = await openApp(server)
+    vi.mocked(exportNotes).mockImplementationOnce(async ({ beforeExport }) => { await beforeExport() })
+    fireEvent.change(editor, { target: { value: '# 导出前的草稿\n' } })
+    fireEvent.click(screen.getByRole('button', { name: '笔记操作' }))
+    fireEvent.click(screen.getByRole('button', { name: '导出该笔记' }))
+    expect(screen.getByRole('dialog', { name: '导出笔记' })).toHaveTextContent('测试.md')
+    expect(screen.queryByRole('combobox', { name: '导出范围' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /原始 \.md 文件/ })).toBeEnabled()
+    fireEvent.click(screen.getByRole('button', { name: /Markdown 资源包/ }))
+    fireEvent.click(screen.getByRole('button', { name: '开始导出' }))
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: '导出笔记' })).not.toBeInTheDocument())
+    expect(exportNotes).toHaveBeenCalledWith(expect.objectContaining({ paths: ['测试.md'], format: 'bundle' }))
+    expect(server.current().content).toBe('# 导出前的草稿\n')
+  })
+
+  it.each(['导出', '导出所选'])('pins a different note despite bulk selections, then restores the %s entry', async entry => {
+    const other: Note = { path: '归档/另一篇.md', title: '另一篇笔记', content: '# 另一篇\n', metadata: { tags: [], group: '' }, revision: 'other-v1', modified: '2026-10-22T12:00:00Z' }
+    const server = createServer([other])
+    const editor = await openApp(server)
+    fireEvent.click(screen.getByRole('checkbox', { name: '选择 测试笔记' }))
+    fireEvent.click(screen.getByRole('checkbox', { name: '选择 另一篇笔记' }))
+    fireEvent.click(screen.getByRole('button', { name: '管理 归档/另一篇.md' }))
+    fireEvent.click(screen.getByRole('button', { name: '导出该笔记' }))
+    expect(screen.getByRole('dialog', { name: '导出笔记' })).toHaveTextContent('归档/另一篇.md')
+    expect(screen.getByText(/将导出 1 篇笔记/)).toBeInTheDocument()
+    expect(editor.value).toBe('# 初始笔记\n')
+    fireEvent.click(screen.getByRole('button', { name: '开始导出' }))
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: '导出笔记' })).not.toBeInTheDocument())
+    expect(exportNotes).toHaveBeenLastCalledWith(expect.objectContaining({ paths: [other.path], format: 'html' }))
+
+    fireEvent.click(screen.getByRole('button', { name: entry }))
+    expect(screen.getByRole('combobox', { name: '导出范围' })).toHaveTextContent('所选笔记（2 篇）')
+    expect(screen.getByText(/将导出 2 篇笔记/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /原始 \.md 文件/ })).toBeDisabled()
+    fireEvent.click(screen.getByRole('button', { name: '开始导出' }))
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: '导出笔记' })).not.toBeInTheDocument())
+    expect(exportNotes).toHaveBeenLastCalledWith(expect.objectContaining({ paths: ['测试.md', other.path] }))
+    expect(editor.value).toBe('# 初始笔记\n')
+  })
+})
 
 describe('App appearance settings', () => {
   it('previews themes and preset or custom accents immediately and restores them on cancel', async () => {
@@ -154,6 +210,69 @@ describe('App appearance settings', () => {
     fireEvent.click(screen.getByRole('button', { name: '关闭弹窗' }))
     expect(document.documentElement).toHaveAttribute('data-theme', 'light')
     expect(document.documentElement.style.getPropertyValue('--accent')).toBe('#72967b')
+  })
+})
+
+describe('App settings navigation and storage', () => {
+  it('keeps settings drafts when switching the left menu and saves from the detail page', async () => {
+    const server = createServer()
+    await openApp(server)
+    fireEvent.click(screen.getByRole('button', { name: '设置' }))
+    expect(screen.getByRole('navigation', { name: '设置菜单' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '笔记设置' }))
+    expect(screen.queryByRole('button', { name: '暗黑' })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('switch', { name: '源码编辑器行号' }))
+    fireEvent.click(screen.getByRole('button', { name: '外观设置' }))
+    fireEvent.click(screen.getByRole('button', { name: '强调色 #5885b5' }))
+    fireEvent.click(screen.getByRole('button', { name: '存储设置' }))
+    expect(await screen.findByText('2.00 KB')).toBeInTheDocument()
+    expect(screen.getByText('4.00 KB')).toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText('资源目录'), { target: { value: 'images' } })
+    expect(screen.getByRole('button', { name: '检查未引用图片' })).toBeDisabled()
+    fireEvent.click(screen.getByRole('button', { name: '笔记设置' }))
+    expect(screen.getByRole('switch', { name: '源码编辑器行号' })).toHaveAttribute('aria-checked', 'false')
+    fireEvent.click(screen.getByRole('button', { name: '保存设置' }))
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: '设置' })).not.toBeInTheDocument())
+    expect(server.savedSettings()).toMatchObject({ accent: '#5885b5', editorLineNumbers: false, assetsDir: 'images' })
+  })
+
+  it('saves pending note references before scanning and only cleans after explicit confirmation', async () => {
+    const server = createServer()
+    const editor = await openApp(server)
+    fireEvent.change(editor, { target: { value: '# Pending\n![keep](.assets/kept.png)\n' } })
+    fireEvent.click(screen.getByRole('button', { name: '设置' }))
+    fireEvent.click(screen.getByRole('button', { name: '存储设置' }))
+    fireEvent.click(screen.getByRole('button', { name: '检查未引用图片' }))
+    expect(await screen.findByRole('list', { name: '未引用图片列表' })).toHaveTextContent('.assets/unused.png')
+    const saveIndex = server.calls.findIndex(call => call.path === '/api/notes' && call.method === 'PUT')
+    const scanIndex = server.calls.findIndex(call => call.path === '/api/storage/unused-assets')
+    expect(saveIndex).toBeGreaterThan(-1)
+    expect(scanIndex).toBeGreaterThan(saveIndex)
+    expect(server.current().content).toContain('![keep](.assets/kept.png)')
+    fireEvent.click(screen.getByRole('button', { name: '清理 1 张图片' }))
+    expect(server.calls.filter(call => call.path === '/api/storage/cleanup')).toHaveLength(0)
+    fireEvent.click(screen.getByRole('button', { name: '取消清理' }))
+    expect(server.calls.filter(call => call.path === '/api/storage/cleanup')).toHaveLength(0)
+    fireEvent.click(screen.getByRole('button', { name: '清理 1 张图片' }))
+    fireEvent.click(screen.getByRole('button', { name: '确认清理' }))
+    expect(await screen.findByRole('status')).toHaveTextContent('已清理 1 张图片，释放 2.00 KB')
+    expect(server.calls.find(call => call.path === '/api/storage/cleanup')?.body).toEqual({ token: 'scan-v1' })
+    expect(screen.queryByRole('list', { name: '未引用图片列表' })).not.toBeInTheDocument()
+  })
+
+  it('requires another scan after stale cleanup and preserves files on failure', async () => {
+    const server = createServer()
+    server.failNextCleanup()
+    await openApp(server)
+    fireEvent.click(screen.getByRole('button', { name: '设置' }))
+    fireEvent.click(screen.getByRole('button', { name: '存储设置' }))
+    fireEvent.click(screen.getByRole('button', { name: '检查未引用图片' }))
+    fireEvent.click(await screen.findByRole('button', { name: '清理 1 张图片' }))
+    fireEvent.click(screen.getByRole('button', { name: '确认清理' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('请重新检查后清理')
+    expect(screen.queryByRole('button', { name: '确认清理' })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '检查未引用图片' }))
+    expect(await screen.findByRole('list', { name: '未引用图片列表' })).toHaveTextContent('.assets/unused.png')
   })
 })
 
@@ -236,7 +355,8 @@ describe('App saves and metadata integration', () => {
     fireEvent.click(screen.getByRole('button', { name: '添加标签' }))
     await screen.findByRole('dialog', { name: '标签与分组' })
     fireEvent.change(screen.getByLabelText('标签', { selector: 'input' }), { target: { value: '重点, 项目' } })
-    fireEvent.change(screen.getByLabelText('分组', { selector: 'select' }), { target: { value: '工作' } })
+    fireEvent.click(screen.getByRole('combobox', { name: '分组' }))
+    fireEvent.click(screen.getByRole('option', { name: '工作' }))
     fireEvent.click(screen.getByRole('button', { name: '保存分类' }))
     await waitFor(() => expect(server.batches).toHaveLength(1))
     expect(server.writes[0].content).toBe('# 分类前尚未保存\n')

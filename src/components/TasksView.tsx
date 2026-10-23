@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { motion } from 'motion/react'
 import { ArrowUpRight, CalendarClock, CalendarDays, Check, Circle, CircleDashed, Clock3, ListTodo, Repeat2, X } from 'lucide-react'
 import type { Task } from '../types'
+import { Select } from './Select'
 
 type TasksViewProps = {
   tasks: Task[]
@@ -60,7 +61,7 @@ export function TasksView({ tasks, mode, onUpdate, onNavigate }: TasksViewProps)
         {task.remindAt && <span className="task-reminder" title={`提醒：${dateLabel(task.remindAt)}`}><Clock3 size={12} /></span>}
         {task.repeat && task.repeat !== 'none' && <span className="task-repeat"><Repeat2 size={12} />{repeatLabels[task.repeat]}</span>}
       </div>
-      <select className="task-status-select" aria-label={`任务状态：${task.text}`} value={task.status} disabled={pending === task.id} onChange={event => { void update(task, { status: event.target.value as Task['status'] }).catch(() => {}) }}>{columns.map(column => <option value={column.status} key={column.status}>{column.title}</option>)}</select>
+      <Select className="task-status-select" compact aria-label={'任务状态：' + task.text} value={task.status} disabled={pending === task.id} onChange={value => { void update(task, { status: value as Task['status'] }).catch(() => {}) }} options={columns.map(column => ({ value: column.status, label: column.title }))} />
     </motion.article>
   }
 
@@ -100,7 +101,7 @@ function ScheduleDialog({ task, onClose, onSave }: { task: Task; onClose: () => 
     <form onSubmit={event => { event.preventDefault(); setError(''); if (repeat !== 'none' && !due) { setError('重复任务需要设置截止时间'); return }; setSaving(true); void onSave({ due: due ? new Date(due).toISOString() : '', remindAt: remindAt ? new Date(remindAt).toISOString() : '', repeat, timezone: task.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone }).catch(cause => setError(cause instanceof Error ? cause.message : '保存失败')).finally(() => setSaving(false)) }}>
       <label className="field-label">截止时间<input autoFocus type="datetime-local" value={due} onChange={event => setDue(event.target.value)} /></label>
       <label className="field-label">提醒时间<input type="datetime-local" value={remindAt} onChange={event => setRemindAt(event.target.value)} /></label>
-      <label className="field-label">重复规则<select value={repeat} onChange={event => setRepeat(event.target.value as Task['repeat'])}>{Object.entries(repeatLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+      <label className="field-label" htmlFor="task-repeat">重复规则</label><Select id="task-repeat" value={repeat || 'none'} onChange={value => setRepeat(value as Task['repeat'])} disabled={saving} options={Object.entries(repeatLabels).map(([value, label]) => ({ value, label }))} />
       <p className="field-hint">使用时区：{task.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone}。网页关闭期间的提醒会在再次打开时汇总显示。</p>
       {error && <p className="inline-error" role="alert">{error}</p>}
       <footer className="modal-footer"><button type="button" className="button secondary" disabled={saving} onClick={onClose}>取消</button><button type="submit" className="button primary" disabled={saving}>{saving ? '正在保存…' : '保存安排'}</button></footer>
