@@ -1,9 +1,28 @@
-Edited with the built-in image_gen tool, with transparent_background=true.
-Input: the previously generated lavender Echo logo; only the palette changes.
+Echo flat 2D book-and-sapling logo
+Created with the built-in image_gen tool; transparent_background=true.
+Reference: the preceding antique-book / golden-sapling logo.
+Final master: echo-logo.png. Master preserved unchanged; public assets are resized derivatives.
 
-Edit the provided Echo logo, changing ONLY its color palette.
-Keep the circular silhouette, centered open-book symbol, page folds, the two echo arcs above the right page, proportions, orientation, and composition identical.
-Replace the lavender circular interior with a warm, soft ivory / off-white background (#F7F2E8).
-Recolor the open book and both echo arcs to a refined warm gold (#B28D46), with enough contrast and weight to remain legible at 24–42 pixels.
-Use clean flat colors, with no purple remaining. No new elements, text, border, shadow, 3D effect, metallic glare or mockup.
-Preserve a genuinely transparent RGBA background outside the circular emblem: every pixel outside the circular silhouette must have alpha zero, apart from clean antialiased edge pixels. The ivory background belongs ONLY inside the circle. Do not add any square or rectangular background, and do not paint a checkerboard. Return one finished square PNG with real alpha transparency.
+FLAT 2D REDESIGN PROMPT
+Use case: style-transfer / logo-brand.
+Redesign the provided book-and-sapling logo as a STRICTLY FLAT 2D VECTOR-STYLE APP ICON. The reference supplies only the subject and palette; redraw its shapes completely rather than keeping the painted texture.
+
+Subject: a small sapling growing directly from the center fold of an open antique book. Five simple GOLD-COLORED leaves on a jade-green stem. The book is NOT gold: use aged parchment cream pages, muted tan page edges, a reddish-brown antique cover and a restrained teal spine/binding. A warm ivory circular disk with a very thin jade-green perimeter contains the whole design. Genuine alpha transparency outside that circle.
+
+Style is the most important requirement: flat geometric vector illustration, solid color fills, clean consistent contours, broad simple shapes, balanced negative space. Every leaf is ONE flat matte golden color, with at most one simple vein stroke. The book is two large flat cream page shapes, a simple central fold, a reddish-brown base cover silhouette and just two or three clean curved lines suggesting old paper layers. Use a front-facing, nearly symmetric icon composition. The sapling rises from the book into the upper half of the badge. It must be clear at 24–42 pixels.
+
+Flat color palette only: ivory #F7F2E8, parchment cream #E8D7B6, muted tan #BDA27A, reddish-brown #93513E, teal #47756E, deep jade #2D6353, matte gold #DDAA3C. These distinct colors provide richness without adding shading.
+
+ABSOLUTELY NO gradients, tonal modeling, painterly brushwork, paper texture, leather texture, grain, metallic shine, reflective highlights, shadows, bevels, embossing, volumetric leaves, realistic page thickness, perspective depth or 3D rendering. No glow. No text, letters, watermark, decorations, sparkles, scenery, mockup or square background.
+
+Deliver one polished, high-resolution square RGBA PNG. The circle occupies about 94% of the canvas, centered with an even transparent margin. Its outline is perfectly smooth and circular; no rough white fragments outside it. Only the leaves use a golden color; the antique book must read as cream/tan/red-brown, not metallic or golden.
+
+FINAL NEGATIVE-SPACE ADJUSTMENT PROMPT
+Use case: precise-object-edit.
+Edit this FLAT 2D book-and-golden-sapling app logo by changing ONLY the scale and spacing of the central illustration.
+
+Keep the outer circular ivory badge, its thin jade-green keyline, its size on the canvas, and the transparent area outside it exactly the same. Keep the same flat 2D style and palette: gold leaves, green stem, antique parchment cream/tan pages, reddish-brown book cover and teal binding.
+
+Scale down the ENTIRE book-and-sapling illustration together to approximately 80 percent of its current width and height, preserving all its proportions and the relationship of the tree growing out of the book. Center the smaller combined illustration within the ivory disk, with clearly visible, generous ivory negative space around it on every side. The illustration should occupy roughly 70–75 percent of the disk diameter, with a comfortable empty band between every extremity of the book/leaves and the circular border. The book corners must not touch or overlap the circular edge. Do not shrink the outer circle.
+
+Preserve the same five simple golden leaves and open antique book. Keep the design crisp, minimal, flat 2D and based on simple shapes. No new texture, gradients, shadows, 3D depth, decorative elements, text or watermark. Do not add anything to fill the newly created empty space. Output one square transparent RGBA PNG, with genuine alpha transparency outside the clean circular badge.
