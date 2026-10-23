@@ -177,7 +177,6 @@ export function Editor(props: EditorProps) {
       <span className="toolbar-separator" />
       <button type="button" className="icon-button" title="撤销" aria-label="撤销" onClick={() => { if (view.current) undo(view.current) }}><Undo2 size={16} /></button>
       <button type="button" className="icon-button" title="重做" aria-label="重做" onClick={() => { if (view.current) redo(view.current) }}><Redo2 size={16} /></button>
-      <span className="toolbar-hint">Markdown</span>
       <input ref={fileInput} type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple hidden onChange={event => { Array.from(event.target.files || []).forEach(file => uploadFile(file)); event.target.value = '' }} />
     </div>
     {uploads.length > 0 && <div className="upload-status" role="status">{uploads.map(upload => <div className={upload.status === 'error' ? 'upload-item error' : 'upload-item'} key={upload.id}>

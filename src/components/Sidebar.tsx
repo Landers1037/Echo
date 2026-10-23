@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { BookOpen, Search, Plus, FolderPlus, FileText, ChevronRight, Folder, MoreHorizontal, LayoutGrid, ListTodo, Settings, Trash2, Tags, FolderOpen, X, ArrowUpRight } from 'lucide-react'
 import { motion } from 'motion/react'
 import type { NoteSummary, TreeEntry } from '../types'
+import { Logo } from './Logo'
 
 type Props = {
   notes: NoteSummary[]; tree: TreeEntry[]; groups: string[]; tags: string[]; active: string; view: string; open: boolean
@@ -28,8 +29,8 @@ export function Sidebar(p: Props) {
     {!collapsed[entry.path] && renderTree(entry.children || [], depth + 1)}
   </div> : visible.has(entry.path) ? noteRow(p.notes.find(note => note.path === entry.path) || { path: entry.path, title: entry.name.replace(/\.md$/i, ''), metadata: { tags: [], group: '' }, modified: '', revision: '' }, depth) : null)
   return <><div className={`sidebar-scrim ${p.open ? 'visible' : ''}`} onClick={p.onClose} />
-    <aside className={`sidebar ${p.open ? 'open' : ''}`}>
-      <div className="brand"><div className="brand-mark"><BookOpen size={22} strokeWidth={1.7} /></div><div><strong>echo<span>.</span></strong><small>让想法有处安放</small></div><button className="icon-button mobile-close" aria-label="关闭目录" onClick={p.onClose}><X size={18} /></button></div>
+    <aside id="note-sidebar" className={`sidebar ${p.open ? 'open' : ''}`} inert={!p.open}>
+      <div className="brand"><Logo /><div><strong>echo<span>.</span></strong><small>让想法有处安放</small></div><button className="icon-button mobile-close" aria-label="关闭目录" onClick={p.onClose}><X size={18} /></button></div>
       <div className="sidebar-search"><Search size={15} /><input aria-label="搜索笔记" value={p.search} onChange={e => p.setSearch(e.target.value)} placeholder="搜索笔记…" /><kbd>Ctrl K</kbd>{p.search && <button className="icon-button" aria-label="清除搜索" onClick={() => p.setSearch('')}><X size={12} /></button>}</div>
       <button className="new-note" onClick={p.onCreate}><Plus size={17} /><span>新建笔记</span></button>
       <nav className="workspace-nav" aria-label="工作区"><button className={p.view === 'note' ? 'active' : ''} onClick={() => { p.setGroup(null); p.setFilterTags([]); p.setSearch(''); if (p.notes[0]) p.onSelect(p.active || p.notes[0].path) }}><BookOpen size={16} /><span>全部笔记</span><span className="nav-count">{p.notes.length}</span></button><button className={p.view === 'tasks' ? 'active' : ''} onClick={() => p.onView('tasks')}><ListTodo size={16} /><span>计划与提醒</span></button><button className={p.view === 'board' ? 'active' : ''} onClick={() => p.onView('board')}><LayoutGrid size={16} /><span>任务看板</span></button></nav>

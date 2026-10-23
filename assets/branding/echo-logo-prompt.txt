@@ -1,0 +1,9 @@
+Edited with the built-in image_gen tool, with transparent_background=true.
+Input: the previously generated lavender Echo logo; only the palette changes.
+
+Edit the provided Echo logo, changing ONLY its color palette.
+Keep the circular silhouette, centered open-book symbol, page folds, the two echo arcs above the right page, proportions, orientation, and composition identical.
+Replace the lavender circular interior with a warm, soft ivory / off-white background (#F7F2E8).
+Recolor the open book and both echo arcs to a refined warm gold (#B28D46), with enough contrast and weight to remain legible at 24–42 pixels.
+Use clean flat colors, with no purple remaining. No new elements, text, border, shadow, 3D effect, metallic glare or mockup.
+Preserve a genuinely transparent RGBA background outside the circular emblem: every pixel outside the circular silhouette must have alpha zero, apart from clean antialiased edge pixels. The ivory background belongs ONLY inside the circle. Do not add any square or rectangular background, and do not paint a checkerboard. Return one finished square PNG with real alpha transparency.

@@ -30,6 +30,8 @@ function deferred() {
 
 function createServer() {
   let note: Note = { path: '测试.md', title: '测试笔记', metadata: { tags: [], group: '' }, revision: 'v1', modified: '2026-10-22T12:00:00Z', content: '# 初始笔记\n' }
+  let savedSettings = { ...settings }
+  let settingsError = false
   let version = 1
   let nextWriteGate: ReturnType<typeof deferred> | undefined
   let nextConflict: Note | undefined
@@ -41,7 +43,13 @@ function createServer() {
     const method = init?.method || 'GET'
     const body = typeof init?.body === 'string' ? JSON.parse(init.body) : undefined
     calls.push({ method, path: url.pathname, body })
-    if (url.pathname === '/api/settings') return response(settings)
+    if (url.pathname === '/api/settings') {
+      if (method === 'PUT') {
+        if (settingsError) { settingsError = false; return response({ error: '设置写入失败' }, 500) }
+        savedSettings = body as Settings
+      }
+      return response(savedSettings)
+    }
     if (url.pathname === '/api/notes' && method === 'GET') return response(url.searchParams.has('path') ? note : [{ ...note, content: '' }])
     if (url.pathname === '/api/tree') return response([{ path: note.path, name: note.path, type: 'note' }])
     if (url.pathname === '/api/groups') return response(['工作'])
@@ -67,7 +75,7 @@ function createServer() {
     }
     throw new Error(`Unexpected request: ${method} ${url.pathname}`)
   })
-  return { fetch, writes, batches, calls, current: () => note, delayNextWrite: () => { nextWriteGate = deferred(); return nextWriteGate }, conflictNextWrite: (disk: Note) => { nextConflict = disk } }
+  return { fetch, writes, batches, calls, current: () => note, savedSettings: () => savedSettings, failNextSettings: () => { settingsError = true }, delayNextWrite: () => { nextWriteGate = deferred(); return nextWriteGate }, conflictNextWrite: (disk: Note) => { nextConflict = disk } }
 }
 
 beforeEach(() => {
@@ -86,6 +94,108 @@ async function openApp(server: ReturnType<typeof createServer>) {
   return editor
 }
 function saveShortcut() { fireEvent.keyDown(window, { key: 's', ctrlKey: true }) }
+
+describe('App appearance settings', () => {
+  it('previews themes and preset or custom accents immediately and restores them on cancel', async () => {
+    const server = createServer()
+    await openApp(server)
+    fireEvent.click(screen.getByRole('button', { name: '设置' }))
+    fireEvent.click(screen.getByRole('button', { name: '暗黑' }))
+    fireEvent.click(screen.getByRole('button', { name: '强调色 #9379b7' }))
+    expect(document.documentElement).toHaveAttribute('data-theme', 'dark')
+    expect(document.documentElement.style.getPropertyValue('--accent')).toBe('#9379b7')
+    expect(screen.getByRole('button', { name: '暗黑' })).toHaveAttribute('aria-pressed', 'true')
+    fireEvent.click(screen.getByRole('button', { name: '跟随系统' }))
+    expect(document.documentElement).toHaveAttribute('data-theme', 'light')
+    fireEvent.change(screen.getByLabelText('自定义强调色'), { target: { value: '#123abc' } })
+    expect(document.documentElement.style.getPropertyValue('--accent')).toBe('#123abc')
+    expect(server.calls.filter(call => call.path === '/api/settings' && call.method === 'PUT')).toHaveLength(0)
+    expect(JSON.parse(localStorage.getItem('echo:settings')!)).toMatchObject({ theme: 'light', accent: '#72967b' })
+
+    fireEvent.click(screen.getByRole('button', { name: '取消' }))
+    expect(document.documentElement).toHaveAttribute('data-theme', 'light')
+    expect(document.documentElement.style.getPropertyValue('--accent')).toBe('#72967b')
+    fireEvent.click(screen.getByRole('button', { name: '设置' }))
+    expect(screen.getByRole('button', { name: '明亮' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByLabelText('自定义强调色')).toHaveValue('#72967b')
+  })
+
+  it('persists a saved appearance and restores it from the server when the app reloads', async () => {
+    const server = createServer()
+    await openApp(server)
+    fireEvent.click(screen.getByRole('button', { name: '设置' }))
+    fireEvent.click(screen.getByRole('button', { name: '暗黑' }))
+    fireEvent.click(screen.getByRole('button', { name: '强调色 #5885b5' }))
+    fireEvent.click(screen.getByRole('button', { name: '保存设置' }))
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: '设置' })).not.toBeInTheDocument())
+    expect(server.savedSettings()).toMatchObject({ theme: 'dark', accent: '#5885b5' })
+    expect(JSON.parse(localStorage.getItem('echo:settings')!)).toMatchObject({ theme: 'dark', accent: '#5885b5' })
+
+    cleanup()
+    localStorage.removeItem('echo:settings')
+    await openApp(server)
+    expect(document.documentElement).toHaveAttribute('data-theme', 'dark')
+    expect(document.documentElement.style.getPropertyValue('--accent')).toBe('#5885b5')
+  })
+
+  it('keeps a failed save editable without persisting the preview and restores it on close', async () => {
+    const server = createServer()
+    server.failNextSettings()
+    await openApp(server)
+    fireEvent.click(screen.getByRole('button', { name: '设置' }))
+    fireEvent.click(screen.getByRole('button', { name: '暗黑' }))
+    fireEvent.click(screen.getByRole('button', { name: '强调色 #bd7790' }))
+    fireEvent.click(screen.getByRole('button', { name: '保存设置' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('设置写入失败')
+    expect(document.documentElement).toHaveAttribute('data-theme', 'dark')
+    expect(server.savedSettings()).toMatchObject({ theme: 'light', accent: '#72967b' })
+    expect(JSON.parse(localStorage.getItem('echo:settings')!)).toMatchObject({ theme: 'light', accent: '#72967b' })
+
+    fireEvent.click(screen.getByRole('button', { name: '关闭弹窗' }))
+    expect(document.documentElement).toHaveAttribute('data-theme', 'light')
+    expect(document.documentElement.style.getPropertyValue('--accent')).toBe('#72967b')
+  })
+})
+
+describe('App sidebar navigation', () => {
+  it('collapses the desktop sidebar and reopens it with Ctrl+K before focusing search', async () => {
+    await openApp(createServer())
+    const toggle = screen.getByRole('button', { name: '折叠目录' })
+    expect(toggle).toHaveAttribute('aria-expanded', 'true')
+    expect(toggle).toHaveAttribute('aria-controls', 'note-sidebar')
+
+    fireEvent.click(toggle)
+    expect(screen.getByRole('button', { name: '展开目录' })).toHaveAttribute('aria-expanded', 'false')
+    expect(document.getElementById('note-sidebar')).toHaveAttribute('inert')
+    expect(screen.queryByRole('separator', { name: '调整目录宽度' })).not.toBeInTheDocument()
+
+    fireEvent.keyDown(window, { key: 'k', ctrlKey: true })
+    await waitFor(() => expect(screen.getByRole('textbox', { name: '搜索笔记' })).toHaveFocus())
+    expect(document.getElementById('note-sidebar')).not.toHaveAttribute('inert')
+    expect(screen.getByRole('separator', { name: '调整目录宽度' })).toBeVisible()
+
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: '测试笔记' })) })
+    expect(screen.getByRole('button', { name: '折叠目录' })).toHaveAttribute('aria-expanded', 'true')
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: '计划与提醒' })) })
+    expect(await screen.findByTestId('tasks-view')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '折叠目录' })).toHaveAttribute('aria-expanded', 'true')
+  })
+
+  it('starts closed on mobile and closes again after selecting a note or the close button', async () => {
+    vi.mocked(matchMedia).mockImplementation(media => ({ matches: media === '(max-width: 760px)', media, onchange: null, addListener: vi.fn(), removeListener: vi.fn(), addEventListener: vi.fn(), removeEventListener: vi.fn(), dispatchEvent: vi.fn() }))
+    await openApp(createServer())
+    expect(screen.getByRole('button', { name: '展开目录' })).toHaveAttribute('aria-expanded', 'false')
+
+    fireEvent.click(screen.getByRole('button', { name: '展开目录' }))
+    expect(screen.getByRole('button', { name: '折叠目录' })).toHaveAttribute('aria-expanded', 'true')
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: '测试笔记' })) })
+    expect(screen.getByRole('button', { name: '展开目录' })).toHaveAttribute('aria-expanded', 'false')
+
+    fireEvent.click(screen.getByRole('button', { name: '展开目录' }))
+    fireEvent.click(screen.getByRole('button', { name: '关闭目录' }))
+    expect(screen.getByRole('button', { name: '展开目录' })).toHaveAttribute('aria-expanded', 'false')
+  })
+})
 
 describe('App saves and metadata integration', () => {
   it('loads a note, keeps a local draft immediately and autosaves after the debounce', async () => {
