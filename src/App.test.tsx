@@ -14,7 +14,9 @@ vi.mock('motion/react', async () => {
   const React = await import('react')
   type Props = React.ComponentProps<'div'> & { initial?: unknown; animate?: unknown; exit?: unknown; transition?: unknown }
   const Div = React.forwardRef<HTMLDivElement, Props>(({ initial: _initial, animate: _animate, exit: _exit, transition: _transition, ...props }, ref) => React.createElement('div', { ...props, ref }))
-  return { MotionConfig: ({ children }: { children: React.ReactNode }) => children, AnimatePresence: ({ children }: { children: React.ReactNode }) => children, motion: { div: Div } }
+  type ButtonProps = React.ComponentProps<'button'> & Pick<Props, 'initial' | 'animate' | 'exit' | 'transition'>
+  const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(({ initial: _initial, animate: _animate, exit: _exit, transition: _transition, ...props }, ref) => React.createElement('button', { ...props, ref }))
+  return { MotionConfig: ({ children }: { children: React.ReactNode }) => children, AnimatePresence: ({ children }: { children: React.ReactNode }) => children, motion: { div: Div, button: Button } }
 })
 
 const settings: Settings = { theme: 'light', accent: '#72967b', animations: false, editorLineNumbers: true, previewLineNumbers: false, assetsDir: '.assets' }
@@ -46,6 +48,7 @@ function createServer(extraNotes: Note[] = []) {
     const method = init?.method || 'GET'
     const body = typeof init?.body === 'string' ? JSON.parse(init.body) : undefined
     calls.push({ method, path: url.pathname, body })
+    if (url.pathname === '/api/storage/open' && method === 'POST') return response({ ok: true })
     if (url.pathname === '/api/settings') {
       if (method === 'PUT') {
         if (settingsError) { settingsError = false; return response({ error: '设置写入失败' }, 500) }
@@ -277,6 +280,46 @@ describe('App settings navigation and storage', () => {
 })
 
 describe('App sidebar navigation', () => {
+  it('opens the notebook directory from the local space card and blocks duplicate clicks while opening', async () => {
+    const server = createServer()
+    const gate = deferred()
+    const normalFetch = server.fetch.getMockImplementation()!
+    server.fetch.mockImplementation(async (input, init) => {
+      if (String(input) === '/api/storage/open') await gate.promise
+      return normalFetch(input, init)
+    })
+    const editor = await openApp(server)
+    const button = screen.getByRole('button', { name: '本地空间：打开笔记库目录' })
+    fireEvent.click(button)
+    expect(button).toBeDisabled()
+    expect(button).toHaveAttribute('aria-busy', 'true')
+    expect(button).toHaveTextContent('正在打开文件浏览器…')
+    fireEvent.click(button)
+    await act(async () => { gate.resolve(); await gate.promise })
+    expect(await screen.findByText('已打开笔记库目录。')).toBeInTheDocument()
+    expect(button).toBeEnabled()
+    expect(server.calls.filter(call => call.path === '/api/storage/open')).toEqual([{ method: 'POST', path: '/api/storage/open', body: undefined }])
+    expect(server.writes).toHaveLength(0)
+    expect(editor.value).toBe('# 初始笔记\n')
+  })
+
+  it('shows a desktop launch failure and allows retrying the local space button', async () => {
+    const server = createServer()
+    const normalFetch = server.fetch.getMockImplementation()!
+    let fail = true
+    server.fetch.mockImplementation(async (input, init) => {
+      if (String(input) === '/api/storage/open' && fail) { fail = false; return response({ error: '无法打开文件浏览器' }, 400) }
+      return normalFetch(input, init)
+    })
+    await openApp(server)
+    const button = screen.getByRole('button', { name: '本地空间：打开笔记库目录' })
+    fireEvent.click(button)
+    expect(await screen.findByText('无法打开文件浏览器')).toBeInTheDocument()
+    expect(button).toBeEnabled()
+    fireEvent.click(button)
+    expect(await screen.findByText('已打开笔记库目录。')).toBeInTheDocument()
+  })
+
   it('collapses the desktop sidebar and reopens it with Ctrl+K before focusing search', async () => {
     await openApp(createServer())
     const toggle = screen.getByRole('button', { name: '折叠目录' })

@@ -18,13 +18,14 @@ import (
 )
 
 type handler struct {
-	store *Store
-	dev   bool
-	web   http.Handler
+	store         *Store
+	dev           bool
+	web           http.Handler
+	openDirectory func(string) error
 }
 
 func NewHandler(store *Store, dev bool) http.Handler {
-	return &handler{store: store, dev: dev, web: web.Handler()}
+	return &handler{store: store, dev: dev, web: web.Handler(), openDirectory: openNotebookDirectory}
 }
 func jsonResponse(w http.ResponseWriter, status int, value any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
@@ -362,6 +363,14 @@ func (h *handler) api(w http.ResponseWriter, r *http.Request) error {
 				return err
 			}
 			s.changed()
+			jsonResponse(w, 200, map[string]bool{"ok": true})
+			return nil
+		}
+	case "/api/storage/open":
+		if method == "POST" {
+			if err := h.openDirectory(s.root); err != nil {
+				return err
+			}
 			jsonResponse(w, 200, map[string]bool{"ok": true})
 			return nil
 		}

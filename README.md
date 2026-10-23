@@ -42,6 +42,7 @@ npm run build
 ## 编辑、分类和外观
 
 - 左侧按真实目录或独立逻辑分组浏览笔记，支持搜索、标签筛选、创建、移动、重命名、删除和回收站恢复。
+- 点击侧栏「本地空间」，在系统文件浏览器中打开当前笔记库根目录。
 - 右侧使用小尺寸「源码 / 预览」Tab，不使用编辑/预览双栏。CodeMirror 提供查找替换、撤销重做、折叠、自动补全和快捷工具栏。
 - Markdown 预览支持标题、引用、列表、GFM 表格、勾选任务、图片与代码块；代码高亮和源码/预览行号分别可配置。
 - 约 800ms 自动保存，也可以按 `Ctrl+S`。界面显示保存状态；保存失败保留本地草稿。外部编辑或其他标签页产生冲突时，不直接覆盖磁盘内容，可比较后保留草稿副本或明确覆盖。
@@ -139,7 +140,7 @@ npm run build
 | `/trash`、`/trash/restore` | 回收站和恢复 |
 | `/groups`、`/tags` | 独立分组和标签管理 |
 | `/assets`、`/settings` | 图片上传读取、配置和资源迁移 |
-| `/storage`、`/storage/unused-assets`、`/storage/cleanup` | 存储占用、未引用图片检查与清理 |
+| `/storage`、`/storage/open`、`/storage/unused-assets`、`/storage/cleanup` | 存储占用、打开笔记库目录、未引用图片检查与清理 |
 | `/tasks`、`/reminders`、`/reminders/ack` | 任务排期、提醒查询与确认 |
 | `/events` | SSE 文件变更和提醒事件 |
 | `/exports` | Markdown 下载、资源 ZIP 和一致性导出快照 |
