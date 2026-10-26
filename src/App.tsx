@@ -15,7 +15,11 @@ import { NoteTabs } from './components/NoteTabs'
 import { TasksView } from './components/TasksView'
 import { exportNotes } from './export'
 
-const defaults: Settings = { theme: 'system', accent: '#72967b', animations: true, editorFontSize: 14, editorLineNumbers: true, previewLineNumbers: false, multiTabs: false, assetsDir: '.assets' }
+const defaults: Settings = { theme: 'system', accent: '#72967b', animations: true, editorFontSize: 14, editorLineNumbers: true, previewLineNumbers: false, multiTabs: false, assetsDir: '.assets', shortcuts: {} }
+function completeSettings(value?: Partial<Settings> | null): Settings {
+  const shortcuts = value?.shortcuts && typeof value.shortcuts === 'object' ? value.shortcuts : {}
+  return { ...defaults, ...value, shortcuts }
+}
 const MAX_TABS = 10
 const tabsKey = 'echo:tabs'
 function readTabs(): string[] {
@@ -45,7 +49,7 @@ function neighborTab(list: string[], path: string, keep: (path: string) => boole
 type Prompt = { title: string; label?: string; value?: string; description?: string; confirm?: string; danger?: boolean }
 type Toast = { id: number; text: string; error?: boolean }
 const draftKey = (path: string) => `echo:draft:${path}`
-function cachedSettings(): Settings { try { return { ...defaults, ...JSON.parse(localStorage.getItem('echo:settings') || '{}') } } catch { return defaults } }
+function cachedSettings(): Settings { try { return completeSettings(JSON.parse(localStorage.getItem('echo:settings') || '{}')) } catch { return completeSettings() } }
 
 export default function App() {
   const [notes, setNotes] = useState<NoteSummary[]>([])
@@ -172,7 +176,7 @@ export default function App() {
       try {
         const loaded = await api<Settings>('/settings')
         if (!mounted.current) return
-        const loadedSettings = { ...defaults, ...loaded }
+        const loadedSettings = completeSettings(loaded)
         settingsRef.current = loadedSettings
         setSettings(loadedSettings)
         const list = await refresh()
@@ -329,7 +333,7 @@ export default function App() {
     finally { setOpeningDirectory(false) }
   }
   async function prepareStorageAction() { if (uploadsInFlight.current) throw new Error('图片正在上传，请完成后再检查清理。'); await saveActive(); if (uploadsInFlight.current) throw new Error('图片正在上传，请完成后再检查清理。') }
-  async function saveSettings(next: Settings) { await saveActive(); const result = { ...defaults, ...await api<Settings>('/settings', json('PUT', next)) }; settingsRef.current = result; setSettings(result); await refresh(); if (noteRef.current) await loadNote(noteRef.current.path, false); toast('设置已保存。') }
+  async function saveSettings(next: Settings) { await saveActive(); const result = completeSettings(await api<Settings>('/settings', json('PUT', next))); settingsRef.current = result; setSettings(result); await refresh(); if (noteRef.current) await loadNote(noteRef.current.path, false); toast('设置已保存。') }
   const filtered = notes.filter(n => (group === null || n.metadata.group === group) && filterTags.every(t => n.metadata.tags.includes(t)) && (!search || (searchPaths ? searchPaths.includes(n.path) : `${n.title} ${n.path}`.toLowerCase().includes(search.toLowerCase()))))
   const exportPaths = exportNotePath ? [exportNotePath] : exportScope === 'current' ? note ? [note.path] : [] : exportScope === 'selected' ? selected : filtered.map(n => n.path)
   async function doExport() { setBusy(true); try { await exportNotes({ paths: exportPaths, format: exportFormat, lineNumbers: settings.previewLineNumbers, beforeExport: saveActive, onWarning: async warning => (await ask({ title: '导出资源提示', description: [...(warning.missing.length ? [`缺失资源：${warning.missing.join('、')}`] : []), ...(warning.external.length ? [`包含 ${warning.external.length} 张外链图片，离线时可能无法显示。`] : [])].join('\n'), confirm: '继续导出' })) !== null }); setDialog(null); toast(exportFormat === 'pdf' ? '打印视图已打开，请选择“另存为 PDF”。' : '导出已完成。') } finally { setBusy(false) } }
@@ -347,7 +351,7 @@ export default function App() {
         <div className="note-body">
           {outlineOpen && <NoteOutline key={note.path} content={content} onNavigate={navigateHeading} onClose={closeOutline} />}
           <div className="note-content">
-            <div ref={sourceArea} className="editor-area" style={{ display: mode === 'source' ? undefined : 'none' }}><Editor key={note.path} value={content} onChange={changeContent} fontSize={appearance.editorFontSize} lineNumbers={settings.editorLineNumbers} dark={dark} onUpload={upload} onSave={() => run(saveActive)} /></div><div ref={previewRef} className="preview-area" style={{ display: mode === 'preview' ? undefined : 'none' }}><MarkdownView content={content} notePath={note.path} fontSize={appearance.editorFontSize} lineNumbers={settings.previewLineNumbers} onNavigate={path => run(() => loadNote(path))} onToggleTask={(line, checked) => run(async () => { await saveActive(); const latest = await api<Task[]>('/tasks'); const task = latest.find(t => t.notePath === note.path && t.line === line); if (!task) throw new Error('任务位置发生变化，请重试。'); await updateTask(task, { status: checked ? 'done' : 'todo' }) })} /></div>
+            <div ref={sourceArea} className="editor-area" style={{ display: mode === 'source' ? undefined : 'none' }}><Editor key={note.path} value={content} onChange={changeContent} fontSize={appearance.editorFontSize} lineNumbers={settings.editorLineNumbers} dark={dark} shortcuts={settings.shortcuts} onUpload={upload} onSave={() => run(saveActive)} /></div><div ref={previewRef} className="preview-area" style={{ display: mode === 'preview' ? undefined : 'none' }}><MarkdownView content={content} notePath={note.path} fontSize={appearance.editorFontSize} lineNumbers={settings.previewLineNumbers} onNavigate={path => run(() => loadNote(path))} onToggleTask={(line, checked) => run(async () => { await saveActive(); const latest = await api<Task[]>('/tasks'); const task = latest.find(t => t.notePath === note.path && t.line === line); if (!task) throw new Error('任务位置发生变化，请重试。'); await updateTask(task, { status: checked ? 'done' : 'todo' }) })} /></div>
           </div>
         </div>
         <footer className="statusbar"><span><span className="local-dot" /><time dateTime={note.modified} title="最后更新">{new Date(note.modified).toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false })}</time></span><div><span>{content.replace(/\s/g, '').length.toLocaleString()} 字符</span><span>{content.split('\n').length} 行</span><span>UTF-8</span></div></footer></div> : <div className="empty-state"><div className="empty-symbol"><BookOpen size={36} strokeWidth={1.3} /></div><h1>留一点空间，给新的想法。</h1><p>选择一篇笔记，或开始记录你的第一份灵感。</p><button className="button primary" onClick={() => run(createNote)}><Plus size={16} />新建笔记</button></div> : <TasksView tasks={tasks} mode={view} onUpdate={updateTask} onNavigate={task => run(async () => { await loadNote(task.notePath); setMode('source'); setTimeout(() => { const editor = document.querySelector('.cm-editor'); editor?.dispatchEvent(new CustomEvent('echo:goto-line', { detail: task.line, bubbles: true })) }, 50) })} />}

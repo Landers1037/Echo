@@ -19,14 +19,15 @@ import (
 )
 
 type Settings struct {
-	Theme              string `json:"theme"`
-	Accent             string `json:"accent"`
-	Animations         bool   `json:"animations"`
-	EditorFontSize     int    `json:"editorFontSize"`
-	EditorLineNumbers  bool   `json:"editorLineNumbers"`
-	PreviewLineNumbers bool   `json:"previewLineNumbers"`
-	MultiTabs          bool   `json:"multiTabs"`
-	AssetsDir          string `json:"assetsDir"`
+	Theme              string            `json:"theme"`
+	Accent             string            `json:"accent"`
+	Animations         bool              `json:"animations"`
+	EditorFontSize     int               `json:"editorFontSize"`
+	EditorLineNumbers  bool              `json:"editorLineNumbers"`
+	PreviewLineNumbers bool              `json:"previewLineNumbers"`
+	MultiTabs          bool              `json:"multiTabs"`
+	AssetsDir          string            `json:"assetsDir"`
+	Shortcuts          map[string]string `json:"shortcuts"`
 }
 type Note struct {
 	Path          string   `json:"path"`
@@ -74,7 +75,7 @@ type Conflict struct{ Current Note }
 func (e *Conflict) Error() string { return "笔记已被其他窗口或外部程序修改" }
 
 func defaults() Settings {
-	return Settings{Theme: "system", Accent: "#72967b", Animations: true, EditorFontSize: 14, EditorLineNumbers: true, PreviewLineNumbers: false, MultiTabs: false, AssetsDir: ".assets"}
+	return Settings{Theme: "system", Accent: "#72967b", Animations: true, EditorFontSize: 14, EditorLineNumbers: true, PreviewLineNumbers: false, MultiTabs: false, AssetsDir: ".assets", Shortcuts: map[string]string{}}
 }
 func newID() string { var b [12]byte; _, _ = rand.Read(b[:]); return hex.EncodeToString(b[:]) }
 func revision(content []byte) string {
@@ -115,6 +116,9 @@ func Open(root string) (*Store, error) {
 	}
 	if s.state.Settings.AssetsDir == "" {
 		s.state.Settings.AssetsDir = ".assets"
+	}
+	if s.state.Settings.Shortcuts == nil {
+		s.state.Settings.Shortcuts = map[string]string{}
 	}
 	if err = s.recoverMigration(); err != nil {
 		return nil, err

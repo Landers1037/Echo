@@ -20,6 +20,31 @@ import (
 
 var markdownLink = regexp.MustCompile(`(!?\[[^\]\r\n]*\]\(\s*)(<[^>\r\n]+>|[^\s)]+)([^)\r\n]*\))`)
 var markdownDefinition = regexp.MustCompile(`(?m)^( {0,3}\[[^\]\r\n]+\]:\s*)(<[^>\r\n]+>|[^\s\r\n]+)([^\r\n]*)`)
+var shortcutActionID = regexp.MustCompile(`^[a-zA-Z0-9]+$`)
+var shortcutBinding = regexp.MustCompile(`^((Mod|Ctrl|Alt|Shift|Meta)-)*[^\s-]+$`)
+
+func validateShortcuts(shortcuts map[string]string) error {
+	if len(shortcuts) > 64 {
+		return fmt.Errorf("快捷键数量过多")
+	}
+	seen := map[string]bool{}
+	for action, binding := range shortcuts {
+		if len(action) > 40 || !shortcutActionID.MatchString(action) {
+			return fmt.Errorf("无效的快捷键动作")
+		}
+		if binding == "" {
+			continue
+		}
+		if len(binding) > 40 || !shortcutBinding.MatchString(binding) {
+			return fmt.Errorf("无效的快捷键")
+		}
+		if seen[binding] {
+			return fmt.Errorf("快捷键不能重复")
+		}
+		seen[binding] = true
+	}
+	return nil
+}
 
 func markdownImageSources(content string) []string {
 	_, body, _, _ := frontmatter(content)
@@ -627,6 +652,12 @@ func (s *Store) updateSettings(settings Settings) error {
 	}
 	if settings.EditorFontSize < 12 || settings.EditorFontSize > 32 {
 		return fmt.Errorf("编辑器字体大小需要在 12–32 px 之间")
+	}
+	if settings.Shortcuts == nil {
+		settings.Shortcuts = map[string]string{}
+	}
+	if err := validateShortcuts(settings.Shortcuts); err != nil {
+		return err
 	}
 	dir, err := cleanRelative(settings.AssetsDir)
 	if err != nil {

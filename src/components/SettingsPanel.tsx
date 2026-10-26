@@ -1,12 +1,13 @@
-import { useEffect, useState } from 'react'
-import { Monitor, Moon, Sun, Palette, Sparkles, NotebookPen, HardDrive } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { Monitor, Moon, Sun, Palette, Sparkles, NotebookPen, HardDrive, Keyboard } from 'lucide-react'
 import { Modal, Switch } from './UI'
 import { StorageSettings } from './StorageSettings'
 import type { Settings, SettingsPreview } from '../types'
+import { canonicalShortcut, findConflict, formatShortcut, isBindableShortcut, keyFromEvent, resolveShortcuts, shortcutActions, shortcutGroups, withShortcut } from '../shortcuts'
 import './SettingsPanel.css'
 
 const accents = ['#72967b', '#5885b5', '#9379b7', '#bd8065', '#bd7790', '#a38d52']
-const sections = [{ id: 'appearance', label: '外观设置', icon: Palette }, { id: 'notes', label: '笔记设置', icon: NotebookPen }, { id: 'storage', label: '存储设置', icon: HardDrive }] as const
+const sections = [{ id: 'appearance', label: '外观设置', icon: Palette }, { id: 'notes', label: '笔记设置', icon: NotebookPen }, { id: 'shortcuts', label: '快捷键设置', icon: Keyboard }, { id: 'storage', label: '存储设置', icon: HardDrive }] as const
 
 export function SettingsPanel({ settings, onPreview, onSave, onClose, beforeStorageAction }: { settings: Settings; onPreview: (appearance: SettingsPreview | null) => void; onSave: (settings: Settings) => Promise<void>; onClose: () => void; beforeStorageAction: () => Promise<void> }) {
   const [draft, setDraft] = useState(settings)
@@ -41,10 +42,87 @@ export function SettingsPanel({ settings, onPreview, onSave, onClose, beforeStor
             <section className="settings-section"><h4>编辑与预览</h4><div className="setting-row"><span>源码编辑器行号</span><Switch label="源码编辑器行号" checked={draft.editorLineNumbers} onChange={editorLineNumbers => patch({ editorLineNumbers })} /></div><div className="setting-row"><span>预览代码块行号</span><Switch label="预览代码块行号" checked={draft.previewLineNumbers} onChange={previewLineNumbers => patch({ previewLineNumbers })} /></div></section>
             <section className="settings-section"><h4>标签页</h4><div className="setting-row"><div><strong>多笔记 Tab</strong><p>同时打开多篇笔记，最多 10 个，超出时自动关闭最早打开的。</p></div><Switch label="多笔记 Tab" checked={draft.multiTabs} onChange={multiTabs => patch({ multiTabs })} /></div></section>
           </>}
+          {section === 'shortcuts' && <ShortcutSettings shortcuts={draft.shortcuts ?? {}} disabled={locked} onChange={shortcuts => patch({ shortcuts })} />}
           {section === 'storage' && <StorageSettings assetsDir={settings.assetsDir} draftAssetsDir={draft.assetsDir} onDirectoryChange={assetsDir => patch({ assetsDir })} beforeAction={beforeStorageAction} onBusyChange={setStorageBusy} />}
         </fieldset></div>
       </div>
       <div className="settings-save-bar">{error && <p className="form-error" role="alert">{error}</p>}<div className="modal-actions"><button type="button" className="button" onClick={onClose} disabled={locked}>取消</button><button type="submit" className="button primary" disabled={locked}>{busy ? '正在保存…' : '保存设置'}</button></div></div>
     </form>
   </Modal>
+}
+
+function ShortcutSettings({ shortcuts, disabled, onChange }: { shortcuts: Record<string, string>; disabled: boolean; onChange: (shortcuts: Record<string, string>) => void }) {
+  const [recording, setRecording] = useState<string | null>(null)
+  const [error, setError] = useState('')
+  const [pending, setPending] = useState<{ actionId: string; shortcut: string; name: string } | null>(null)
+  const shortcutsRef = useRef(shortcuts)
+  const onChangeRef = useRef(onChange)
+  shortcutsRef.current = shortcuts
+  onChangeRef.current = onChange
+  const resolved = resolveShortcuts(shortcuts)
+  useEffect(() => { if (disabled) setRecording(null) }, [disabled])
+  useEffect(() => {
+    if (!recording || disabled) return
+    const onKey = (event: KeyboardEvent) => {
+      event.preventDefault()
+      event.stopPropagation()
+      event.stopImmediatePropagation()
+      if (event.repeat) return
+      if (event.key === 'Escape' && !event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey) { setRecording(null); setError(''); return }
+      const shortcut = keyFromEvent(event)
+      if (!shortcut || !isBindableShortcut(shortcut)) {
+        setError(event.ctrlKey || event.metaKey || event.altKey || event.shiftKey ? '这个按键无法用作快捷键。' : '请使用带 Ctrl、Cmd、Alt 或 Shift 的组合键。')
+        return
+      }
+      const conflict = findConflict(recording, shortcut, shortcutsRef.current)
+      if (conflict?.type === 'reserved') { setError(`${formatShortcut(shortcut)} 已被“${conflict.label}”占用，请换一个按键。`); return }
+      if (conflict?.type === 'action') { setRecording(null); setError(''); setPending({ actionId: recording, shortcut, name: conflict.name }); return }
+      onChangeRef.current(withShortcut(shortcutsRef.current, recording, shortcut))
+      setRecording(null)
+      setError('')
+      setPending(null)
+    }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [disabled, recording])
+
+  function confirmPending() {
+    if (!pending) return
+    const wanted = canonicalShortcut(pending.shortcut)
+    let next = shortcuts
+    for (const action of shortcutActions) {
+      const current = resolveShortcuts(next)[action.id]
+      if (action.id !== pending.actionId && current && canonicalShortcut(current) === wanted) next = withShortcut(next, action.id, '')
+    }
+    onChange(withShortcut(next, pending.actionId, pending.shortcut))
+    setPending(null)
+  }
+
+  const recordingAction = shortcutActions.find(action => action.id === recording)
+  return <>
+    <div className="settings-page-heading"><h3>快捷键设置</h3><button className="font-size-reset" type="button" onClick={() => { setRecording(null); setPending(null); setError(''); onChange({}) }} disabled={disabled || Object.keys(shortcuts).length === 0}>全部恢复默认</button></div>
+    <p className="field-help">为编辑器操作指定快捷键。组合键需要包含 Ctrl、Cmd、Alt 或 Shift，保存后生效。</p>
+    {recordingAction && <p className="shortcut-banner" role="status">请按下新的快捷键，Esc 取消。正在设置“{recordingAction.name}”。</p>}
+    {error && <p className="shortcut-banner shortcut-error" role="alert">{error}</p>}
+    {pending && <p className="shortcut-banner" role="alert">{formatShortcut(pending.shortcut)} 已被“{pending.name}”使用。<button type="button" onClick={confirmPending}>禁用并继续</button><button type="button" onClick={() => setPending(null)}>保留原快捷键</button></p>}
+    {shortcutGroups.map(group => <section className="settings-section" key={group.id}><h4>{group.label}</h4><div className="shortcut-list">{shortcutActions.filter(action => action.group === group.id).map(action => {
+      const shortcut = resolved[action.id] ?? ''
+      const recordingRow = recording === action.id
+      return <div className={recordingRow ? 'shortcut-row recording' : 'shortcut-row'} key={action.id}>
+        <span className="shortcut-name">{action.name}</span>
+        <ShortcutKeys shortcut={shortcut} recording={recordingRow} />
+        <div className="shortcut-actions">
+          <button type="button" aria-pressed={recordingRow} aria-label={recordingRow ? `取消修改${action.name}快捷键` : `修改${action.name}快捷键`} onClick={() => { setError(''); setPending(null); setRecording(current => current === action.id ? null : action.id) }}>{recordingRow ? '取消' : '修改'}</button>
+          <button type="button" aria-label={`禁用${action.name}快捷键`} disabled={!shortcut} onClick={() => { setRecording(current => current === action.id ? null : current); setError(''); onChange(withShortcut(shortcuts, action.id, '')) }}>禁用</button>
+          <button type="button" aria-label={`恢复${action.name}默认快捷键`} disabled={!Object.prototype.hasOwnProperty.call(shortcuts, action.id)} onClick={() => { setRecording(current => current === action.id ? null : current); setError(''); onChange(withShortcut(shortcuts, action.id, action.defaultKey)) }}>恢复默认</button>
+        </div>
+      </div>
+    })}</div></section>)}
+  </>
+}
+
+function ShortcutKeys({ shortcut, recording }: { shortcut: string; recording: boolean }) {
+  if (recording) return <span className="shortcut-keys"><span className="shortcut-empty">请按键…</span></span>
+  if (!shortcut) return <span className="shortcut-keys"><span className="shortcut-empty">未设置</span></span>
+  return <span className="shortcut-keys">{formatShortcut(shortcut).split(' + ').map((part, index) => <kbd key={`${part}-${index}`}>{part}</kbd>)}</span>
 }

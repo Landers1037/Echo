@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import App from './App'
 import { exportNotes } from './export'
 import type { Note, Settings, TreeEntry } from './types'
+import { keyFromEvent } from './shortcuts'
 
 vi.mock('./components/Editor', () => ({
   Editor: ({ value, onChange, fontSize }: { value: string; onChange: (value: string) => void; fontSize: number }) => <textarea className="cm-editor" aria-label="笔记源码" style={{ fontSize }} value={value} onChange={event => onChange(event.target.value)} />,
@@ -19,7 +20,7 @@ vi.mock('motion/react', async () => {
   return { MotionConfig: ({ children }: { children: React.ReactNode }) => children, AnimatePresence: ({ children }: { children: React.ReactNode }) => children, motion: { div: Div, button: Button } }
 })
 
-const settings: Settings = { theme: 'light', accent: '#72967b', animations: false, editorFontSize: 14, editorLineNumbers: true, previewLineNumbers: false, multiTabs: false, assetsDir: '.assets' }
+const settings: Settings = { theme: 'light', accent: '#72967b', animations: false, editorFontSize: 14, editorLineNumbers: true, previewLineNumbers: false, multiTabs: false, assetsDir: '.assets', shortcuts: {} }
 type Write = { path: string; content: string; revision: string; force?: boolean }
 type Batch = { paths: string[]; tags: string[]; group: string; revisions: Record<string, string> }
 type Call = { method: string; path: string; body?: unknown }
@@ -648,6 +649,49 @@ describe('App saves and metadata integration', () => {
     expect(localStorage.getItem('echo:draft:测试.md')).toBeNull()
     expect(server.writes).toHaveLength(1)
     expect(server.writes[0].force).not.toBe(true)
+  })
+})
+
+describe('editor shortcut settings', () => {
+  it('records a custom shortcut and saves only the override', async () => {
+    const server = createServer()
+    await openApp(server)
+    fireEvent.click(screen.getByRole('button', { name: '设置' }))
+    fireEvent.click(screen.getByRole('button', { name: '快捷键设置' }))
+    const bold = () => screen.getByText('加粗').closest('.shortcut-row') as HTMLElement
+    expect(within(bold()).getByText('B')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '禁用加粗快捷键' }))
+    expect(within(bold()).getByText('未设置')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '恢复加粗默认快捷键' }))
+    expect(within(bold()).getByText('B')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '修改加粗快捷键' }))
+    expect(screen.getByRole('status')).toHaveTextContent('请按下新的快捷键，Esc 取消')
+    const shortcut = keyFromEvent(new KeyboardEvent('keydown', { key: 'B', code: 'KeyB', ctrlKey: true, shiftKey: true }))
+    fireEvent.keyDown(window, { key: 'B', code: 'KeyB', ctrlKey: true, shiftKey: true })
+    expect(shortcut).toMatch(/Shift-b$/)
+    expect(within(bold()).getByText('Shift')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '保存设置' }))
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: '设置' })).not.toBeInTheDocument())
+    expect(server.savedSettings().shortcuts).toEqual({ bold: shortcut })
+  })
+
+  it('rejects reserved shortcuts and disables the action that already owns a key', async () => {
+    const server = createServer()
+    await openApp(server)
+    fireEvent.click(screen.getByRole('button', { name: '设置' }))
+    fireEvent.click(screen.getByRole('button', { name: '快捷键设置' }))
+    fireEvent.click(screen.getByRole('button', { name: '修改加粗快捷键' }))
+    fireEvent.keyDown(window, { key: 's', code: 'KeyS', ctrlKey: true })
+    expect(screen.getByRole('alert')).toHaveTextContent('已被“保存”占用')
+    expect(screen.getByRole('button', { name: '取消修改加粗快捷键' })).toBeInTheDocument()
+    fireEvent.keyDown(window, { key: 'i', code: 'KeyI', ctrlKey: true })
+    fireEvent.click(screen.getByRole('button', { name: '禁用并继续' }))
+    expect(screen.getByText('斜体').closest('.shortcut-row')).toHaveTextContent('未设置')
+    fireEvent.click(screen.getByRole('button', { name: '保存设置' }))
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: '设置' })).not.toBeInTheDocument())
+    const italic = keyFromEvent(new KeyboardEvent('keydown', { key: 'i', code: 'KeyI', ctrlKey: true }))
+    expect(server.savedSettings().shortcuts).toEqual({ bold: italic, italic: '' })
+    expect(server.calls.filter(call => call.path === '/api/settings' && call.method === 'PUT')).toHaveLength(1)
   })
 })
 

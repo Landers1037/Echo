@@ -62,13 +62,57 @@ function TaskCheckbox({ checked, onToggle }: { checked?: boolean; onToggle?: Mar
   return <input type="checkbox" checked={Boolean(checked)} disabled={!onToggle || line < 1} aria-label={checked ? '标记任务为未完成' : '标记任务为完成'} onChange={event => onToggle?.(line, event.target.checked)} />
 }
 
+type MarkdownNode = { type: string; value?: string; children?: MarkdownNode[]; data?: { hName?: string } }
+const openUnderline = /^<\s*u\s*>$/i
+const closeUnderline = /^<\s*\/\s*u\s*>$/i
+
+function htmlValue(node: MarkdownNode) {
+  return node.type === 'html' && typeof node.value === 'string' ? node.value.trim() : ''
+}
+
+function closingUnderline(children: MarkdownNode[], start: number) {
+  let depth = 1
+  for (let index = start; index < children.length; index++) {
+    const value = htmlValue(children[index])
+    if (openUnderline.test(value)) depth++
+    else if (closeUnderline.test(value)) {
+      depth--
+      if (depth === 0) return index
+    }
+  }
+  return -1
+}
+
+function wrapUnderline(node: MarkdownNode) {
+  if (!node.children) return
+  const next: MarkdownNode[] = []
+  for (let index = 0; index < node.children.length; index++) {
+    const child = node.children[index]
+    if (openUnderline.test(htmlValue(child))) {
+      const close = closingUnderline(node.children, index + 1)
+      if (close >= 0) {
+        next.push({ type: 'underline', data: { hName: 'u' }, children: node.children.slice(index + 1, close) })
+        index = close
+        continue
+      }
+    }
+    next.push(child)
+  }
+  node.children = next
+  for (const child of next) wrapUnderline(child)
+}
+
+export function remarkUnderline() {
+  return (tree: MarkdownNode) => { wrapUnderline(tree) }
+}
+
 function sourceHeading(tag: 'h1' | 'h2' | 'h3' | 'h4' | 'h5') {
   return ({ node, children, ...props }: ComponentPropsWithoutRef<'h1'> & ExtraProps) => createElement(tag, { ...props, 'data-heading-line': node?.position?.start.line, tabIndex: -1 }, children)
 }
 const previewHeadings = { h1: sourceHeading('h1'), h2: sourceHeading('h2'), h3: sourceHeading('h3'), h4: sourceHeading('h4'), h5: sourceHeading('h5') }
 
 export function MarkdownView({ content, notePath, assets, lineNumbers, fontSize, onNavigate, onToggleTask, exporting = false }: MarkdownViewProps) {
-  return <div className="markdown-body" style={!exporting && fontSize !== undefined ? { fontSize } : undefined}><ReactMarkdown remarkPlugins={[remarkGfm, remarkFrontmatter]} skipHtml components={{
+  return <div className="markdown-body" style={!exporting && fontSize !== undefined ? { fontSize } : undefined}><ReactMarkdown remarkPlugins={[remarkGfm, remarkFrontmatter, remarkUnderline]} skipHtml components={{
     ...(!exporting ? previewHeadings : {}),
     pre({ children }) { return <>{children}</> },
     code({ className, children, node }) {

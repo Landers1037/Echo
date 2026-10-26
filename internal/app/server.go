@@ -415,8 +415,14 @@ func (h *handler) api(w http.ResponseWriter, r *http.Request) error {
 		}
 		if method == "PUT" {
 			settings := s.state.Settings
+			previousShortcuts := settings.Shortcuts
+			// Decoding into an existing map merges keys, so clear it first and restore only when the request omits shortcuts.
+			settings.Shortcuts = nil
 			if err := decode(r, &settings); err != nil {
 				return err
+			}
+			if settings.Shortcuts == nil {
+				settings.Shortcuts = previousShortcuts
 			}
 			if err := s.updateSettings(settings); err != nil {
 				return err

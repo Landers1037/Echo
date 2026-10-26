@@ -44,6 +44,18 @@ describe('Markdown rendering', () => {
     expect(screen.getByAltText('照片')).toHaveAttribute('src', 'data:image/png;base64,abc')
   })
 
+  it('renders paired underline tags and still strips every other html tag', () => {
+    const { container, rerender } = render(<MarkdownView content={'普通 <u>下划线</u> 文字\n\n**<u>重点</u>**\n\n前文 <u>没有结束\n\n<u onclick="alert(1)">危险</u>\n\n<script>alert(1)</script>'} notePath="笔记.md" lineNumbers={false} />)
+    expect([...container.querySelectorAll('u')].map(node => node.textContent)).toEqual(['下划线', '重点'])
+    expect(container.querySelector('strong u')).toHaveTextContent('重点')
+    expect(container).toHaveTextContent('没有结束')
+    expect(container.querySelector('[onclick]')).toBeNull()
+    expect(container.querySelector('script')).toBeNull()
+    expect(container.innerHTML).not.toContain('alert')
+    rerender(<MarkdownView content="<u>导出</u>" notePath="笔记.md" lineNumbers={false} exporting />)
+    expect(container.querySelector('u')).toHaveTextContent('导出')
+  })
+
   it('renders GFM tables and prevents executable source HTML', () => {
     const { container } = render(<MarkdownView content={'| 名称 | 数量 |\n| --- | --- |\n| 示例 | 2 |\n\n<script>alert(1)</script>\n\n[危险链接](javascript:alert(1))'} notePath="test.md" lineNumbers={false} />)
     expect(screen.getByRole('table')).toHaveTextContent('示例')

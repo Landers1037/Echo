@@ -28,6 +28,19 @@
 .font-size-slider:disabled{cursor:default;opacity:.5}
 .editor-font-preview{display:flex;flex-direction:column;gap:4px;padding:16px;background:var(--panel);border:1px solid var(--border);border-radius:6px;font-family:var(--font-mono);line-height:1.9;overflow-wrap:anywhere}
 .editor-font-preview span:first-child{color:var(--accent)}
+.shortcut-banner{margin:0 0 16px;padding:10px 12px;border-radius:6px;background:var(--accent-soft);font-size:12px;line-height:1.7}
+.shortcut-banner.shortcut-error{background:color-mix(in srgb,#c8695b 12%,var(--bg));color:#c8695b}
+.shortcut-banner button{margin-left:8px;padding:4px 8px;color:var(--accent);font-size:12px}
+.shortcut-row{display:flex;align-items:center;gap:12px;padding:9px 0;border-bottom:1px solid var(--border)}
+.shortcut-row:last-child{border-bottom:0}
+.shortcut-row.recording{margin:0 -8px;padding:9px 8px;background:var(--accent-soft);border-radius:6px;border-bottom-color:transparent}
+.shortcut-name{flex:1;min-width:0;font-size:12px}
+.shortcut-keys{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:4px;min-width:88px}
+.shortcut-keys kbd{padding:2px 6px;border:1px solid var(--border);border-bottom-width:2px;border-radius:4px;background:var(--bg);font:11px/1.6 var(--font-mono);color:var(--text)}
+.shortcut-empty{font-size:11px;color:var(--muted)}
+.shortcut-actions{display:flex;flex-shrink:0;gap:2px}
+.shortcut-actions button{padding:5px 7px;color:var(--accent);font-size:11px;white-space:nowrap}
+.shortcut-actions button:disabled{color:var(--muted)}
 .storage-usage{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:20px}
 .storage-stat{display:flex;flex-direction:column;align-items:flex-start;gap:8px;padding:16px 13px;background:var(--panel);border:1px solid var(--border);border-radius:7px;min-width:0}
 .storage-stat svg{color:var(--accent)}
@@ -60,6 +73,8 @@
   .settings-modal .theme-option{min-width:60px;padding:12px 5px;font-size:11px;gap:8px}
   .settings-modal .accent-options{gap:10px}
   .settings-save-bar{padding:12px 16px}
+  .shortcut-row{flex-wrap:wrap;align-items:flex-start}
+  .shortcut-actions{width:100%;justify-content:flex-end}
   .storage-usage{grid-template-columns:1fr;gap:8px}
   .storage-stat{display:grid;grid-template-columns:20px minmax(0,1fr);gap:5px 9px;padding:12px}
   .storage-stat strong,.storage-stat small{grid-column:2}

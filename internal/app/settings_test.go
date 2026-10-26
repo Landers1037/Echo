@@ -3,8 +3,10 @@ package app
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -27,7 +29,7 @@ func TestEditorFontSizeLegacySettingsAndPersistence(t *testing.T) {
 	if err := json.Unmarshal(rr.Body.Bytes(), &settings); err != nil {
 		t.Fatal(err)
 	}
-	if rr.Code != 200 || settings.EditorFontSize != 14 || settings.Theme != "dark" {
+	if rr.Code != 200 || settings.EditorFontSize != 14 || settings.Theme != "dark" || settings.Shortcuts == nil {
 		t.Fatalf("legacy settings: %d %+v", rr.Code, settings)
 	}
 	rr = request(t, h, "PUT", "/api/settings", map[string]any{"editorFontSize": 20})
@@ -94,5 +96,67 @@ func TestMultiTabsPersistence(t *testing.T) {
 	}
 	if !reopened.state.Settings.MultiTabs || reopened.state.Settings.EditorFontSize != 14 || reopened.state.Settings.Theme != "system" {
 		t.Fatalf("multiTabs not persisted: %+v", reopened.state.Settings)
+	}
+}
+
+func TestShortcutPersistenceAndReplacement(t *testing.T) {
+	s := testStore(t)
+	if s.state.Settings.Shortcuts == nil {
+		t.Fatal("shortcuts should default to an empty map")
+	}
+	h := NewHandler(s, false)
+	rr := request(t, h, "PUT", "/api/settings", map[string]any{"shortcuts": map[string]string{"bold": "Mod-Shift-b", "italic": ""}})
+	if rr.Code != 200 || s.state.Settings.Shortcuts["bold"] != "Mod-Shift-b" || s.state.Settings.Shortcuts["italic"] != "" || len(s.state.Settings.Shortcuts) != 2 {
+		t.Fatalf("save shortcuts: %d %s", rr.Code, rr.Body.String())
+	}
+	reopened, err := Open(s.root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reopened.state.Settings.Shortcuts["bold"] != "Mod-Shift-b" || reopened.state.Settings.Shortcuts["italic"] != "" {
+		t.Fatalf("shortcuts not persisted: %+v", reopened.state.Settings.Shortcuts)
+	}
+	rr = request(t, h, "PUT", "/api/settings", map[string]any{"shortcuts": map[string]string{}})
+	if rr.Code != 200 || len(s.state.Settings.Shortcuts) != 0 {
+		t.Fatalf("empty shortcuts should replace previous overrides: %d %s", rr.Code, rr.Body.String())
+	}
+	rr = request(t, h, "PUT", "/api/settings", map[string]any{"shortcuts": map[string]string{"bold": "Mod-e"}})
+	if rr.Code != 200 {
+		t.Fatal(rr.Body.String())
+	}
+	rr = request(t, h, "PUT", "/api/settings", map[string]any{"editorLineNumbers": false})
+	if rr.Code != 200 || s.state.Settings.EditorLineNumbers || s.state.Settings.Shortcuts["bold"] != "Mod-e" || len(s.state.Settings.Shortcuts) != 1 {
+		t.Fatalf("partial update should keep shortcuts: %d %+v", rr.Code, s.state.Settings)
+	}
+}
+
+func TestShortcutValidationPreservesSettings(t *testing.T) {
+	s := testStore(t)
+	h := NewHandler(s, false)
+	stateFile := filepath.Join(s.root, ".echo", "state.json")
+	before, err := os.ReadFile(stateFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	many := map[string]string{}
+	for i := 0; i < 65; i++ {
+		many[fmt.Sprintf("action%d", i)] = fmt.Sprintf("Alt-%d", i)
+	}
+	cases := []map[string]any{
+		{"shortcuts": map[string]string{"bold": "Mod-e", "italic": "Mod-e"}},
+		{"shortcuts": map[string]string{"bad-id": "Mod-b"}},
+		{"shortcuts": map[string]string{"bold": "Mod-b extra"}},
+		{"shortcuts": map[string]string{"bold": strings.Repeat("a", 41)}},
+		{"shortcuts": many},
+	}
+	for _, body := range cases {
+		rr := request(t, h, "PUT", "/api/settings", body)
+		if rr.Code != 400 {
+			t.Fatalf("accepted %v: %d %s", body["shortcuts"], rr.Code, rr.Body.String())
+		}
+		after, readErr := os.ReadFile(stateFile)
+		if readErr != nil || !bytes.Equal(before, after) {
+			t.Fatalf("invalid shortcuts changed saved settings: %v", readErr)
+		}
 	}
 }

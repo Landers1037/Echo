@@ -5,11 +5,12 @@ import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
 import { languages } from '@codemirror/language-data'
 import { EditorView, keymap } from '@codemirror/view'
 import type { ViewUpdate } from '@codemirror/view'
-import type { Extension } from '@codemirror/state'
+import { Compartment, type Extension } from '@codemirror/state'
 import { autocompletion } from '@codemirror/autocomplete'
 import { searchKeymap } from '@codemirror/search'
-import { Bold, Italic, Heading, Strikethrough, Quote, List, ListOrdered, ListTodo, Link, ImagePlus, Code2, Table2, Undo2, Redo2, LoaderCircle, RefreshCw, X } from 'lucide-react'
+import { Bold, Italic, Heading, Strikethrough, Underline, Quote, List, ListOrdered, ListTodo, Link, ImagePlus, Code, Code2, Table2, Undo2, Redo2, LoaderCircle, RefreshCw, X } from 'lucide-react'
 import { undo, redo } from '@codemirror/commands'
+import { bindingFor, formatShortcut, shortcutBindings } from '../shortcuts'
 
 export type EditorProps = {
   value: string
@@ -20,15 +21,25 @@ export type EditorProps = {
   onUpload: (file: File) => Promise<string>
   onSave: () => void
   onTaskInsert?: () => void
+  shortcuts: Record<string, string>
 }
 
 type Upload = { id: number; file: File; status: 'uploading' | 'error'; error?: string }
 type Anchor = { from: number; to: number }
 
+function shortcutExtension(shortcuts: Record<string, string> | undefined, commands: { current: Record<string, () => void> }): Extension {
+  return keymap.of(shortcutBindings(shortcuts).map(binding => ({
+    key: binding.key,
+    run: () => { commands.current[binding.id]?.(); return true },
+  })))
+}
+
 export function Editor(props: EditorProps) {
   const view = useRef<EditorView | null>(null)
   const latest = useRef(props)
   latest.current = props
+  const shortcutCompartment = useRef(new Compartment()).current
+  const commands = useRef<Record<string, () => void>>({})
   const anchors = useRef(new Map<number, Anchor>())
   const uploadCounter = useRef(0)
   const fileInput = useRef<HTMLInputElement>(null)
@@ -76,6 +87,21 @@ export function Editor(props: EditorProps) {
     editor.focus()
   }
 
+  function setHeading(level: number) {
+    const editor = view.current
+    if (!editor) return
+    const { from, to } = editor.state.selection.main
+    const first = editor.state.doc.lineAt(from)
+    const last = editor.state.doc.lineAt(to)
+    const lines: string[] = []
+    for (let number = first.number; number <= last.number; number++) lines.push(editor.state.doc.line(number).text)
+    const marker = `${'#'.repeat(level)} `
+    const toggleOff = lines.every(line => line.startsWith(marker))
+    const insert = lines.map(line => toggleOff ? line.replace(/^#{1,6} /, '') : marker + line.replace(/^#{1,6} /, '')).join('\n')
+    editor.dispatch({ changes: { from: first.from, to: last.to, insert }, selection: { anchor: first.from, head: first.from + insert.length }, scrollIntoView: true })
+    editor.focus()
+  }
+
   function insertText(text: string) {
     const editor = view.current
     if (!editor) return
@@ -112,6 +138,24 @@ export function Editor(props: EditorProps) {
     void performUpload({ id, file, status: 'uploading' })
   }
 
+  commands.current = {
+    heading1: () => setHeading(1),
+    heading2: () => setHeading(2),
+    heading3: () => setHeading(3),
+    heading4: () => setHeading(4),
+    heading5: () => setHeading(5),
+    heading6: () => setHeading(6),
+    bold: () => replaceSelection('**', '**'),
+    italic: () => replaceSelection('*', '*'),
+    strikethrough: () => replaceSelection('~~', '~~'),
+    underline: () => replaceSelection('<u>', '</u>'),
+    inlineCode: () => replaceSelection('`', '`', '代码'),
+    codeBlock: () => replaceSelection('\n```javascript\n', '\n```\n', '// 在这里编写代码'),
+    quote: () => prefixLines('> '),
+    orderedList: () => prefixLines('1. '),
+    unorderedList: () => prefixLines('- '),
+  }
+
   const extensions = useMemo<Extension[]>(() => [
     markdown({ base: markdownLanguage, codeLanguages: languages }),
     autocompletion(),
@@ -123,10 +167,9 @@ export function Editor(props: EditorProps) {
         to: update.changes.mapPos(anchor.to, 1),
       })
     }),
+    shortcutCompartment.of(shortcutExtension(props.shortcuts, commands)),
     keymap.of([
       { key: 'Mod-s', run: () => { latest.current.onSave(); return true } },
-      { key: 'Mod-b', run: () => { replaceSelection('**', '**'); return true } },
-      { key: 'Mod-i', run: () => { replaceSelection('*', '*'); return true } },
       ...searchKeymap,
     ]),
     EditorView.domEventHandlers({
@@ -157,26 +200,35 @@ export function Editor(props: EditorProps) {
       '&.cm-focused': { outline: 'none' },
       '.cm-selectionBackground, &.cm-focused .cm-selectionBackground': { backgroundColor: 'var(--selection)' },
     }),
-  ], [])
+  ], [commands, props.shortcuts, shortcutCompartment])
+  useEffect(() => {
+    view.current?.dispatch({ effects: shortcutCompartment.reconfigure(shortcutExtension(props.shortcuts, commands)) })
+  }, [commands, props.shortcuts, shortcutCompartment])
 
+  function toolTitle(label: string, actionId?: string) {
+    const key = actionId ? bindingFor(props.shortcuts, actionId) : ''
+    return key ? `${label} (${formatShortcut(key)})` : label
+  }
   const tools = [
-    { icon: Heading, title: '标题', action: () => prefixLines('## ') },
-    { icon: Bold, title: '粗体 (Ctrl+B)', action: () => replaceSelection('**', '**') },
-    { icon: Italic, title: '斜体 (Ctrl+I)', action: () => replaceSelection('*', '*') },
-    { icon: Strikethrough, title: '删除线', action: () => replaceSelection('~~', '~~') },
-    { icon: Quote, title: '引用', action: () => prefixLines('> ') },
-    { icon: List, title: '无序列表', action: () => prefixLines('- ') },
-    { icon: ListOrdered, title: '有序列表', action: () => prefixLines('1. ') },
-    { icon: ListTodo, title: '待办任务', action: () => { prefixLines('- [ ] '); latest.current.onTaskInsert?.() } },
-    { icon: Link, title: '链接', action: () => replaceSelection('[', '](https://)', '链接文字') },
-    { icon: ImagePlus, title: '上传图片（也可直接粘贴）', action: () => fileInput.current?.click() },
-    { icon: Code2, title: '代码块', action: () => replaceSelection('\n```javascript\n', '\n```\n', '// 在这里编写代码') },
-    { icon: Table2, title: '插入表格', action: () => insertText('\n| 列一 | 列二 | 列三 |\n| --- | --- | --- |\n| 内容 | 内容 | 内容 |\n| 内容 | 内容 | 内容 |\n') },
+    { id: 'heading', icon: Heading, title: '标题', action: () => prefixLines('## ') },
+    { id: 'bold', icon: Bold, title: toolTitle('加粗', 'bold'), action: () => commands.current.bold?.() },
+    { id: 'italic', icon: Italic, title: toolTitle('斜体', 'italic'), action: () => commands.current.italic?.() },
+    { id: 'strikethrough', icon: Strikethrough, title: toolTitle('删除线', 'strikethrough'), action: () => commands.current.strikethrough?.() },
+    { id: 'underline', icon: Underline, title: toolTitle('下划线', 'underline'), action: () => commands.current.underline?.() },
+    { id: 'quote', icon: Quote, title: toolTitle('引用', 'quote'), action: () => commands.current.quote?.() },
+    { id: 'unordered', icon: List, title: toolTitle('无序列表', 'unorderedList'), action: () => commands.current.unorderedList?.() },
+    { id: 'ordered', icon: ListOrdered, title: toolTitle('有序列表', 'orderedList'), action: () => commands.current.orderedList?.() },
+    { id: 'task', icon: ListTodo, title: '待办任务', action: () => { prefixLines('- [ ] '); latest.current.onTaskInsert?.() } },
+    { id: 'link', icon: Link, title: '链接', action: () => replaceSelection('[', '](https://)', '链接文字') },
+    { id: 'image', icon: ImagePlus, title: '上传图片（也可直接粘贴）', action: () => fileInput.current?.click() },
+    { id: 'inlineCode', icon: Code, title: toolTitle('行内代码', 'inlineCode'), action: () => commands.current.inlineCode?.() },
+    { id: 'codeBlock', icon: Code2, title: toolTitle('代码块', 'codeBlock'), action: () => commands.current.codeBlock?.() },
+    { id: 'table', icon: Table2, title: '插入表格', action: () => insertText('\n| 列一 | 列二 | 列三 |\n| --- | --- | --- |\n| 内容 | 内容 | 内容 |\n| 内容 | 内容 | 内容 |\n') },
   ]
 
   return <div className="editor-shell" style={{ '--editor-font-size': `${props.fontSize}px` } as CSSProperties}>
     <div className="editor-toolbar" role="toolbar" aria-label="Markdown 快捷操作">
-      {tools.map(({ icon: Icon, title, action }) => <button key={title} type="button" className="icon-button" title={title} aria-label={title} onMouseDown={event => event.preventDefault()} onClick={action}><Icon size={16} strokeWidth={1.7} /></button>)}
+      {tools.map(({ id, icon: Icon, title, action }) => <button key={id} type="button" className="icon-button" title={title} aria-label={title} onMouseDown={event => event.preventDefault()} onClick={action}><Icon size={16} strokeWidth={1.7} /></button>)}
       <span className="toolbar-separator" />
       <button type="button" className="icon-button" title="撤销" aria-label="撤销" onClick={() => { if (view.current) undo(view.current) }}><Undo2 size={16} /></button>
       <button type="button" className="icon-button" title="重做" aria-label="重做" onClick={() => { if (view.current) redo(view.current) }}><Redo2 size={16} /></button>
