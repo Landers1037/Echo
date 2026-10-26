@@ -215,8 +215,10 @@ describe('App note navigation', () => {
     const server = createServer()
     const editor = await openApp(server)
     const toggle = screen.getByRole('button', { name: '导航' })
+    const fullscreen = screen.getByRole('button', { name: '全屏预览' })
     expect(toggle).toHaveAttribute('aria-expanded', 'false')
-    expect(screen.getByRole('tablist', { name: '编辑模式' }).nextElementSibling).toBe(toggle)
+    expect(screen.getByRole('tablist', { name: '编辑模式' }).nextElementSibling).toBe(fullscreen)
+    expect(fullscreen.nextElementSibling).toBe(toggle)
     expect(screen.queryByRole('navigation', { name: '笔记导航' })).not.toBeInTheDocument()
     fireEvent.click(toggle)
     expect(toggle).toHaveAttribute('aria-expanded', 'true')
@@ -240,6 +242,18 @@ describe('App note navigation', () => {
     fireEvent.click(toggle)
     fireEvent.click(toggle)
     expect(screen.queryByRole('navigation', { name: '笔记导航' })).not.toBeInTheDocument()
+  })
+
+  it('previews the current note across the screen and returns focus when closed', async () => {
+    await openApp(createServer())
+    const fullscreen = screen.getByRole('button', { name: '全屏预览' })
+    fireEvent.click(fullscreen)
+    const preview = screen.getByRole('region', { name: '全屏预览' })
+    expect(preview).toHaveTextContent('# 初始笔记')
+    expect(within(preview).getByRole('heading', { name: '测试笔记' })).toBeInTheDocument()
+    fireEvent.click(within(preview).getByRole('button', { name: '退出全屏' }))
+    expect(screen.queryByRole('region', { name: '全屏预览' })).not.toBeInTheDocument()
+    expect(fullscreen).toHaveFocus()
   })
 
   it('shows an empty state and switches to the headings of the newly opened note', async () => {

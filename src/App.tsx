@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import type { ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { MotionConfig, AnimatePresence, motion } from 'motion/react'
-import { PanelLeft, ChevronRight, Download, Bell, Sun, Moon, Check, Cloud, LoaderCircle, FileText, Plus, FolderOpen, FolderPlus, Tag, MoreHorizontal, Pencil, ArrowRightLeft, Trash2, X, AlertTriangle, RotateCcw, Copy, CheckCheck, BookOpen, ListTree } from 'lucide-react'
+import { PanelLeft, ChevronRight, Download, Bell, Sun, Moon, Check, Cloud, LoaderCircle, FileText, Plus, FolderOpen, FolderPlus, Tag, MoreHorizontal, Pencil, ArrowRightLeft, Trash2, X, AlertTriangle, RotateCcw, Copy, CheckCheck, BookOpen, ListTree, Maximize2 } from 'lucide-react'
 import { api, ApiError, json, query } from './api'
 import type { Note, NoteSummary, TreeEntry, Settings, SettingsPreview, Task, Reminder, TrashEntry } from './types'
 import { Sidebar } from './components/Sidebar'
@@ -70,7 +72,9 @@ export default function App() {
   const [view, setView] = useState<'note' | 'tasks' | 'board'>('note')
   const [mode, setMode] = useState<'source' | 'preview'>('source')
   const [outlineOpen, setOutlineOpen] = useState(false)
+  const [fullscreenPreview, setFullscreenPreview] = useState(false)
   const outlineButton = useRef<HTMLButtonElement>(null)
+  const fullscreenButton = useRef<HTMLButtonElement>(null)
   const sourceArea = useRef<HTMLDivElement>(null)
   const [sidebarOpen, setSidebarOpen] = useState(() => !matchMedia('(max-width: 760px)').matches)
   const [revealEntry, setRevealEntry] = useState<{ path: string } | null>(null)
@@ -246,6 +250,7 @@ export default function App() {
     if (matchMedia('(max-width: 760px)').matches) setOutlineOpen(false)
   }
   function closeOutline() { setOutlineOpen(false); outlineButton.current?.focus() }
+  function closeFullscreenPreview() { setFullscreenPreview(false); fullscreenButton.current?.focus() }
   async function createNote(parent = '') {
     const value = await ask({ title: '新建笔记', label: parent ? '笔记名称' : '笔记路径', value: '未命名笔记.md', description: parent ? `创建位置：${parent}\n填写笔记名称，可用 / 创建多层目录。` : '支持用 / 创建多层目录，例如：工作/项目想法.md', confirm: '创建笔记' })
     if (!value?.trim()) return
@@ -349,13 +354,14 @@ export default function App() {
       {settings.multiTabs && view === 'note' && tabs.length > 0 && <NoteTabs tabs={tabs} active={note?.path || ''} dirty={dirty} onSelect={path => { if (path !== noteRef.current?.path) run(() => loadNote(path)) }} onClose={path => run(() => closeTab(path))} />}
       {selectedCount > 0 && <div className="selection-bar"><span>已选择 {selectedCount} 篇笔记</span><button onClick={() => openClassification(true)}>批量设置分类</button><button onClick={() => { setExportNotePath(null); setExportScope('selected'); setDialog('export') }}>导出所选</button><button className="icon-button" aria-label="取消选择" onClick={() => setSelected([])}><X size={14} /></button></div>}
       {view === 'note' ? note ? <div className="note-workspace"><section className="note-heading"><div className="note-title-row"><h1 className="note-title">{note.title || note.path.replace(/\.md$/i, '')}</h1><button className="icon-button" aria-label="笔记操作" onClick={() => setManage({ path: note.path, type: 'note' })}><MoreHorizontal size={19} /></button></div><div className="note-meta"><button className="meta-button" onClick={() => openClassification()}><FolderOpen size={13} />{note.metadata.group || '未分组'}<ChevronRight size={11} /></button><span className="meta-divider" />{note.metadata.tags.map(tag => <button className="tag" key={tag} onClick={() => setFilterTags(filterTags.includes(tag) ? filterTags.filter(t => t !== tag) : [...filterTags, tag])}># {tag}</button>)}<button className="tag-add" onClick={() => openClassification()}><Plus size={12} />{note.metadata.tags.length ? '编辑标签' : '添加标签'}</button></div>{note.metadataError && <p className="form-error">文件头格式有误：{note.metadataError}。请在源码中修复后修改分类。</p>}</section>
-        <div className="mode-bar"><div className="mode-tabs" role="tablist" aria-label="编辑模式"><button role="tab" aria-selected={mode === 'source'} className={mode === 'source' ? 'active' : ''} onClick={() => setMode('source')}><span>〈/〉</span>源码</button><button role="tab" aria-selected={mode === 'preview'} className={mode === 'preview' ? 'active' : ''} onClick={() => setMode('preview')}><BookOpen size={13} />预览</button></div><button ref={outlineButton} type="button" className="outline-toggle" aria-label="导航" aria-expanded={outlineOpen} aria-controls="note-outline" onClick={() => setOutlineOpen(open => !open)}><ListTree size={15} />导航</button></div>
+        <div className="mode-bar"><div className="mode-tabs" role="tablist" aria-label="编辑模式"><button role="tab" aria-selected={mode === 'source'} className={mode === 'source' ? 'active' : ''} onClick={() => setMode('source')}><span>〈/〉</span>源码</button><button role="tab" aria-selected={mode === 'preview'} className={mode === 'preview' ? 'active' : ''} onClick={() => setMode('preview')}><BookOpen size={13} />预览</button></div><button ref={fullscreenButton} type="button" className="outline-toggle" aria-label="全屏预览" onClick={() => setFullscreenPreview(true)}><Maximize2 size={15} />全屏</button><button ref={outlineButton} type="button" className="outline-toggle" aria-label="导航" aria-expanded={outlineOpen} aria-controls="note-outline" onClick={() => setOutlineOpen(open => !open)}><ListTree size={15} />导航</button></div>
         <div className="note-body">
           {outlineOpen && <NoteOutline key={note.path} content={content} onNavigate={navigateHeading} onClose={closeOutline} />}
           <div className={`note-content${settings.sourceSplitPreview && mode === 'source' ? ' split-preview' : ''}`}>
             <div ref={sourceArea} className="editor-area" style={{ display: mode === 'source' ? undefined : 'none' }}><Editor key={note.path} value={content} onChange={changeContent} fontSize={appearance.editorFontSize} lineNumbers={settings.editorLineNumbers} dark={dark} shortcuts={settings.shortcuts} onUpload={upload} onSave={() => run(saveActive)} /></div><div ref={previewRef} className="preview-area" style={{ display: mode === 'preview' || (settings.sourceSplitPreview && mode === 'source') ? undefined : 'none' }}><MarkdownView content={content} notePath={note.path} fontSize={appearance.editorFontSize} lineNumbers={settings.previewLineNumbers} onNavigate={path => run(() => loadNote(path))} onToggleTask={(line, checked) => run(async () => { await saveActive(); const latest = await api<Task[]>('/tasks'); const task = latest.find(t => t.notePath === note.path && t.line === line); if (!task) throw new Error('任务位置发生变化，请重试。'); await updateTask(task, { status: checked ? 'done' : 'todo' }) })} /></div>
           </div>
         </div>
+        {fullscreenPreview && createPortal(<FullscreenPreview title={note.title || note.path.replace(/\.md$/i, '')} onClose={closeFullscreenPreview}><MarkdownView content={content} notePath={note.path} fontSize={appearance.editorFontSize} lineNumbers={settings.previewLineNumbers} onNavigate={path => run(() => loadNote(path))} onToggleTask={(line, checked) => run(async () => { await saveActive(); const latest = await api<Task[]>('/tasks'); const task = latest.find(t => t.notePath === note.path && t.line === line); if (!task) throw new Error('任务位置发生变化，请重试。'); await updateTask(task, { status: checked ? 'done' : 'todo' }) })} /></FullscreenPreview>, document.body)}
         <footer className="statusbar"><span><span className="local-dot" /><time dateTime={note.modified} title="最后更新">{new Date(note.modified).toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false })}</time></span><div><span>{content.replace(/\s/g, '').length.toLocaleString()} 字符</span><span>{content.split('\n').length} 行</span><span>UTF-8</span></div></footer></div> : <div className="empty-state"><div className="empty-symbol"><BookOpen size={36} strokeWidth={1.3} /></div><h1>留一点空间，给新的想法。</h1><p>选择一篇笔记，或开始记录你的第一份灵感。</p><button className="button primary" onClick={() => run(createNote)}><Plus size={16} />新建笔记</button></div> : <TasksView tasks={tasks} mode={view} onUpdate={updateTask} onNavigate={task => run(async () => { await loadNote(task.notePath); setMode('source'); setTimeout(() => { const editor = document.querySelector('.cm-editor'); editor?.dispatchEvent(new CustomEvent('echo:goto-line', { detail: task.line, bubbles: true })) }, 50) })} />}
       </main>
     </div>
@@ -371,4 +377,24 @@ export default function App() {
     </AnimatePresence>
     <div className="toast-stack" aria-live="polite"><AnimatePresence>{toasts.map(t => <motion.div key={t.id} className={`toast ${t.error ? 'toast-error' : 'toast-success'}`} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 8 }}>{t.error ? <AlertTriangle size={17} /> : <Check size={17} />}<span>{t.text}</span><button className="icon-button" aria-label="关闭通知" onClick={() => setToasts(v => v.filter(item => item.id !== t.id))}><X size={14} /></button></motion.div>)}</AnimatePresence></div>
   </MotionConfig>
+}
+
+function FullscreenPreview({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null)
+  const close = useRef(onClose)
+  close.current = onClose
+  useEffect(() => {
+    const node = ref.current
+    const onChange = () => { if (!document.fullscreenElement) close.current() }
+    document.addEventListener('fullscreenchange', onChange)
+    void node?.requestFullscreen?.().catch(() => {})
+    return () => {
+      document.removeEventListener('fullscreenchange', onChange)
+      if (document.fullscreenElement === node) void document.exitFullscreen().catch(() => {})
+    }
+  }, [])
+  return createPortal(<div ref={ref} className="fullscreen-preview" role="region" aria-label="全屏预览">
+    <div className="fullscreen-preview-bar"><h2>{title}</h2><button type="button" className="outline-toggle" onClick={() => { if (document.fullscreenElement) void document.exitFullscreen().catch(() => close.current()); else close.current() }}><X size={15} />退出全屏</button></div>
+    <div className="preview-area">{children}</div>
+  </div>, document.body)
 }
