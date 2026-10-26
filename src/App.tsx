@@ -11,10 +11,37 @@ import { Select } from './components/Select'
 import { Editor } from './components/Editor'
 import { MarkdownView } from './components/MarkdownView'
 import { NoteOutline } from './components/NoteOutline'
+import { NoteTabs } from './components/NoteTabs'
 import { TasksView } from './components/TasksView'
 import { exportNotes } from './export'
 
-const defaults: Settings = { theme: 'system', accent: '#72967b', animations: true, editorFontSize: 14, editorLineNumbers: true, previewLineNumbers: false, assetsDir: '.assets' }
+const defaults: Settings = { theme: 'system', accent: '#72967b', animations: true, editorFontSize: 14, editorLineNumbers: true, previewLineNumbers: false, multiTabs: false, assetsDir: '.assets' }
+const MAX_TABS = 10
+const tabsKey = 'echo:tabs'
+function readTabs(): string[] {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(tabsKey) || '[]')
+    if (!Array.isArray(parsed)) return []
+    const paths = parsed.filter((item): item is string => typeof item === 'string' && item.length > 0)
+    return paths.filter((path, index) => paths.indexOf(path) === index).slice(-MAX_TABS)
+  } catch { return [] }
+}
+function pushTab(list: string[], path: string) {
+  if (list.includes(path)) return list
+  return [...list, path].slice(-MAX_TABS)
+}
+function affectsPath(path: string, item: string) { return path === item || path.startsWith(`${item}/`) }
+function retargetPath(path: string, from: string, to: string) {
+  if (path === from) return to
+  if (path.startsWith(`${from}/`)) return to + path.slice(from.length)
+  return path
+}
+function neighborTab(list: string[], path: string, keep: (path: string) => boolean) {
+  const index = list.indexOf(path)
+  const after = index < 0 ? [] : list.slice(index + 1)
+  const before = index < 0 ? [...list].reverse() : [...list.slice(0, index)].reverse()
+  return [...after, ...before].find(keep)
+}
 type Prompt = { title: string; label?: string; value?: string; description?: string; confirm?: string; danger?: boolean }
 type Toast = { id: number; text: string; error?: boolean }
 const draftKey = (path: string) => `echo:draft:${path}`
@@ -28,6 +55,7 @@ export default function App() {
   const [tasks, setTasks] = useState<Task[]>([])
   const [reminders, setReminders] = useState<Reminder[]>([])
   const [note, setNote] = useState<Note | null>(null)
+  const [tabs, setTabs] = useState<string[]>(readTabs)
   const [content, setContent] = useState('')
   const [dirty, setDirty] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -68,6 +96,8 @@ export default function App() {
   const [openingDirectory, setOpeningDirectory] = useState(false)
   const [busy, setBusy] = useState(false)
   const noteRef = useRef(note); noteRef.current = note
+  const settingsRef = useRef(settings); settingsRef.current = settings
+  const tabsRef = useRef(tabs); tabsRef.current = tabs
   const contentRef = useRef(content); contentRef.current = content
   const dirtyRef = useRef(dirty); dirtyRef.current = dirty
   const conflictRef = useRef(conflict); conflictRef.current = conflict
@@ -81,7 +111,13 @@ export default function App() {
   const run = (action: () => Promise<unknown>) => { void action().catch(error => toast((error as Error).message, true)) }
   const ask = (p: Prompt) => new Promise<string | null>(resolve => { promptResolve.current = resolve; setPromptValue(p.value || ''); setPrompt(p) })
   const closePrompt = (value: string | null) => { setPrompt(null); promptResolve.current(value) }
-  const acceptNote = useCallback((next: Note) => { noteRef.current = next; contentRef.current = next.content; dirtyRef.current = false; setNote(next); setContent(next.content); setDirty(false); setSaveError(''); localStorage.setItem('echo:last-note', next.path) }, [])
+  const acceptNote = useCallback((next: Note) => {
+    noteRef.current = next; contentRef.current = next.content; dirtyRef.current = false; setNote(next); setContent(next.content); setDirty(false); setSaveError(''); localStorage.setItem('echo:last-note', next.path)
+    if (!settingsRef.current.multiTabs) return
+    const open = pushTab(tabsRef.current, next.path)
+    if (open === tabsRef.current) return
+    tabsRef.current = open; setTabs(open)
+  }, [])
   const refresh = useCallback(async () => {
     const results = await Promise.all([api<NoteSummary[]>('/notes'), api<TreeEntry[]>('/tree'), api<string[]>('/groups'), api<string[]>('/tags'), api<Task[]>('/tasks'), api<Reminder[]>('/reminders')])
     if (!mounted.current) return
@@ -132,7 +168,25 @@ export default function App() {
   }
   useEffect(() => {
     mounted.current = true
-    void (async () => { try { const loaded = await api<Settings>('/settings'); if (!mounted.current) return; setSettings({ ...defaults, ...loaded }); const list = await refresh(); if (!mounted.current) return; const last = localStorage.getItem('echo:last-note'); const path = list?.find(n => n.path === last)?.path || list?.[0]?.path; if (path) await loadNote(path, false) } catch (e) { setFatal((e as Error).message) } finally { setLoading(false) } })()
+    void (async () => {
+      try {
+        const loaded = await api<Settings>('/settings')
+        if (!mounted.current) return
+        const loadedSettings = { ...defaults, ...loaded }
+        settingsRef.current = loadedSettings
+        setSettings(loadedSettings)
+        const list = await refresh()
+        if (!mounted.current) return
+        if (loadedSettings.multiTabs) {
+          const paths = new Set((list || []).map(item => item.path))
+          const open = tabsRef.current.filter(path => paths.has(path))
+          if (open.length !== tabsRef.current.length) { tabsRef.current = open; setTabs(open) }
+        }
+        const last = localStorage.getItem('echo:last-note')
+        const path = list?.find(item => item.path === last)?.path || list?.[0]?.path
+        if (path) await loadNote(path, false)
+      } catch (e) { setFatal((e as Error).message) } finally { setLoading(false) }
+    })()
     const events = new EventSource('/api/events')
     let timer: number | undefined
     const changed = () => { clearTimeout(timer); timer = window.setTimeout(() => refreshCurrent.current(), 250) }
@@ -154,6 +208,7 @@ export default function App() {
   }, [])
   useEffect(() => { document.documentElement.dataset.theme = dark ? 'dark' : 'light'; document.documentElement.style.setProperty('--accent', appearance.accent) }, [dark, appearance.accent])
   useEffect(() => { document.documentElement.dataset.animations = String(settings.animations); localStorage.setItem('echo:settings', JSON.stringify(settings)) }, [settings])
+  useEffect(() => { localStorage.setItem(tabsKey, JSON.stringify(tabs)) }, [tabs])
   useEffect(() => { if (!dirty || conflict || conflictRef.current) return; const id = setTimeout(() => { void saveActive().catch(() => {}) }, 800); return () => clearTimeout(id) }, [content, dirty, conflict, saveActive])
   useEffect(() => {
     const before = (e: BeforeUnloadEvent) => { if (dirtyRef.current) { e.preventDefault(); e.returnValue = '' } }
@@ -204,8 +259,64 @@ export default function App() {
     const path = parent ? `${parent}/${name}` : name
     await api('/folders', json('POST', { path })); await refresh(); setRevealEntry({ path }); toast('目录已创建。')
   }
-  async function manageAction(action: 'rename' | 'move' | 'delete') { if (!manage) return; const item = manage; setManage(null); if (action === 'delete') { if (await ask({ title: '移至回收站', description: `${item.path}${item.type === 'folder' ? ' 及其内容' : ''}将移至回收站，可随时恢复。`, confirm: '移至回收站', danger: true }) === null) return; await saveActive(); await api(`/${item.type === 'note' ? 'notes' : 'folders'}?path=${query(item.path)}`, json('DELETE')); if (noteRef.current?.path === item.path || noteRef.current?.path.startsWith(item.path + '/')) { localStorage.removeItem(draftKey(noteRef.current.path)); noteRef.current = null; setNote(null); setContent(''); setDirty(false); dirtyRef.current = false } setSelected(s => s.filter(p => p !== item.path && !p.startsWith(item.path + '/'))); await refresh(); toast('已移至回收站。'); return }
-    const value = await ask({ title: action === 'rename' ? '重命名' : '移动位置', label: '完整路径', value: item.path, description: '填写相对于笔记库的路径，引用将自动更新。', confirm: '保存' }); if (!value?.trim() || value === item.path) return; await saveActive(); const target = item.type === 'note' && !/\.md$/i.test(value.trim()) ? `${value.trim()}.md` : value.trim(); const current = item.type === 'note' ? await api<Note>(`/notes?path=${query(item.path)}`) : null; await api(`/${item.type === 'note' ? 'notes' : 'folders'}/move`, json('POST', { path: item.path, target, revision: current?.revision })); const active = noteRef.current?.path; if (active) { const next = active === item.path ? target : active.startsWith(item.path + '/') ? target + active.slice(item.path.length) : active; await loadNote(next, false) } setSelected([]); await refresh(); toast('路径已更新。') }
+  function clearActive() { noteRef.current = null; contentRef.current = ''; dirtyRef.current = false; setNote(null); setContent(''); setDirty(false); setSaveError('') }
+  async function closeTab(path: string) {
+    if (!tabsRef.current.includes(path)) return
+    const closingActive = noteRef.current?.path === path
+    if (closingActive) await saveActive()
+    const current = tabsRef.current
+    if (!current.includes(path)) return
+    const neighbor = neighborTab(current, path, item => item !== path)
+    if (closingActive && neighbor) await loadNote(neighbor, false)
+    const remaining = tabsRef.current.filter(item => item !== path)
+    tabsRef.current = remaining
+    setTabs(remaining)
+    if (!closingActive || neighbor) return
+    localStorage.removeItem(draftKey(path))
+    clearActive()
+  }
+  async function manageAction(action: 'rename' | 'move' | 'delete') {
+    if (!manage) return
+    const item = manage
+    setManage(null)
+    if (action === 'delete') {
+      if (await ask({ title: '移至回收站', description: `${item.path}${item.type === 'folder' ? ' 及其内容' : ''}将移至回收站，可随时恢复。`, confirm: '移至回收站', danger: true }) === null) return
+      await saveActive()
+      await api(`/${item.type === 'note' ? 'notes' : 'folders'}?path=${query(item.path)}`, json('DELETE'))
+      const removed = (path: string) => affectsPath(path, item.path)
+      const previous = tabsRef.current
+      const remaining = previous.filter(path => !removed(path))
+      tabsRef.current = remaining
+      setTabs(remaining)
+      previous.filter(removed).forEach(path => localStorage.removeItem(draftKey(path)))
+      const active = noteRef.current?.path
+      if (active && removed(active)) {
+        const neighbor = neighborTab(previous, active, path => !removed(path))
+        if (settingsRef.current.multiTabs && neighbor) {
+          try { await loadNote(neighbor, false) } catch (error) { clearActive(); throw error }
+        } else clearActive()
+      }
+      setSelected(paths => paths.filter(path => !removed(path)))
+      await refresh()
+      toast('已移至回收站。')
+      return
+    }
+    const value = await ask({ title: action === 'rename' ? '重命名' : '移动位置', label: '完整路径', value: item.path, description: '填写相对于笔记库的路径，引用将自动更新。', confirm: '保存' })
+    if (!value?.trim() || value === item.path) return
+    await saveActive()
+    const target = item.type === 'note' && !/\.md$/i.test(value.trim()) ? `${value.trim()}.md` : value.trim()
+    const current = item.type === 'note' ? await api<Note>(`/notes?path=${query(item.path)}`) : null
+    await api(`/${item.type === 'note' ? 'notes' : 'folders'}/move`, json('POST', { path: item.path, target, revision: current?.revision }))
+    const mapped = tabsRef.current.map(path => retargetPath(path, item.path, target))
+    const unique = mapped.filter((path, index) => mapped.indexOf(path) === index)
+    tabsRef.current = unique
+    setTabs(unique)
+    const active = noteRef.current?.path
+    if (active) await loadNote(retargetPath(active, item.path, target), false)
+    setSelected([])
+    await refresh()
+    toast('路径已更新。')
+  }
   function openClassification(batch = false) { run(async () => { await saveActive(); const current = noteRef.current; setClassBatch(batch); setClassTags(batch ? '' : current?.metadata.tags.join(', ') || ''); setClassGroup(batch ? '' : current?.metadata.group || ''); setDialog('classification') }) }
   async function applyClassification() { await saveActive(); const paths = classBatch ? selected : note ? [note.path] : []; const updated = await api<Note[]>('/notes/batch', json('POST', { paths, tags: [...new Set(classTags.split(/[,，\n]/).map(s => s.trim()).filter(Boolean))], group: classGroup, revisions: Object.fromEntries(notes.filter(n => paths.includes(n.path)).map(n => [n.path, n.path === noteRef.current?.path ? noteRef.current.revision : n.revision])) })); const active = updated.find(n => n.path === noteRef.current?.path); if (active) acceptNote(active); await refresh(); setDialog(null); toast('标签与分组已更新。') }
   async function categoryAction(kind: 'groups' | 'tags', name?: string, remove = false) { await saveActive(); if (remove && name) { if (await ask({ title: `删除${kind === 'groups' ? '分组' : '标签'}`, description: `删除“${name}”将移除对应分类，笔记文件会保留。`, confirm: '删除', danger: true }) === null) return; await api(`/${kind}?name=${query(name)}`, json('DELETE')) } else { const newName = await ask({ title: `${name ? '重命名' : '新增'}${kind === 'groups' ? '分组' : '标签'}`, label: '名称', value: name, confirm: '保存' }); if (!newName?.trim()) return; await api(`/${kind}`, json(name ? 'PUT' : 'POST', name ? { name, newName: newName.trim() } : { name: newName.trim() })) } await refresh(); if (noteRef.current) await loadNote(noteRef.current.path, false) }
@@ -218,7 +329,7 @@ export default function App() {
     finally { setOpeningDirectory(false) }
   }
   async function prepareStorageAction() { if (uploadsInFlight.current) throw new Error('图片正在上传，请完成后再检查清理。'); await saveActive(); if (uploadsInFlight.current) throw new Error('图片正在上传，请完成后再检查清理。') }
-  async function saveSettings(next: Settings) { await saveActive(); const result = await api<Settings>('/settings', json('PUT', next)); setSettings(result); await refresh(); if (noteRef.current) await loadNote(noteRef.current.path, false); toast('设置已保存。') }
+  async function saveSettings(next: Settings) { await saveActive(); const result = { ...defaults, ...await api<Settings>('/settings', json('PUT', next)) }; settingsRef.current = result; setSettings(result); await refresh(); if (noteRef.current) await loadNote(noteRef.current.path, false); toast('设置已保存。') }
   const filtered = notes.filter(n => (group === null || n.metadata.group === group) && filterTags.every(t => n.metadata.tags.includes(t)) && (!search || (searchPaths ? searchPaths.includes(n.path) : `${n.title} ${n.path}`.toLowerCase().includes(search.toLowerCase()))))
   const exportPaths = exportNotePath ? [exportNotePath] : exportScope === 'current' ? note ? [note.path] : [] : exportScope === 'selected' ? selected : filtered.map(n => n.path)
   async function doExport() { setBusy(true); try { await exportNotes({ paths: exportPaths, format: exportFormat, lineNumbers: settings.previewLineNumbers, beforeExport: saveActive, onWarning: async warning => (await ask({ title: '导出资源提示', description: [...(warning.missing.length ? [`缺失资源：${warning.missing.join('、')}`] : []), ...(warning.external.length ? [`包含 ${warning.external.length} 张外链图片，离线时可能无法显示。`] : [])].join('\n'), confirm: '继续导出' })) !== null }); setDialog(null); toast(exportFormat === 'pdf' ? '打印视图已打开，请选择“另存为 PDF”。' : '导出已完成。') } finally { setBusy(false) } }
@@ -229,6 +340,7 @@ export default function App() {
       <Sidebar notes={notes} tree={tree} groups={groups} tags={tags} active={note?.path || ''} view={view} open={sidebarOpen} revealEntry={revealEntry} search={search} setSearch={setSearch} searchPaths={searchPaths} group={group} setGroup={setGroup} filterTags={filterTags} setFilterTags={setFilterTags} selected={selected} setSelected={setSelected} onSelect={path => run(() => loadNote(path))} onView={next => run(async () => { await saveActive(); setView(next); if (matchMedia('(max-width: 760px)').matches) setSidebarOpen(false); await refresh() })} onCreate={() => run(createNote)} onFolder={() => run(newFolder)} onManage={(path, type) => setManage({ path, type })} onOpenDirectory={() => run(openLocalDirectory)} openingDirectory={openingDirectory} onSettings={() => setDialog('settings')} onTrash={() => run(async () => { setTrash(await api<TrashEntry[]>('/trash')); setDialog('trash') })} onCategories={() => setDialog('categories')} onClose={() => setSidebarOpen(false)} />
       <div className="sidebar-resizer" hidden={!sidebarOpen} role="separator" aria-label="调整目录宽度" aria-orientation="vertical" tabIndex={0} onKeyDown={e => { if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') { const width = Math.max(220, Math.min(430, sidebarWidth + (e.key === 'ArrowRight' ? 10 : -10))); setSidebarWidth(width); localStorage.setItem('echo:sidebar-width', String(width)) } }} onPointerDown={e => { const start = e.clientX, width = sidebarWidth; e.currentTarget.setPointerCapture(e.pointerId); e.currentTarget.onpointermove = event => setSidebarWidth(Math.max(220, Math.min(430, width + event.clientX - start))); e.currentTarget.onpointerup = event => { const value = Math.max(220, Math.min(430, width + event.clientX - start)); localStorage.setItem('echo:sidebar-width', String(value)); e.currentTarget.onpointermove = null; e.currentTarget.onpointerup = null } }} />
       <main className="main-panel"><header className="topbar"><div className="topbar-left"><button className="icon-button" aria-label={sidebarOpen ? '折叠目录' : '展开目录'} title={sidebarOpen ? '折叠目录' : '展开目录'} aria-expanded={sidebarOpen} aria-controls="note-sidebar" onClick={() => setSidebarOpen(open => !open)}><PanelLeft size={18} /></button><div className="breadcrumb"><span>我的空间</span><ChevronRight size={13} /><span>{view === 'note' ? note?.path || '全部笔记' : view === 'tasks' ? '计划与提醒' : '任务看板'}</span></div></div><div className="topbar-actions">{view === 'note' && note && <button className={`save-status ${dirty ? 'unsaved' : 'saved'}`} title={saveError || 'Ctrl+S 保存'} onClick={() => run(saveActive)}>{saving ? <LoaderCircle size={13} className="spin" /> : saveError ? <AlertTriangle size={13} /> : dirty ? <Cloud size={14} /> : <CheckCheck size={14} />}<span>{saving ? '保存中' : saveError ? '保存失败' : dirty ? '待保存' : '已保存'}</span></button>}<button className="icon-button" aria-label={dark ? '切换明亮模式' : '切换暗黑模式'} onClick={() => run(() => saveSettings({ ...settings, theme: dark ? 'light' : 'dark' }))}>{dark ? <Sun size={17} /> : <Moon size={17} />}</button><button className="icon-button notification-button" aria-label="提醒中心" onClick={() => setDialog('reminders')}><Bell size={17} />{reminders.length > 0 && <i />}</button><span className="topbar-divider" /><button className="button export-button" onClick={() => { setExportNotePath(null); setExportScope(selected.length ? 'selected' : note ? 'current' : 'filtered'); setDialog('export') }}><Download size={15} /><span>导出</span></button></div></header>
+      {settings.multiTabs && view === 'note' && tabs.length > 0 && <NoteTabs tabs={tabs} active={note?.path || ''} dirty={dirty} onSelect={path => { if (path !== noteRef.current?.path) run(() => loadNote(path)) }} onClose={path => run(() => closeTab(path))} />}
       {selectedCount > 0 && <div className="selection-bar"><span>已选择 {selectedCount} 篇笔记</span><button onClick={() => openClassification(true)}>批量设置分类</button><button onClick={() => { setExportNotePath(null); setExportScope('selected'); setDialog('export') }}>导出所选</button><button className="icon-button" aria-label="取消选择" onClick={() => setSelected([])}><X size={14} /></button></div>}
       {view === 'note' ? note ? <div className="note-workspace"><section className="note-heading"><div className="note-title-row"><h1 className="note-title">{note.title || note.path.replace(/\.md$/i, '')}</h1><button className="icon-button" aria-label="笔记操作" onClick={() => setManage({ path: note.path, type: 'note' })}><MoreHorizontal size={19} /></button></div><div className="note-meta"><button className="meta-button" onClick={() => openClassification()}><FolderOpen size={13} />{note.metadata.group || '未分组'}<ChevronRight size={11} /></button><span className="meta-divider" />{note.metadata.tags.map(tag => <button className="tag" key={tag} onClick={() => setFilterTags(filterTags.includes(tag) ? filterTags.filter(t => t !== tag) : [...filterTags, tag])}># {tag}</button>)}<button className="tag-add" onClick={() => openClassification()}><Plus size={12} />{note.metadata.tags.length ? '编辑标签' : '添加标签'}</button></div>{note.metadataError && <p className="form-error">文件头格式有误：{note.metadataError}。请在源码中修复后修改分类。</p>}</section>
         <div className="mode-bar"><div className="mode-tabs" role="tablist" aria-label="编辑模式"><button role="tab" aria-selected={mode === 'source'} className={mode === 'source' ? 'active' : ''} onClick={() => setMode('source')}><span>〈/〉</span>源码</button><button role="tab" aria-selected={mode === 'preview'} className={mode === 'preview' ? 'active' : ''} onClick={() => setMode('preview')}><BookOpen size={13} />预览</button></div><button ref={outlineButton} type="button" className="outline-toggle" aria-label="导航" aria-expanded={outlineOpen} aria-controls="note-outline" onClick={() => setOutlineOpen(open => !open)}><ListTree size={15} />导航</button></div>

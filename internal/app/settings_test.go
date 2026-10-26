@@ -73,3 +73,26 @@ func TestEditorFontSizeValidationPreservesSettings(t *testing.T) {
 		}
 	}
 }
+
+func TestMultiTabsPersistence(t *testing.T) {
+	root := t.TempDir()
+	s, err := Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.state.Settings.MultiTabs {
+		t.Fatal("multiTabs should default to false")
+	}
+	h := NewHandler(s, false)
+	rr := request(t, h, "PUT", "/api/settings", map[string]any{"multiTabs": true})
+	if rr.Code != 200 || !s.state.Settings.MultiTabs {
+		t.Fatalf("save multiTabs: %d %s", rr.Code, rr.Body.String())
+	}
+	reopened, err := Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reopened.state.Settings.MultiTabs || reopened.state.Settings.EditorFontSize != 14 || reopened.state.Settings.Theme != "system" {
+		t.Fatalf("multiTabs not persisted: %+v", reopened.state.Settings)
+	}
+}

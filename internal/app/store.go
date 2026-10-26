@@ -25,6 +25,7 @@ type Settings struct {
 	EditorFontSize     int    `json:"editorFontSize"`
 	EditorLineNumbers  bool   `json:"editorLineNumbers"`
 	PreviewLineNumbers bool   `json:"previewLineNumbers"`
+	MultiTabs          bool   `json:"multiTabs"`
 	AssetsDir          string `json:"assetsDir"`
 }
 type Note struct {
@@ -73,7 +74,7 @@ type Conflict struct{ Current Note }
 func (e *Conflict) Error() string { return "笔记已被其他窗口或外部程序修改" }
 
 func defaults() Settings {
-	return Settings{Theme: "system", Accent: "#72967b", Animations: true, EditorFontSize: 14, EditorLineNumbers: true, PreviewLineNumbers: false, AssetsDir: ".assets"}
+	return Settings{Theme: "system", Accent: "#72967b", Animations: true, EditorFontSize: 14, EditorLineNumbers: true, PreviewLineNumbers: false, MultiTabs: false, AssetsDir: ".assets"}
 }
 func newID() string { var b [12]byte; _, _ = rand.Read(b[:]); return hex.EncodeToString(b[:]) }
 func revision(content []byte) string {

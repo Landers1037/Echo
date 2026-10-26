@@ -39,6 +39,7 @@ export function SettingsPanel({ settings, onPreview, onSave, onClose, beforeStor
               <div className="editor-font-preview" aria-label="编辑器字体预览" style={{ fontSize: draft.editorFontSize }}><span># 记录每一个想法</span><span>让文字以舒适的大小呈现。</span></div>
             </section>
             <section className="settings-section"><h4>编辑与预览</h4><div className="setting-row"><span>源码编辑器行号</span><Switch label="源码编辑器行号" checked={draft.editorLineNumbers} onChange={editorLineNumbers => patch({ editorLineNumbers })} /></div><div className="setting-row"><span>预览代码块行号</span><Switch label="预览代码块行号" checked={draft.previewLineNumbers} onChange={previewLineNumbers => patch({ previewLineNumbers })} /></div></section>
+            <section className="settings-section"><h4>标签页</h4><div className="setting-row"><div><strong>多笔记 Tab</strong><p>同时打开多篇笔记，最多 10 个，超出时自动关闭最早打开的。</p></div><Switch label="多笔记 Tab" checked={draft.multiTabs} onChange={multiTabs => patch({ multiTabs })} /></div></section>
           </>}
           {section === 'storage' && <StorageSettings assetsDir={settings.assetsDir} draftAssetsDir={draft.assetsDir} onDirectoryChange={assetsDir => patch({ assetsDir })} beforeAction={beforeStorageAction} onBusyChange={setStorageBusy} />}
         </fieldset></div>

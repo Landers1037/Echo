@@ -1,0 +1,11 @@
+.note-tabs{display:flex;align-items:flex-end;gap:4px;overflow-x:auto;flex-shrink:0;padding:8px 16px 0;border-bottom:1px solid var(--border);background:var(--panel);scrollbar-width:thin}
+.note-tab{display:flex;align-items:center;max-width:200px;flex-shrink:0;border:1px solid transparent;border-bottom:0;border-radius:7px 7px 0 0;color:var(--muted)}
+.note-tab:hover,.note-tab.active{background:var(--accent-soft);color:var(--accent)}
+.note-tab button[role=tab]{min-width:0;padding:7px 2px 7px 12px;font-size:12px;color:inherit;border-radius:7px 0 0 7px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.note-tab button[role=tab]:hover,.note-tab-close:hover{background:transparent}
+.note-tab-close{width:22px;height:22px;margin:0 4px 0 2px;color:inherit;opacity:.72;flex-shrink:0}
+.note-tab-dirty{width:6px;height:6px;margin:0 10px 0 4px;border-radius:50%;background:currentColor;flex-shrink:0}
+.note-tab.dirty .note-tab-close{display:none}
+.note-tab.dirty:hover .note-tab-close,.note-tab.dirty:focus-within .note-tab-close{display:inline-flex}
+.note-tab.dirty:hover .note-tab-dirty,.note-tab.dirty:focus-within .note-tab-dirty{display:none}
+@media(max-width:760px){.note-tabs{padding:6px 8px 0;gap:2px}.note-tab{max-width:148px}.note-tab button[role=tab]{padding:6px 2px 6px 8px}}

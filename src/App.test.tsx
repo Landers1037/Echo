@@ -19,7 +19,7 @@ vi.mock('motion/react', async () => {
   return { MotionConfig: ({ children }: { children: React.ReactNode }) => children, AnimatePresence: ({ children }: { children: React.ReactNode }) => children, motion: { div: Div, button: Button } }
 })
 
-const settings: Settings = { theme: 'light', accent: '#72967b', animations: false, editorFontSize: 14, editorLineNumbers: true, previewLineNumbers: false, assetsDir: '.assets' }
+const settings: Settings = { theme: 'light', accent: '#72967b', animations: false, editorFontSize: 14, editorLineNumbers: true, previewLineNumbers: false, multiTabs: false, assetsDir: '.assets' }
 type Write = { path: string; content: string; revision: string; force?: boolean }
 type Batch = { paths: string[]; tags: string[]; group: string; revisions: Record<string, string> }
 type Call = { method: string; path: string; body?: unknown }
@@ -52,12 +52,12 @@ function noteTree(notes: Note[], folders: string[]): TreeEntry[] {
   return root
 }
 
-function createServer(extraNotes: Note[] = [], initialFolders: string[] = []) {
+function createServer(extraNotes: Note[] = [], initialFolders: string[] = [], initialSettings: Partial<Settings> = {}) {
   let note: Note = { path: '测试.md', title: '测试笔记', metadata: { tags: [], group: '' }, revision: 'v1', modified: '2026-10-22T12:00:00Z', content: '# 初始笔记\n' }
   const createdNotes: Note[] = []
   const folders = [...initialFolders]
   const allNotes = () => [note, ...extraNotes, ...createdNotes]
-  let savedSettings = { ...settings }
+  let savedSettings = { ...settings, ...initialSettings }
   let settingsError = false
   let cleanupError = false
   let unusedImages = [{ path: '.assets/unused.png', size: 2048 }]
@@ -648,5 +648,83 @@ describe('App saves and metadata integration', () => {
     expect(localStorage.getItem('echo:draft:测试.md')).toBeNull()
     expect(server.writes).toHaveLength(1)
     expect(server.writes[0].force).not.toBe(true)
+  })
+})
+
+function sampleNote(path: string, content: string): Note {
+  return { path, title: path.split('/').pop()!.replace(/\.md$/i, ''), content, metadata: { tags: [], group: '' }, revision: 'v1', modified: '2026-10-22T12:00:00Z' }
+}
+function named(name: string) { return (value: string) => value === name }
+function openTabs() { return within(screen.getByRole('tablist', { name: '已打开的笔记' })) }
+
+describe('multi-note tabs', () => {
+  it('shows a tab for the current note after the setting is enabled', async () => {
+    const server = createServer()
+    await openApp(server)
+    expect(screen.queryByRole('tablist', { name: '已打开的笔记' })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '设置' }))
+    fireEvent.click(screen.getByRole('button', { name: '笔记设置' }))
+    expect(screen.getByText('同时打开多篇笔记，最多 10 个，超出时自动关闭最早打开的。')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('switch', { name: '多笔记 Tab' }))
+    fireEvent.click(screen.getByRole('button', { name: '保存设置' }))
+    const tabs = within(await screen.findByRole('tablist', { name: '已打开的笔记' }))
+    expect(tabs.getByRole('tab', { name: '测试' })).toHaveAttribute('aria-selected', 'true')
+    expect(server.savedSettings().multiTabs).toBe(true)
+  })
+
+  it('keeps at most 10 tabs and drops the earliest one', async () => {
+    const extras = Array.from({ length: 10 }, (_, index) => sampleNote(`笔记${String(index + 2).padStart(2, '0')}.md`, `# ${index + 2}\n`))
+    const server = createServer(extras, [], { multiTabs: true })
+    await openApp(server)
+    for (const item of extras) {
+      fireEvent.click(screen.getByRole('button', { name: named(item.title) }))
+      expect(await screen.findByRole('heading', { name: item.title })).toBeInTheDocument()
+    }
+    const tabs = openTabs()
+    expect(tabs.getAllByRole('tab')).toHaveLength(10)
+    expect(tabs.queryByRole('tab', { name: '测试笔记' })).not.toBeInTheDocument()
+    expect(tabs.getByRole('tab', { name: '笔记02' })).toBeInTheDocument()
+    expect(tabs.getByRole('tab', { name: '笔记11' })).toHaveAttribute('aria-selected', 'true')
+    await waitFor(() => expect(JSON.parse(localStorage.getItem('echo:tabs') || '[]')).toEqual(extras.map(item => item.path)))
+  })
+
+  it('does not open a second tab for a note that is already open', async () => {
+    const server = createServer([sampleNote('另一篇.md', '# 另一篇\n')], [], { multiTabs: true })
+    await openApp(server)
+    fireEvent.click(screen.getByRole('button', { name: named('另一篇') }))
+    expect(await screen.findByRole('heading', { name: '另一篇' })).toBeInTheDocument()
+    expect(openTabs().getAllByRole('tab')).toHaveLength(2)
+    fireEvent.click(screen.getByRole('button', { name: named('另一篇') }))
+    await waitFor(() => expect(server.calls.filter(call => call.method === 'GET' && call.path === '/api/notes')).toHaveLength(4))
+    expect(openTabs().getAllByRole('tab')).toHaveLength(2)
+    expect(openTabs().getAllByRole('tab').map(tab => tab.textContent)).toEqual(['测试', '另一篇'])
+  })
+
+  it('activates the neighboring tab when the current tab is closed', async () => {
+    const server = createServer([sampleNote('另一篇.md', '# 另一篇\n')], [], { multiTabs: true })
+    await openApp(server)
+    fireEvent.click(screen.getByRole('button', { name: named('另一篇') }))
+    expect(await screen.findByRole('heading', { name: '另一篇' })).toBeInTheDocument()
+    fireEvent.click(openTabs().getByRole('tab', { name: '测试' }))
+    expect(await screen.findByRole('heading', { name: '测试笔记' })).toBeInTheDocument()
+    fireEvent.click(openTabs().getByRole('button', { name: '关闭 测试' }))
+    expect(await screen.findByRole('heading', { name: '另一篇' })).toBeInTheDocument()
+    const tabs = openTabs()
+    expect(tabs.getAllByRole('tab')).toHaveLength(1)
+    expect(tabs.getByRole('tab', { name: '另一篇' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('textbox', { name: '笔记源码' })).toHaveValue('# 另一篇\n')
+  })
+
+  it('restores saved tabs and drops notes that no longer exist', async () => {
+    localStorage.setItem('echo:tabs', JSON.stringify(['缺失.md', '另一篇.md', '测试.md']))
+    localStorage.setItem('echo:last-note', '另一篇.md')
+    const server = createServer([sampleNote('另一篇.md', '# 另一篇\n')], [], { multiTabs: true })
+    vi.stubGlobal('fetch', server.fetch)
+    render(<App />)
+    expect(await screen.findByRole('textbox', { name: '笔记源码' })).toHaveValue('# 另一篇\n')
+    const tabs = openTabs()
+    expect(tabs.getAllByRole('tab').map(tab => tab.textContent)).toEqual(['另一篇', '测试'])
+    expect(tabs.getByRole('tab', { name: '另一篇' })).toHaveAttribute('aria-selected', 'true')
+    expect(tabs.queryByRole('tab', { name: '缺失' })).not.toBeInTheDocument()
   })
 })
