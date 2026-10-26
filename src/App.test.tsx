@@ -20,7 +20,7 @@ vi.mock('motion/react', async () => {
   return { MotionConfig: ({ children }: { children: React.ReactNode }) => children, AnimatePresence: ({ children }: { children: React.ReactNode }) => children, motion: { div: Div, button: Button } }
 })
 
-const settings: Settings = { theme: 'light', accent: '#72967b', animations: false, editorFontSize: 14, editorLineNumbers: true, previewLineNumbers: false, multiTabs: false, assetsDir: '.assets', shortcuts: {} }
+const settings: Settings = { theme: 'light', accent: '#72967b', animations: false, editorFontSize: 14, editorLineNumbers: true, previewLineNumbers: false, multiTabs: false, sourceSplitPreview: false, assetsDir: '.assets', shortcuts: {} }
 type Write = { path: string; content: string; revision: string; force?: boolean }
 type Batch = { paths: string[]; tags: string[]; group: string; revisions: Record<string, string> }
 type Call = { method: string; path: string; body?: unknown }
@@ -692,6 +692,31 @@ describe('editor shortcut settings', () => {
     const italic = keyFromEvent(new KeyboardEvent('keydown', { key: 'i', code: 'KeyI', ctrlKey: true }))
     expect(server.savedSettings().shortcuts).toEqual({ bold: italic, italic: '' })
     expect(server.calls.filter(call => call.path === '/api/settings' && call.method === 'PUT')).toHaveLength(1)
+  })
+})
+
+describe('source split preview', () => {
+  it('shows a live preview beside the source editor after the setting is saved', async () => {
+    const server = createServer()
+    const editor = await openApp(server)
+    expect(screen.getByRole('tab', { name: /源码/ })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByTestId('preview')).not.toBeVisible()
+    fireEvent.click(screen.getByRole('button', { name: '设置' }))
+    fireEvent.click(screen.getByRole('button', { name: '笔记设置' }))
+    expect(screen.getByText('源码模式左侧编辑，右侧实时显示 Markdown。预览标签仍为整页预览。')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('switch', { name: '源码模式分栏预览' }))
+    fireEvent.click(screen.getByRole('button', { name: '保存设置' }))
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: '设置' })).not.toBeInTheDocument())
+    expect(server.savedSettings().sourceSplitPreview).toBe(true)
+    expect(editor).toBeVisible()
+    expect(screen.getByTestId('preview')).toBeVisible()
+    expect(screen.getByTestId('preview').closest('.note-content')).toHaveClass('split-preview')
+    fireEvent.change(editor, { target: { value: '# 分栏标题\n实时内容' } })
+    expect(screen.getByTestId('preview')).toHaveTextContent('实时内容')
+    fireEvent.click(screen.getByRole('tab', { name: '预览' }))
+    expect(editor).not.toBeVisible()
+    expect(screen.getByTestId('preview')).toBeVisible()
+    expect(screen.getByTestId('preview').closest('.note-content')).not.toHaveClass('split-preview')
   })
 })
 

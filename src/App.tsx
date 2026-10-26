@@ -15,7 +15,7 @@ import { NoteTabs } from './components/NoteTabs'
 import { TasksView } from './components/TasksView'
 import { exportNotes } from './export'
 
-const defaults: Settings = { theme: 'system', accent: '#72967b', animations: true, editorFontSize: 14, editorLineNumbers: true, previewLineNumbers: false, multiTabs: false, assetsDir: '.assets', shortcuts: {} }
+const defaults: Settings = { theme: 'system', accent: '#72967b', animations: true, editorFontSize: 14, editorLineNumbers: true, previewLineNumbers: false, multiTabs: false, sourceSplitPreview: false, assetsDir: '.assets', shortcuts: {} }
 function completeSettings(value?: Partial<Settings> | null): Settings {
   const shortcuts = value?.shortcuts && typeof value.shortcuts === 'object' ? value.shortcuts : {}
   return { ...defaults, ...value, shortcuts }
@@ -233,14 +233,16 @@ export default function App() {
     })()
   }, [reminders, toast])
   const changeContent = (value: string) => { setContent(value); contentRef.current = value; setDirty(true); dirtyRef.current = true; setSaveError(''); if (noteRef.current) { try { localStorage.setItem(draftKey(noteRef.current.path), JSON.stringify({ content: value, revision: noteRef.current.revision })) } catch { toast('本地草稿空间不足，请及时保存笔记。', true) } } }
+  function scrollPreviewHeading(line: number) {
+    const heading = previewRef.current?.querySelector<HTMLElement>(`[data-heading-line="${line}"]`)
+    heading?.scrollIntoView({ block: 'start', behavior: settings.animations && !matchMedia('(prefers-reduced-motion: reduce)').matches ? 'smooth' : 'auto' })
+    if (mode !== 'source') heading?.focus({ preventScroll: true })
+  }
   function navigateHeading(line: number) {
     if (mode === 'source') {
       sourceArea.current?.querySelector('.cm-editor')?.dispatchEvent(new CustomEvent('echo:goto-line', { detail: line, bubbles: true }))
-    } else {
-      const heading = previewRef.current?.querySelector<HTMLElement>(`[data-heading-line="${line}"]`)
-      heading?.scrollIntoView({ block: 'start', behavior: settings.animations && !matchMedia('(prefers-reduced-motion: reduce)').matches ? 'smooth' : 'auto' })
-      heading?.focus({ preventScroll: true })
-    }
+      if (settings.sourceSplitPreview) scrollPreviewHeading(line)
+    } else scrollPreviewHeading(line)
     if (matchMedia('(max-width: 760px)').matches) setOutlineOpen(false)
   }
   function closeOutline() { setOutlineOpen(false); outlineButton.current?.focus() }
@@ -350,8 +352,8 @@ export default function App() {
         <div className="mode-bar"><div className="mode-tabs" role="tablist" aria-label="编辑模式"><button role="tab" aria-selected={mode === 'source'} className={mode === 'source' ? 'active' : ''} onClick={() => setMode('source')}><span>〈/〉</span>源码</button><button role="tab" aria-selected={mode === 'preview'} className={mode === 'preview' ? 'active' : ''} onClick={() => setMode('preview')}><BookOpen size={13} />预览</button></div><button ref={outlineButton} type="button" className="outline-toggle" aria-label="导航" aria-expanded={outlineOpen} aria-controls="note-outline" onClick={() => setOutlineOpen(open => !open)}><ListTree size={15} />导航</button></div>
         <div className="note-body">
           {outlineOpen && <NoteOutline key={note.path} content={content} onNavigate={navigateHeading} onClose={closeOutline} />}
-          <div className="note-content">
-            <div ref={sourceArea} className="editor-area" style={{ display: mode === 'source' ? undefined : 'none' }}><Editor key={note.path} value={content} onChange={changeContent} fontSize={appearance.editorFontSize} lineNumbers={settings.editorLineNumbers} dark={dark} shortcuts={settings.shortcuts} onUpload={upload} onSave={() => run(saveActive)} /></div><div ref={previewRef} className="preview-area" style={{ display: mode === 'preview' ? undefined : 'none' }}><MarkdownView content={content} notePath={note.path} fontSize={appearance.editorFontSize} lineNumbers={settings.previewLineNumbers} onNavigate={path => run(() => loadNote(path))} onToggleTask={(line, checked) => run(async () => { await saveActive(); const latest = await api<Task[]>('/tasks'); const task = latest.find(t => t.notePath === note.path && t.line === line); if (!task) throw new Error('任务位置发生变化，请重试。'); await updateTask(task, { status: checked ? 'done' : 'todo' }) })} /></div>
+          <div className={`note-content${settings.sourceSplitPreview && mode === 'source' ? ' split-preview' : ''}`}>
+            <div ref={sourceArea} className="editor-area" style={{ display: mode === 'source' ? undefined : 'none' }}><Editor key={note.path} value={content} onChange={changeContent} fontSize={appearance.editorFontSize} lineNumbers={settings.editorLineNumbers} dark={dark} shortcuts={settings.shortcuts} onUpload={upload} onSave={() => run(saveActive)} /></div><div ref={previewRef} className="preview-area" style={{ display: mode === 'preview' || (settings.sourceSplitPreview && mode === 'source') ? undefined : 'none' }}><MarkdownView content={content} notePath={note.path} fontSize={appearance.editorFontSize} lineNumbers={settings.previewLineNumbers} onNavigate={path => run(() => loadNote(path))} onToggleTask={(line, checked) => run(async () => { await saveActive(); const latest = await api<Task[]>('/tasks'); const task = latest.find(t => t.notePath === note.path && t.line === line); if (!task) throw new Error('任务位置发生变化，请重试。'); await updateTask(task, { status: checked ? 'done' : 'todo' }) })} /></div>
           </div>
         </div>
         <footer className="statusbar"><span><span className="local-dot" /><time dateTime={note.modified} title="最后更新">{new Date(note.modified).toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false })}</time></span><div><span>{content.replace(/\s/g, '').length.toLocaleString()} 字符</span><span>{content.split('\n').length} 行</span><span>UTF-8</span></div></footer></div> : <div className="empty-state"><div className="empty-symbol"><BookOpen size={36} strokeWidth={1.3} /></div><h1>留一点空间，给新的想法。</h1><p>选择一篇笔记，或开始记录你的第一份灵感。</p><button className="button primary" onClick={() => run(createNote)}><Plus size={16} />新建笔记</button></div> : <TasksView tasks={tasks} mode={view} onUpdate={updateTask} onNavigate={task => run(async () => { await loadNote(task.notePath); setMode('source'); setTimeout(() => { const editor = document.querySelector('.cm-editor'); editor?.dispatchEvent(new CustomEvent('echo:goto-line', { detail: task.line, bubbles: true })) }, 50) })} />}

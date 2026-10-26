@@ -2,6 +2,11 @@
 .outline-toggle[aria-expanded=true]{background:var(--accent-soft);border-color:color-mix(in srgb,var(--accent) 45%,var(--border));color:var(--accent)}
 .note-body{position:relative;display:flex;flex:1;min-height:0;min-width:0;overflow:hidden}
 .note-content{display:flex;flex-direction:column;flex:1;min-height:0;min-width:0;order:0}
+.note-content.split-preview{flex-direction:row}
+.note-content.split-preview .editor-area,.note-content.split-preview .preview-area{flex:1 1 50%;min-width:0;min-height:0}
+.note-content.split-preview .editor-area{display:flex;flex-direction:column;overflow:hidden}
+.note-content.split-preview .editor-shell{flex:1;height:auto;min-height:0}
+.note-content.split-preview .preview-area{border-left:1px solid var(--border);padding:20px 24px 40px}
 .note-outline{display:flex;flex-direction:column;order:1;flex-shrink:0;width:240px;max-width:40%;min-height:0;border-left:1px solid var(--border);background:var(--panel)}
 .note-outline-heading{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 14px 10px;flex-shrink:0}
 .note-outline-heading h2{display:flex;align-items:center;gap:7px;margin:0;font-size:12px;font-weight:600}
@@ -17,4 +22,4 @@
 .note-outline-empty p{font-size:12px;margin:12px 0 7px}
 .note-outline-empty small{font-size:11px;line-height:1.8}
 .preview-area [data-heading-line]{scroll-margin-top:18px}
-@media(max-width:760px){.note-outline{position:absolute;inset:0 0 0 auto;z-index:10;width:min(260px,calc(100% - 24px));max-width:none;box-shadow:-12px 0 30px #0002}.outline-toggle{min-height:34px;padding:7px 9px}.note-outline-item{padding-top:10px;padding-bottom:10px}}
+@media(max-width:760px){.note-outline{position:absolute;inset:0 0 0 auto;z-index:10;width:min(260px,calc(100% - 24px));max-width:none;box-shadow:-12px 0 30px #0002}.outline-toggle{min-height:34px;padding:7px 9px}.note-outline-item{padding-top:10px;padding-bottom:10px}.note-content.split-preview{flex-direction:column}.note-content.split-preview .preview-area{border-left:0;border-top:1px solid var(--border)}}

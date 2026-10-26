@@ -99,6 +99,29 @@ func TestMultiTabsPersistence(t *testing.T) {
 	}
 }
 
+func TestSourceSplitPreviewPersistence(t *testing.T) {
+	root := t.TempDir()
+	s, err := Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.state.Settings.SourceSplitPreview {
+		t.Fatal("sourceSplitPreview should default to false")
+	}
+	h := NewHandler(s, false)
+	rr := request(t, h, "PUT", "/api/settings", map[string]any{"sourceSplitPreview": true})
+	if rr.Code != 200 || !s.state.Settings.SourceSplitPreview {
+		t.Fatalf("save sourceSplitPreview: %d %s", rr.Code, rr.Body.String())
+	}
+	reopened, err := Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reopened.state.Settings.SourceSplitPreview || reopened.state.Settings.EditorFontSize != 14 || reopened.state.Settings.Theme != "system" {
+		t.Fatalf("sourceSplitPreview not persisted: %+v", reopened.state.Settings)
+	}
+}
+
 func TestShortcutPersistenceAndReplacement(t *testing.T) {
 	s := testStore(t)
 	if s.state.Settings.Shortcuts == nil {
