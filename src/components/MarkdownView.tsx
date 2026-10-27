@@ -7,6 +7,7 @@ import remarkFrontmatter from 'remark-frontmatter'
 import { codeToHtml } from 'shiki'
 import { Check, Copy } from 'lucide-react'
 import { DrawingEmbed } from './Drawing'
+import { MermaidBlock } from './Mermaid'
 
 export type MarkdownViewProps = {
   content: string
@@ -19,6 +20,7 @@ export type MarkdownViewProps = {
   onEditDrawing?: (path: string) => void
   drawingVersion?: number
   exporting?: boolean
+  dark?: boolean
 }
 
 const TaskLineContext = createContext(-1)
@@ -120,7 +122,7 @@ function drawingReference(notePath: string, src: string) {
   return resolveNotePath(notePath, src)
 }
 
-export function MarkdownView({ content, notePath, assets, lineNumbers, fontSize, onNavigate, onToggleTask, onEditDrawing, drawingVersion = 0, exporting = false }: MarkdownViewProps) {
+export function MarkdownView({ content, notePath, assets, lineNumbers, fontSize, onNavigate, onToggleTask, onEditDrawing, drawingVersion = 0, exporting = false, dark = false }: MarkdownViewProps) {
   return <div className="markdown-body" style={!exporting && fontSize !== undefined ? { fontSize } : undefined}><ReactMarkdown remarkPlugins={[remarkGfm, remarkFrontmatter, remarkUnderline]} skipHtml components={{
     ...(!exporting ? previewHeadings : {}),
     pre({ children }) { return <>{children}</> },
@@ -128,6 +130,7 @@ export function MarkdownView({ content, notePath, assets, lineNumbers, fontSize,
       const code = String(children).replace(/\n$/, '')
       const language = /language-([^\s]+)/.exec(className || '')?.[1] || 'text'
       const block = Boolean(className) || (node?.position?.start.line !== node?.position?.end.line) || String(children).endsWith('\n')
+      if (language === 'mermaid' && block) return <MermaidBlock code={code} dark={!exporting && dark} fallback={<CodeBlock code={code} language={language} lineNumbers={lineNumbers} exporting={exporting} />} />
       return block ? <CodeBlock code={code} language={language} lineNumbers={lineNumbers} exporting={exporting} /> : <code className={className}>{children}</code>
     },
     img({ src, alt, title }) {

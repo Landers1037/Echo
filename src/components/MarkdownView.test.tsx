@@ -2,7 +2,16 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { MarkdownView, resolveNotePath } from './MarkdownView'
 
+const { initializeMermaid, renderMermaid } = vi.hoisted(() => ({
+  initializeMermaid: vi.fn(),
+  renderMermaid: vi.fn(async (id: string, code: string) => {
+    if (code.includes('BAD')) throw new Error('Parse error on line 1')
+    return { svg: `<svg class="diagram" id="${id}"></svg>` }
+  }),
+}))
+
 vi.mock('shiki', () => ({ codeToHtml: async (code: string) => `<pre class="shiki"><code><span class="line">${code.replace(/</g, '&lt;')}</span></code></pre>` }))
+vi.mock('mermaid', () => ({ default: { initialize: initializeMermaid, render: (id: string, code: string) => renderMermaid(id, code) } }))
 vi.mock('./Drawing', () => ({ DrawingEmbed: ({ path, onEdit }: { path: string; onEdit?: (path: string) => void }) => <button type="button" onClick={() => onEdit?.(path)}>{path}</button> }))
 afterEach(cleanup)
 
@@ -73,6 +82,28 @@ describe('Markdown rendering', () => {
     expect(screen.getByRole('button', { name: 'data:application/vnd.excalidraw+json;base64,abc' })).toBeInTheDocument()
     rerender(<MarkdownView content="![架构](../.assets/missing.excalidraw)" notePath="项目/记录.md" lineNumbers={false} exporting />)
     expect(screen.getByText('[绘图缺失：架构]')).toBeInTheDocument()
+  })
+
+  it('renders mermaid diagrams in the active theme and uses the light theme while exporting', async () => {
+    const diagram = '```mermaid\ngraph LR\nA-->B\n```'
+    const { container } = render(<MarkdownView content={diagram} notePath="笔记.md" lineNumbers={false} dark />)
+    expect(container.querySelector('.mermaid-block')).toHaveAttribute('data-rendering', 'true')
+    await waitFor(() => expect(container.querySelector('.mermaid-block svg')).toBeInTheDocument())
+    expect(container.querySelector('[data-rendering]')).toBeNull()
+    expect(initializeMermaid).toHaveBeenCalledWith(expect.objectContaining({ startOnLoad: false, securityLevel: 'strict', theme: 'dark' }))
+
+    initializeMermaid.mockClear()
+    const exported = render(<MarkdownView content={'```mermaid\ngraph TD\nC-->D\n```'} notePath="笔记.md" lineNumbers={false} dark exporting />)
+    await waitFor(() => expect(exported.container.querySelector('.mermaid-block svg')).toBeInTheDocument())
+    expect(initializeMermaid).toHaveBeenCalledWith(expect.objectContaining({ theme: 'default' }))
+  })
+
+  it('falls back to the source block when a mermaid diagram cannot be rendered', async () => {
+    const { container } = render(<MarkdownView content={'```mermaid\nBAD\n```'} notePath="笔记.md" lineNumbers={false} />)
+    await waitFor(() => expect(container.querySelector('.mermaid-error')).toHaveTextContent('Parse error on line 1'))
+    expect(container.querySelector('.code-block')).toHaveTextContent('BAD')
+    expect(container.querySelector('.mermaid-block')).toBeNull()
+    await waitFor(() => expect(container.querySelector('[data-rendering]')).toBeNull())
   })
 
   it('opens internal Markdown links through the note navigator', () => {

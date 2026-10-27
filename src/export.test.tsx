@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { exportNotes } from './export'
 
 vi.mock('shiki', () => ({ codeToHtml: async (code: string) => `<pre class="shiki"><code>${code}</code></pre>` }))
+vi.mock('mermaid', () => ({ default: { initialize: () => {}, render: async (id: string) => ({ svg: `<svg id="${id}" class="mermaid-export"></svg>` }) } }))
 
 afterEach(() => vi.restoreAllMocks())
 
@@ -25,6 +26,19 @@ describe('note export', () => {
     expect(html).toContain('项目')
     expect(html).not.toContain('<script')
     expect(html).not.toContain('/api/assets')
+    vi.unstubAllGlobals()
+  })
+
+  it('embeds rendered mermaid diagrams in the exported HTML', async () => {
+    let exported: Blob | undefined
+    vi.stubGlobal('URL', class extends URL { static createObjectURL = (blob: Blob) => { exported = blob; return 'blob:export' }; static revokeObjectURL = vi.fn() })
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ notes: [{ path: '记录.md', title: '记录', content: '# 正文\n\n```mermaid\ngraph LR\n  A-->B\n```\n', metadata: { tags: [], group: '' }, revision: 'a', modified: '', assets: {} }], missing: [], external: [] }), { headers: { 'Content-Type': 'application/json' } })))
+    await exportNotes({ paths: ['记录.md'], format: 'html', lineNumbers: false, beforeExport: async () => {}, onWarning: async () => true })
+    const html = await new Promise<string>(resolve => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.readAsText(exported!) })
+    expect(html).toContain('class="mermaid-block"')
+    expect(html).toContain('class="mermaid-export"')
+    expect(html).not.toContain('graph LR')
     vi.unstubAllGlobals()
   })
 
