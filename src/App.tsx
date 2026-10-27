@@ -6,6 +6,7 @@ import { PanelLeft, ChevronRight, Download, Bell, Sun, Moon, Check, Cloud, Loade
 import { api, ApiError, json, query } from './api'
 import type { Note, NoteSummary, TreeEntry, Settings, SettingsPreview, Task, Reminder, TrashEntry, Drawing } from './types'
 import { Sidebar } from './components/Sidebar'
+import { RepoSwitcher } from './components/RepoSwitcher'
 import { Logo } from './components/Logo'
 import { SettingsPanel } from './components/SettingsPanel'
 import { Modal } from './components/UI'
@@ -52,6 +53,14 @@ function neighborTab(list: string[], path: string, keep: (path: string) => boole
 type Prompt = { title: string; label?: string; value?: string; description?: string; confirm?: string; danger?: boolean }
 type Toast = { id: number; text: string; error?: boolean }
 const draftKey = (path: string) => `echo:draft:${path}`
+function clearRepositorySession() {
+  const keys: string[] = []
+  for (let index = 0; index < localStorage.length; index++) {
+    const key = localStorage.key(index)
+    if (key && (key === 'echo:last-note' || key === tabsKey || key.startsWith('echo:draft:'))) keys.push(key)
+  }
+  keys.forEach(key => localStorage.removeItem(key))
+}
 function cachedSettings(): Settings { try { return completeSettings(JSON.parse(localStorage.getItem('echo:settings') || '{}')) } catch { return completeSettings() } }
 
 export default function App() {
@@ -85,7 +94,7 @@ export default function App() {
   const [group, setGroup] = useState<string | null>(null)
   const [filterTags, setFilterTags] = useState<string[]>([])
   const [selected, setSelected] = useState<string[]>([])
-  const [dialog, setDialog] = useState<'settings' | 'categories' | 'classification' | 'export' | 'trash' | 'reminders' | null>(null)
+  const [dialog, setDialog] = useState<'settings' | 'categories' | 'classification' | 'export' | 'trash' | 'reminders' | 'repositories' | null>(null)
   const [manage, setManage] = useState<{ path: string; type: 'folder' | 'note' | 'drawing' } | null>(null)
   const [drawing, setDrawing] = useState<{ path: string; editing: boolean } | null>(null)
   const [drawingVersion, setDrawingVersion] = useState(0)
@@ -118,6 +127,15 @@ export default function App() {
   const mounted = useRef(true)
   const previewRef = useRef<HTMLDivElement>(null)
   const uploadsInFlight = useRef(0)
+  const leavingRepository = useRef(false)
+  const leaveRepository = () => {
+    if (leavingRepository.current) return
+    leavingRepository.current = true
+    clearRepositorySession()
+    location.reload()
+  }
+  const leaveRepositoryRef = useRef(leaveRepository)
+  leaveRepositoryRef.current = leaveRepository
   const appearance = appearancePreview || settings
   const dark = appearance.theme === 'dark' || (appearance.theme === 'system' && systemDark)
   const toast = useCallback((text: string, error = false) => { const id = Date.now() + Math.random(); setToasts(v => [...v.slice(-3), { id, text, error }]); setTimeout(() => setToasts(v => v.filter(t => t.id !== id)), error ? 8000 : 4200) }, [])
@@ -165,6 +183,10 @@ export default function App() {
     try { await operation } finally { flight.current = null }
     if (dirtyRef.current && noteRef.current?.path === current.path) await saveActive(force)
   }, [refresh])
+  async function prepareRepositorySwitch() {
+    await saveActive()
+    if (flushDrawing.current) await flushDrawing.current()
+  }
   const loadNote = useCallback(async (path: string, save = true) => {
     if (save) await saveActive()
     const next = await api<Note>(`/notes?path=${query(path)}`)
@@ -203,7 +225,15 @@ export default function App() {
     const events = new EventSource('/api/events')
     let timer: number | undefined
     const changed = () => { clearTimeout(timer); timer = window.setTimeout(() => refreshCurrent.current(), 250) }
-    events.onmessage = changed; events.addEventListener('changed', changed); events.addEventListener('reminder', changed)
+    // 切换完成后再保存会把旧笔记写进新仓库，因此这里只退出并重新加载。发起切换的窗口会先保存。
+    events.onmessage = (event: MessageEvent) => {
+      try {
+        const data = JSON.parse(String(event.data)) as { type?: string }
+        if (data?.type === 'switched') { leaveRepositoryRef.current(); return }
+      } catch { /* 非 JSON 事件仍按内容变更处理 */ }
+      changed()
+    }
+    events.addEventListener('changed', changed); events.addEventListener('reminder', changed)
     const focus = () => refreshCurrent.current()
     window.addEventListener('focus', focus)
     const poll = window.setInterval(focus, 30000)
@@ -382,7 +412,7 @@ export default function App() {
   if (loading || fatal) return <div className="loading-screen"><Logo /><h1>echo.</h1>{fatal ? <><p role="alert">{fatal}</p><button className="button primary" onClick={() => location.reload()}>重新连接</button></> : <><LoaderCircle className="spin" size={20} /><p>正在打开你的本地空间…</p></>}</div>
   return <MotionConfig skipAnimations={!settings.animations} reducedMotion={settings.animations ? 'user' : 'always'} transition={{ duration: settings.animations ? .18 : 0 }}>
     <div className="app-shell" style={{ '--sidebar-width': `${sidebarWidth}px` } as React.CSSProperties}>
-      <Sidebar notes={notes} tree={tree} groups={groups} tags={tags} active={note?.path || ''} view={view} open={sidebarOpen} revealEntry={revealEntry} search={search} setSearch={setSearch} searchPaths={searchPaths} group={group} setGroup={setGroup} filterTags={filterTags} setFilterTags={setFilterTags} selected={selected} setSelected={setSelected} onSelect={path => run(() => loadNote(path))} onView={next => run(async () => { await saveActive(); setView(next); if (matchMedia('(max-width: 760px)').matches) setSidebarOpen(false); await refresh() })} onCreate={() => run(createNote)} onFolder={() => run(newFolder)} onCreateDrawing={() => run(() => createDrawing())} onOpenDrawing={editDrawing} activeDrawing={drawing?.path || ''} onManage={(path, type) => setManage({ path, type })} onOpenDirectory={() => run(openLocalDirectory)} openingDirectory={openingDirectory} onSettings={() => setDialog('settings')} onTrash={() => run(async () => { setTrash(await api<TrashEntry[]>('/trash')); setDialog('trash') })} onCategories={() => setDialog('categories')} onClose={() => setSidebarOpen(false)} />
+      <Sidebar notes={notes} tree={tree} groups={groups} tags={tags} active={note?.path || ''} view={view} open={sidebarOpen} revealEntry={revealEntry} search={search} setSearch={setSearch} searchPaths={searchPaths} group={group} setGroup={setGroup} filterTags={filterTags} setFilterTags={setFilterTags} selected={selected} setSelected={setSelected} onSelect={path => run(() => loadNote(path))} onView={next => run(async () => { await saveActive(); setView(next); if (matchMedia('(max-width: 760px)').matches) setSidebarOpen(false); await refresh() })} onCreate={() => run(createNote)} onFolder={() => run(newFolder)} onCreateDrawing={() => run(() => createDrawing())} onOpenDrawing={editDrawing} activeDrawing={drawing?.path || ''} onManage={(path, type) => setManage({ path, type })} onOpenDirectory={() => run(openLocalDirectory)} openingDirectory={openingDirectory} onSettings={() => setDialog('settings')} onTrash={() => run(async () => { setTrash(await api<TrashEntry[]>('/trash')); setDialog('trash') })} onRepositories={() => setDialog('repositories')} onCategories={() => setDialog('categories')} onClose={() => setSidebarOpen(false)} />
       <div className="sidebar-resizer" hidden={!sidebarOpen} role="separator" aria-label="调整目录宽度" aria-orientation="vertical" tabIndex={0} onKeyDown={e => { if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') { const width = Math.max(220, Math.min(430, sidebarWidth + (e.key === 'ArrowRight' ? 10 : -10))); setSidebarWidth(width); localStorage.setItem('echo:sidebar-width', String(width)) } }} onPointerDown={e => { const start = e.clientX, width = sidebarWidth; e.currentTarget.setPointerCapture(e.pointerId); e.currentTarget.onpointermove = event => setSidebarWidth(Math.max(220, Math.min(430, width + event.clientX - start))); e.currentTarget.onpointerup = event => { const value = Math.max(220, Math.min(430, width + event.clientX - start)); localStorage.setItem('echo:sidebar-width', String(value)); e.currentTarget.onpointermove = null; e.currentTarget.onpointerup = null } }} />
       <main className="main-panel"><header className="topbar"><div className="topbar-left"><button className="icon-button" aria-label={sidebarOpen ? '折叠目录' : '展开目录'} title={sidebarOpen ? '折叠目录' : '展开目录'} aria-expanded={sidebarOpen} aria-controls="note-sidebar" onClick={() => setSidebarOpen(open => !open)}><PanelLeft size={18} /></button><div className="breadcrumb"><span>我的空间</span><ChevronRight size={13} /><span>{view === 'note' ? note?.path || '全部笔记' : view === 'tasks' ? '计划与提醒' : '任务看板'}</span></div></div><div className="topbar-actions">{view === 'note' && note && <button className={`save-status ${dirty ? 'unsaved' : 'saved'}`} title={saveError || 'Ctrl+S 保存'} onClick={() => run(saveActive)}>{saving ? <LoaderCircle size={13} className="spin" /> : saveError ? <AlertTriangle size={13} /> : dirty ? <Cloud size={14} /> : <CheckCheck size={14} />}<span>{saving ? '保存中' : saveError ? '保存失败' : dirty ? '待保存' : '已保存'}</span></button>}<button className="icon-button" aria-label={dark ? '切换明亮模式' : '切换暗黑模式'} onClick={() => run(() => saveSettings({ ...settings, theme: dark ? 'light' : 'dark' }))}>{dark ? <Sun size={17} /> : <Moon size={17} />}</button><button className="icon-button notification-button" aria-label="提醒中心" onClick={() => setDialog('reminders')}><Bell size={17} />{reminders.length > 0 && <i />}</button><span className="topbar-divider" /><button className="button export-button" onClick={() => { setExportNotePath(null); setExportScope(selected.length ? 'selected' : note ? 'current' : 'filtered'); setDialog('export') }}><Download size={15} /><span>导出</span></button></div></header>
       {settings.multiTabs && view === 'note' && tabs.length > 0 && <NoteTabs tabs={tabs} active={note?.path || ''} dirty={dirty} onSelect={path => { if (path !== noteRef.current?.path) run(() => loadNote(path)) }} onClose={path => run(() => closeTab(path))} />}
@@ -400,6 +430,7 @@ export default function App() {
       </main>
     </div>
     <AnimatePresence>{dialog === 'settings' && <SettingsPanel settings={settings} onPreview={setAppearancePreview} onSave={saveSettings} beforeStorageAction={prepareStorageAction} onClose={() => { setAppearancePreview(null); setDialog(null) }} />}
+    {dialog === 'repositories' && <RepoSwitcher onClose={() => setDialog(null)} onPrepare={prepareRepositorySwitch} onSwitched={() => leaveRepositoryRef.current()} />}
     {manage && <Modal title={manage.type === 'note' ? '笔记操作' : manage.type === 'drawing' ? '绘图操作' : '文件夹操作'} onClose={() => setManage(null)}><p className="field-help">{manage.path}</p><div className="dialog-stack">{manage.type === 'folder' && <><button className="button" onClick={() => { const parent = manage.path; setManage(null); run(() => newFolder(parent)) }}><FolderPlus size={16} />新建目录</button><button className="button" onClick={() => { const parent = manage.path; setManage(null); run(() => createNote(parent)) }}><FileText size={16} />新建笔记</button><button className="button" onClick={() => { const parent = manage.path; setManage(null); run(() => createDrawing(parent)) }}><PenTool size={16} />新建绘图</button></>}<button className="button" onClick={() => run(() => manageAction('rename'))}><Pencil size={16} />重命名</button><button className="button" onClick={() => run(() => manageAction('move'))}><ArrowRightLeft size={16} />移动位置</button>{manage.type === 'note' && <><button className="button" onClick={() => run(async () => { const path = manage.path; setManage(null); await loadNote(path); openClassification() })}><Tag size={16} />标签与分组</button><button className="button" onClick={() => { setExportNotePath(manage.path); setExportScope('current'); setManage(null); setDialog('export') }}><Download size={16} />导出该笔记</button></>}<button className="button danger" onClick={() => run(() => manageAction('delete'))}><Trash2 size={16} />移至回收站</button></div></Modal>}
     {dialog === 'classification' && <Modal title={classBatch ? `设置 ${selectedCount} 篇笔记的分类` : '标签与分组'} onClose={() => setDialog(null)}><form onSubmit={e => { e.preventDefault(); run(applyClassification) }}><label className="field-label" htmlFor="note-group">分组</label><div className="inline-field"><Select id="note-group" value={classGroup} onChange={setClassGroup} options={[{ value: '', label: '未分组' }, ...groups.map(value => ({ value, label: value }))]} /><button type="button" className="button" onClick={() => run(async () => { const name = await ask({ title: '新增分组', label: '分组名称', confirm: '创建' }); if (!name?.trim()) return; await api('/groups', json('POST', { name: name.trim() })); await refresh(); setClassGroup(name.trim()) })}><Plus size={15} />新增</button></div><label className="field-label" htmlFor="note-tags">标签</label><input id="note-tags" value={classTags} onChange={e => setClassTags(e.target.value)} placeholder="用逗号分隔，例如：灵感, 工作" /><div className="tag-suggestions">{tags.map(t => <button type="button" className="tag" key={t} onClick={() => setClassTags(v => [...new Set([...v.split(/[,，]/).map(s => s.trim()).filter(Boolean), t])].join(', '))}># {t}</button>)}</div><p className="field-help">{classBatch ? '将替换所选笔记的标签和分组。' : '分组不会移动文件，一篇笔记可设置多个标签。'}</p><div className="modal-actions"><button type="button" className="button" onClick={() => setDialog(null)}>取消</button><button className="button primary" type="submit">保存分类</button></div></form></Modal>}
     {dialog === 'categories' && <Modal title="管理分类" onClose={() => setDialog(null)}><div className="category-tabs"><button className={categoryTab === 'groups' ? 'active' : ''} onClick={() => setCategoryTab('groups')}>分组</button><button className={categoryTab === 'tags' ? 'active' : ''} onClick={() => setCategoryTab('tags')}>标签</button><button className="button" onClick={() => run(() => categoryAction(categoryTab))}><Plus size={14} />新增</button></div><div className="category-list">{(categoryTab === 'groups' ? groups : tags).map(name => <div className="category-row" key={name}><span>{categoryTab === 'groups' ? <FolderOpen size={15} /> : <Tag size={15} />}{name}</span><div><button className="icon-button" aria-label={`重命名 ${name}`} onClick={() => run(() => categoryAction(categoryTab, name))}><Pencil size={14} /></button><button className="icon-button danger" aria-label={`删除 ${name}`} onClick={() => run(() => categoryAction(categoryTab, name, true))}><Trash2 size={14} /></button></div></div>)}{!(categoryTab === 'groups' ? groups : tags).length && <p className="field-help">还没有分类，点击新增开始整理。</p>}</div></Modal>}

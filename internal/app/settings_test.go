@@ -23,7 +23,7 @@ func TestEditorFontSizeLegacySettingsAndPersistence(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	h := NewHandler(s, false)
+	h := NewHandler(attachStore(s), false)
 	rr := request(t, h, "GET", "/api/settings", nil)
 	var settings Settings
 	if err := json.Unmarshal(rr.Body.Bytes(), &settings); err != nil {
@@ -52,7 +52,7 @@ func TestEditorFontSizeLegacySettingsAndPersistence(t *testing.T) {
 
 func TestEditorFontSizeValidationPreservesSettings(t *testing.T) {
 	s := testStore(t)
-	h := NewHandler(s, false)
+	h := NewHandler(attachStore(s), false)
 	stateFile := filepath.Join(s.root, ".echo", "state.json")
 	before, err := os.ReadFile(stateFile)
 	if err != nil {
@@ -85,7 +85,7 @@ func TestMultiTabsPersistence(t *testing.T) {
 	if s.state.Settings.MultiTabs {
 		t.Fatal("multiTabs should default to false")
 	}
-	h := NewHandler(s, false)
+	h := NewHandler(attachStore(s), false)
 	rr := request(t, h, "PUT", "/api/settings", map[string]any{"multiTabs": true})
 	if rr.Code != 200 || !s.state.Settings.MultiTabs {
 		t.Fatalf("save multiTabs: %d %s", rr.Code, rr.Body.String())
@@ -108,7 +108,7 @@ func TestSourceSplitPreviewPersistence(t *testing.T) {
 	if s.state.Settings.SourceSplitPreview {
 		t.Fatal("sourceSplitPreview should default to false")
 	}
-	h := NewHandler(s, false)
+	h := NewHandler(attachStore(s), false)
 	rr := request(t, h, "PUT", "/api/settings", map[string]any{"sourceSplitPreview": true})
 	if rr.Code != 200 || !s.state.Settings.SourceSplitPreview {
 		t.Fatalf("save sourceSplitPreview: %d %s", rr.Code, rr.Body.String())
@@ -127,7 +127,7 @@ func TestShortcutPersistenceAndReplacement(t *testing.T) {
 	if s.state.Settings.Shortcuts == nil {
 		t.Fatal("shortcuts should default to an empty map")
 	}
-	h := NewHandler(s, false)
+	h := NewHandler(attachStore(s), false)
 	rr := request(t, h, "PUT", "/api/settings", map[string]any{"shortcuts": map[string]string{"bold": "Mod-Shift-b", "italic": ""}})
 	if rr.Code != 200 || s.state.Settings.Shortcuts["bold"] != "Mod-Shift-b" || s.state.Settings.Shortcuts["italic"] != "" || len(s.state.Settings.Shortcuts) != 2 {
 		t.Fatalf("save shortcuts: %d %s", rr.Code, rr.Body.String())
@@ -155,7 +155,7 @@ func TestShortcutPersistenceAndReplacement(t *testing.T) {
 
 func TestShortcutValidationPreservesSettings(t *testing.T) {
 	s := testStore(t)
-	h := NewHandler(s, false)
+	h := NewHandler(attachStore(s), false)
 	stateFile := filepath.Join(s.root, ".echo", "state.json")
 	before, err := os.ReadFile(stateFile)
 	if err != nil {

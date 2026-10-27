@@ -68,7 +68,7 @@ type Store struct {
 	mu          sync.Mutex
 	root        string
 	state       diskState
-	clients     map[chan []byte]bool
+	broadcast   func(any)
 	fingerprint string
 }
 type Drawing struct {
@@ -110,7 +110,7 @@ func Open(root string) (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
-	s := &Store{root: absolute, clients: map[chan []byte]bool{}, state: diskState{Settings: defaults(), Groups: []string{}, Tags: []string{}, Trash: []TrashEntry{}, Reminders: []Reminder{}, History: []HistoryEntry{}}}
+	s := &Store{root: absolute, state: diskState{Settings: defaults(), Groups: []string{}, Tags: []string{}, Trash: []TrashEntry{}, Reminders: []Reminder{}, History: []HistoryEntry{}}}
 	for _, name := range []string{".echo", filepath.Join(".echo", "trash"), filepath.Join(".echo", "state.json"), filepath.Join(".echo", "asset-migration.json")} {
 		if info, statErr := os.Lstat(filepath.Join(absolute, name)); statErr == nil && info.Mode()&os.ModeSymlink != 0 {
 			return nil, fmt.Errorf(".echo 配置目录不能包含符号链接")
@@ -564,12 +564,8 @@ func (s *Store) restore(id string) error {
 	return os.ErrNotExist
 }
 func (s *Store) publish(event any) {
-	data, _ := json.Marshal(event)
-	for client := range s.clients {
-		select {
-		case client <- data:
-		default:
-		}
+	if s.broadcast != nil {
+		s.broadcast(event)
 	}
 }
 func (s *Store) changed() {

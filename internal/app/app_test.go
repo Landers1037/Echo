@@ -79,7 +79,7 @@ func TestFileConflictAndTrashRestore(t *testing.T) {
 	if _, err := s.saveNote(note.Path, "# Mine", note.Revision, false); err == nil {
 		t.Fatal("overwrote external edit")
 	}
-	h := NewHandler(s, false)
+	h := NewHandler(attachStore(s), false)
 	rr := request(t, h, "PUT", "/api/notes", map[string]any{"path": note.Path, "content": "# Mine", "revision": note.Revision})
 	if rr.Code != 409 {
 		t.Fatalf("expected conflict got %d %s", rr.Code, rr.Body.String())
@@ -111,7 +111,7 @@ func TestPathAndOriginGuards(t *testing.T) {
 			t.Fatal("accepted symlink")
 		}
 	}
-	h := NewHandler(s, false)
+	h := NewHandler(attachStore(s), false)
 	req := httptest.NewRequest("POST", "http://127.0.0.1:8080/api/notes", strings.NewReader(`{"path":"evil.md"}`))
 	req.Header.Set("Origin", "https://evil.example")
 	rr := httptest.NewRecorder()
@@ -162,7 +162,7 @@ func TestBatchMetadataRollbackAndFiltering(t *testing.T) {
 	if _, err := s.batchMetadata([]string{a.Path}, &tags, &group, map[string]string{a.Path: a.Revision}); err != nil {
 		t.Fatal(err)
 	}
-	rr := request(t, NewHandler(s, false), "GET", "/api/notes?q=needle&group=Work&tags=one,two", nil)
+	rr := request(t, NewHandler(attachStore(s), false), "GET", "/api/notes?q=needle&group=Work&tags=one,two", nil)
 	if rr.Code != 200 {
 		t.Fatal(rr.Body.String())
 	}
@@ -213,7 +213,7 @@ func TestMonthlyRecurrenceAndReminderClaims(t *testing.T) {
 	if len(s.state.Reminders) != 1 {
 		t.Fatalf("duplicate reminders: %+v", s.state.Reminders)
 	}
-	h := NewHandler(s, false)
+	h := NewHandler(attachStore(s), false)
 	id := s.state.Reminders[0].ID
 	for i := 0; i < 2; i++ {
 		rr := request(t, h, "POST", "/api/reminders/ack", map[string]string{"id": id})
@@ -304,7 +304,7 @@ func TestAssetMigrationAndExportResources(t *testing.T) {
 func TestMissingAssetExportRequiresExplicitContinue(t *testing.T) {
 	s := testStore(t)
 	create(t, s, "missing.md", "# Missing\n![gone](.assets/no.png)\n")
-	h := NewHandler(s, false)
+	h := NewHandler(attachStore(s), false)
 	rr := request(t, h, "POST", "/api/exports", map[string]any{"paths": []string{"missing.md"}, "format": "snapshot"})
 	if rr.Code != 422 {
 		t.Fatalf("expected missing warning got %d %s", rr.Code, rr.Body.String())
@@ -318,7 +318,7 @@ func TestMissingAssetExportRequiresExplicitContinue(t *testing.T) {
 func TestEmptyNoteStillReturnsContentField(t *testing.T) {
 	s := testStore(t)
 	create(t, s, "empty.md", "")
-	rr := request(t, NewHandler(s, false), "GET", "/api/notes?path=empty.md", nil)
+	rr := request(t, NewHandler(attachStore(s), false), "GET", "/api/notes?path=empty.md", nil)
 	var result map[string]any
 	if err := json.Unmarshal(rr.Body.Bytes(), &result); err != nil {
 		t.Fatal(err)
@@ -380,7 +380,7 @@ func TestMigrationRecoveryKeepsExternalNoteAndJournal(t *testing.T) {
 	if _, err := os.Stat(s.journalPath()); err != nil {
 		t.Fatal("recovery journal lost")
 	}
-	rr := request(t, NewHandler(s, false), "PUT", "/api/notes", map[string]any{"path": note.Path, "revision": current.Revision, "content": "# Overwrite"})
+	rr := request(t, NewHandler(attachStore(s), false), "PUT", "/api/notes", map[string]any{"path": note.Path, "revision": current.Revision, "content": "# Overwrite"})
 	if rr.Code != 400 {
 		t.Fatalf("write allowed while recovery pending: %d", rr.Code)
 	}
@@ -480,7 +480,7 @@ func findTreeEntry(entries []TreeEntry, target string) (TreeEntry, bool) {
 
 func TestDrawingsCreateSaveMoveExportAndCleanup(t *testing.T) {
 	s := testStore(t)
-	h := NewHandler(s, false)
+	h := NewHandler(attachStore(s), false)
 	rr := request(t, h, "POST", "/api/drawings", map[string]any{"path": "图表/架构.excalidraw"})
 	if rr.Code != 201 {
 		t.Fatalf("create %d %s", rr.Code, rr.Body.String())

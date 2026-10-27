@@ -18,14 +18,21 @@ import (
 )
 
 type handler struct {
-	store         *Store
+	ws            *Workspace
 	dev           bool
 	web           http.Handler
 	openDirectory func(string) error
+	pickFolder    func() (string, bool, error)
 }
 
-func NewHandler(store *Store, dev bool) http.Handler {
-	return &handler{store: store, dev: dev, web: web.Handler(), openDirectory: openNotebookDirectory}
+func NewHandler(ws *Workspace, dev bool) http.Handler {
+	if ws.clients == nil {
+		ws.clients = map[chan []byte]bool{}
+	}
+	if ws.store != nil && ws.store.broadcast == nil {
+		ws.store.broadcast = ws.broadcast
+	}
+	return &handler{ws: ws, dev: dev, web: web.Handler(), openDirectory: openNotebookDirectory, pickFolder: pickFolderOnDesktop}
 }
 func jsonResponse(w http.ResponseWriter, status int, value any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
@@ -110,14 +117,20 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.events(w, r)
 		return
 	}
-	h.store.mu.Lock()
-	defer h.store.mu.Unlock()
-	if err := h.api(w, r); err != nil {
+	if strings.HasPrefix(r.URL.Path, "/api/repositories") {
+		if err := h.repositories(w, r); err != nil {
+			fail(w, err)
+		}
+		return
+	}
+	s := h.ws.current()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := h.api(s, w, r); err != nil {
 		fail(w, err)
 	}
 }
-func (h *handler) api(w http.ResponseWriter, r *http.Request) error {
-	s := h.store
+func (h *handler) api(s *Store, w http.ResponseWriter, r *http.Request) error {
 	if r.Method != "GET" && r.Method != "HEAD" {
 		if _, err := os.Stat(s.journalPath()); err == nil {
 			return fmt.Errorf("资源迁移尚待恢复，已暂时停止写入以保护笔记。请备份数据后重启并查看恢复提示")
@@ -451,7 +464,7 @@ func (h *handler) api(w http.ResponseWriter, r *http.Request) error {
 			return nil
 		}
 		if method == "POST" {
-			return h.upload(w, r)
+			return h.upload(s, w, r)
 		}
 	case "/api/drawings":
 		switch method {
@@ -676,7 +689,7 @@ func download(w http.ResponseWriter, name, contentType string, data []byte) {
 	w.WriteHeader(200)
 	_, _ = w.Write(data)
 }
-func (h *handler) upload(w http.ResponseWriter, r *http.Request) error {
+func (h *handler) upload(s *Store, w http.ResponseWriter, r *http.Request) error {
 	r.Body = http.MaxBytesReader(w, r.Body, 21*1024*1024)
 	if err := r.ParseMultipartForm(21 * 1024 * 1024); err != nil {
 		return fmt.Errorf("图片上传失败或超过 20MB")
@@ -689,7 +702,7 @@ func (h *handler) upload(w http.ResponseWriter, r *http.Request) error {
 		return fmt.Errorf("请提供 file 图片字段")
 	}
 	defer file.Close()
-	note, err := h.store.readNote(r.URL.Query().Get("notePath"))
+	note, err := s.readNote(r.URL.Query().Get("notePath"))
 	if err != nil {
 		return err
 	}
@@ -714,8 +727,8 @@ func (h *handler) upload(w http.ResponseWriter, r *http.Request) error {
 	if len(data) == 0 {
 		return fmt.Errorf("图片不能为空")
 	}
-	name := path.Join(h.store.state.Settings.AssetsDir, newID()+extension)
-	target, err := h.store.safePath(name)
+	name := path.Join(s.state.Settings.AssetsDir, newID()+extension)
+	target, err := s.safePath(name)
 	if err != nil {
 		return err
 	}
@@ -724,6 +737,71 @@ func (h *handler) upload(w http.ResponseWriter, r *http.Request) error {
 	}
 	_ = header
 	jsonResponse(w, 201, map[string]string{"path": name, "url": "/api/assets?path=" + url.QueryEscape(name), "markdownPath": relativeLink(note.Path, name, name)})
+	return nil
+}
+func (h *handler) repositories(w http.ResponseWriter, r *http.Request) error {
+	switch r.URL.Path {
+	case "/api/repositories":
+		switch r.Method {
+		case "GET":
+			jsonResponse(w, 200, h.ws.List())
+			return nil
+		case "PUT":
+			var request struct {
+				Path string `json:"path"`
+				Name string `json:"name"`
+			}
+			if err := decode(r, &request); err != nil {
+				return err
+			}
+			if err := h.ws.Rename(request.Path, request.Name); err != nil {
+				return err
+			}
+			jsonResponse(w, 200, h.ws.List())
+			return nil
+		case "DELETE":
+			if err := h.ws.Remove(r.URL.Query().Get("path")); err != nil {
+				return err
+			}
+			jsonResponse(w, 200, h.ws.List())
+			return nil
+		}
+	case "/api/repositories/switch":
+		if r.Method == "POST" {
+			var request struct {
+				Path string `json:"path"`
+			}
+			if err := decode(r, &request); err != nil {
+				return err
+			}
+			result, err := h.ws.Switch(request.Path)
+			if err != nil {
+				return err
+			}
+			jsonResponse(w, 200, result)
+			return nil
+		}
+	case "/api/repositories/pick":
+		if r.Method == "POST" {
+			folder, canceled, err := h.pickFolder()
+			if err != nil {
+				return err
+			}
+			if canceled {
+				list := h.ws.List()
+				list.Canceled = true
+				jsonResponse(w, 200, list)
+				return nil
+			}
+			result, err := h.ws.Switch(folder)
+			if err != nil {
+				return err
+			}
+			jsonResponse(w, 200, result)
+			return nil
+		}
+	}
+	jsonResponse(w, http.StatusNotFound, map[string]string{"error": "接口或请求方法不存在"})
 	return nil
 }
 func (h *handler) events(w http.ResponseWriter, r *http.Request) {
@@ -741,10 +819,8 @@ func (h *handler) events(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Connection", "keep-alive")
 	w.Header().Set("X-Accel-Buffering", "no")
 	client := make(chan []byte, 16)
-	h.store.mu.Lock()
-	h.store.clients[client] = true
-	h.store.mu.Unlock()
-	defer func() { h.store.mu.Lock(); delete(h.store.clients, client); h.store.mu.Unlock() }()
+	h.ws.addClient(client)
+	defer h.ws.removeClient(client)
 	_, _ = fmt.Fprint(w, ": connected\n\n")
 	flusher.Flush()
 	ticker := time.NewTicker(20 * time.Second)

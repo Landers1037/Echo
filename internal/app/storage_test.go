@@ -35,7 +35,7 @@ func TestStorageUsageCountsRealFiles(t *testing.T) {
 	putStorageAsset(t, s, ".assets/sub/b.WEBP", "webp")
 	putStorageAsset(t, s, ".assets/readme.md", "asset documentation")
 	putStorageAsset(t, s, ".assets/keep.txt", "not an image")
-	h := NewHandler(s, false)
+	h := NewHandler(attachStore(s), false)
 	rr := request(t, h, "GET", "/api/storage", nil)
 	if rr.Code != 200 {
 		t.Fatalf("%d %s", rr.Code, rr.Body.String())
@@ -74,7 +74,7 @@ func TestStorageCleanupProtectsAllReferencedImages(t *testing.T) {
 	if err := s.recycle("archive"); err != nil {
 		t.Fatal(err)
 	}
-	h := NewHandler(s, false)
+	h := NewHandler(attachStore(s), false)
 	rr := request(t, h, "GET", "/api/storage/unused-assets", nil)
 	if rr.Code != 200 {
 		t.Fatalf("%d %s", rr.Code, rr.Body.String())
@@ -127,7 +127,7 @@ func TestStorageCleanupRejectsChangedNotesAndAssets(t *testing.T) {
 		t.Fatal(err)
 	}
 	note := create(t, s, "new-reference.md", "![new](.assets/unused.png)")
-	h := NewHandler(s, false)
+	h := NewHandler(attachStore(s), false)
 	if rr := request(t, h, "POST", "/api/storage/cleanup", map[string]string{"token": scan.Token}); rr.Code != 409 {
 		t.Fatalf("new reference not protected: %d %s", rr.Code, rr.Body.String())
 	}

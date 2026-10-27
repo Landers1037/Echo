@@ -11,4 +11,6 @@ export type AssetCleanup = { removedCount: number; removedBytes: number; failed:
 export type Task = { id: string; notePath: string; noteTitle: string; line: number; text: string; status: 'todo' | 'doing' | 'done'; due?: string; remindAt?: string; repeat?: 'none' | 'daily' | 'weekly' | 'monthly'; timezone?: string; revision: string }
 export type Reminder = { id: string; taskId: string; notePath: string; text: string; due: string; acknowledged: boolean }
 export type TrashEntry = { id: string; path: string; deletedAt: string }
+export type Repository = { path: string; name: string; lastOpened: string }
+export type RepositoryList = { current: string; items: Repository[]; switched: boolean; canceled: boolean }
 export type ExportSnapshot = { notes: (Note & { assets: Record<string, string> })[]; missing: string[]; external: string[] }

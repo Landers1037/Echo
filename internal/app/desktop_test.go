@@ -47,7 +47,7 @@ func TestOpenNotebookDirectoryRejectsUnavailablePaths(t *testing.T) {
 
 func TestOpenStorageAlwaysOpensCurrentNotebookRoot(t *testing.T) {
 	s := testStore(t)
-	h := NewHandler(s, false).(*handler)
+	h := NewHandler(attachStore(s), false).(*handler)
 	var opened []string
 	h.openDirectory = func(directory string) error { opened = append(opened, directory); return nil }
 	if rr := request(t, h, "GET", "/api/storage/open", nil); rr.Code == http.StatusOK || len(opened) != 0 {
@@ -65,7 +65,7 @@ func TestOpenStorageAlwaysOpensCurrentNotebookRoot(t *testing.T) {
 }
 
 func TestOpenStorageUsesLocalRequestGuards(t *testing.T) {
-	h := NewHandler(testStore(t), false).(*handler)
+	h := NewHandler(attachStore(testStore(t)), false).(*handler)
 	called := false
 	h.openDirectory = func(string) error { called = true; return nil }
 	for _, test := range []struct{ host, origin, fetchSite string }{

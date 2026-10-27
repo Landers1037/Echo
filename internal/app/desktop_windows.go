@@ -1,8 +1,11 @@
 package app
 
 import (
+	"errors"
 	"fmt"
+	"os/exec"
 	"runtime"
+	"strings"
 	"syscall"
 	"unsafe"
 )
@@ -58,6 +61,42 @@ func openShellDirectory(directory string, execute func(*shellExecuteInfo) error)
 		return fmt.Errorf("无法打开文件浏览器：%w", err)
 	}
 	return nil
+}
+
+func pickFolderOnDesktop() (string, bool, error) {
+	script := strings.Join([]string{
+		"$ErrorActionPreference = 'Stop'",
+		"Add-Type -AssemblyName System.Windows.Forms",
+		"$owner = New-Object System.Windows.Forms.Form",
+		"$owner.TopMost = $true",
+		"$owner.ShowInTaskbar = $false",
+		"$owner.Opacity = 0",
+		"$dialog = New-Object System.Windows.Forms.FolderBrowserDialog",
+		"$dialog.Description = '选择一个笔记仓库文件夹'",
+		"$dialog.ShowNewFolderButton = $true",
+		"$owner.Show()",
+		"$owner.Activate()",
+		"$result = $dialog.ShowDialog($owner)",
+		"$owner.Close()",
+		"if ($result -ne [System.Windows.Forms.DialogResult]::OK) { exit 2 }",
+		"$bytes = [System.Text.Encoding]::UTF8.GetBytes($dialog.SelectedPath)",
+		"[Console]::OpenStandardOutput().Write($bytes, 0, $bytes.Length)",
+	}, "; ")
+	command := exec.Command("powershell.exe", "-NoProfile", "-STA", "-Command", script)
+	command.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+	out, err := command.Output()
+	if err != nil {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) && exitErr.ExitCode() == 2 {
+			return "", true, nil
+		}
+		return "", false, fmt.Errorf("无法打开文件夹选择器：%w", err)
+	}
+	folder := strings.TrimSpace(string(out))
+	if folder == "" {
+		return "", true, nil
+	}
+	return folder, false, nil
 }
 
 func openDirectoryOnDesktop(directory string) error {

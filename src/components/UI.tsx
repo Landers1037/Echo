@@ -4,7 +4,7 @@ import { AnimatePresence, motion } from 'motion/react'
 import { X } from 'lucide-react'
 import type { ReactNode } from 'react'
 
-export function Modal({ title, children, onClose, wide = false, className = '' }: { title: string; children: ReactNode; onClose: () => void; wide?: boolean; className?: string }) {
+export function Modal({ title, children, onClose, wide = false, className = '', actions }: { title: string; children: ReactNode; onClose: () => void; wide?: boolean; className?: string; actions?: ReactNode }) {
   const ref = useRef<HTMLDivElement>(null)
   const close = useRef(onClose)
   close.current = onClose
@@ -25,7 +25,7 @@ export function Modal({ title, children, onClose, wide = false, className = '' }
   }, [])
   return createPortal(<motion.div className="modal-backdrop" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onMouseDown={e => { if (e.target === e.currentTarget) onClose() }}>
     <motion.div className={`modal ${wide ? 'modal-wide' : ''} ${className}`} ref={ref} role="dialog" aria-modal="true" aria-label={title} initial={{ opacity: 0, y: 12, scale: .98 }} animate={{ opacity: 1, y: 0, scale: 1 }} transition={{ duration: .16 }}>
-      <div className="modal-heading"><h2>{title}</h2><button className="icon-button" aria-label="关闭弹窗" onClick={onClose}><X size={18} /></button></div>
+      <div className="modal-heading"><h2>{title}</h2><div className="modal-heading-tools">{actions}<button className="icon-button" aria-label="关闭弹窗" onClick={onClose}><X size={18} /></button></div></div>
       {children}
     </motion.div>
   </motion.div>, document.body)

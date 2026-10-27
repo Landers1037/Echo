@@ -77,6 +77,12 @@ function createServer(extraNotes: Note[] = [], initialFolders: string[] = [], in
   const writes: Write[] = []
   const batches: Batch[] = []
   const calls: Call[] = []
+  let currentRepository = 'D:\\EchoNotes'
+  let repositories = [
+    { path: 'D:\\EchoNotes', name: '本地笔记', lastOpened: '2026-10-27T01:00:00.000Z' },
+    { path: 'D:\\Archive', name: '归档', lastOpened: '2026-10-26T01:00:00.000Z' },
+  ]
+  let nextPick = { canceled: true, switched: false, path: '' }
   const fetch = vi.fn(async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
     const url = new URL(String(input), 'http://localhost')
     const method = init?.method || 'GET'
@@ -129,6 +135,37 @@ function createServer(extraNotes: Note[] = [], initialFolders: string[] = [], in
       note = { ...note, content: write.content, revision: `v${++version}` }
       return response(note)
     }
+    if (url.pathname === '/api/repositories' && method === 'GET') return response({ current: currentRepository, items: repositories, switched: false, canceled: false })
+    if (url.pathname === '/api/repositories' && method === 'PUT') {
+      const request = body as { path: string; name: string }
+      const item = repositories.find(entry => entry.path === request.path)
+      if (!item) return response({ error: '找不到该仓库记录' }, 400)
+      item.name = request.name
+      return response({ current: currentRepository, items: repositories, switched: false, canceled: false })
+    }
+    if (url.pathname === '/api/repositories' && method === 'DELETE') {
+      const target = url.searchParams.get('path')
+      if (target === currentRepository) return response({ error: '不能删除当前打开的仓库' }, 400)
+      repositories = repositories.filter(entry => entry.path !== target)
+      return response({ current: currentRepository, items: repositories, switched: false, canceled: false })
+    }
+    if (url.pathname === '/api/repositories/switch' && method === 'POST') {
+      const request = body as { path: string }
+      const known = repositories.find(entry => entry.path === request.path)
+      if (!known) return response({ error: '无法访问仓库目录' }, 400)
+      const switched = request.path !== currentRepository
+      currentRepository = request.path
+      repositories = [known, ...repositories.filter(entry => entry.path !== known.path)]
+      return response({ current: currentRepository, items: repositories, switched, canceled: false })
+    }
+    if (url.pathname === '/api/repositories/pick' && method === 'POST') {
+      if (nextPick.canceled) return response({ current: currentRepository, items: repositories, switched: false, canceled: true })
+      const path = nextPick.path
+      const switched = nextPick.switched && path !== currentRepository
+      if (!repositories.some(entry => entry.path === path)) repositories = [{ path, name: '新仓库', lastOpened: '2026-10-27T02:00:00.000Z' }, ...repositories]
+      currentRepository = path
+      return response({ current: currentRepository, items: repositories, switched, canceled: false })
+    }
     if (url.pathname === '/api/notes/batch' && method === 'POST') {
       const batch = body as Batch
       batches.push(batch)
@@ -138,7 +175,7 @@ function createServer(extraNotes: Note[] = [], initialFolders: string[] = [], in
     }
     throw new Error(`Unexpected request: ${method} ${url.pathname}`)
   })
-  return { fetch, writes, batches, calls, current: () => note, savedSettings: () => savedSettings, failNextCleanup: () => { cleanupError = true }, failNextSettings: () => { settingsError = true }, delayNextWrite: () => { nextWriteGate = deferred(); return nextWriteGate }, conflictNextWrite: (disk: Note) => { nextConflict = disk } }
+  return { fetch, writes, batches, calls, current: () => note, savedSettings: () => savedSettings, failNextCleanup: () => { cleanupError = true }, failNextSettings: () => { settingsError = true }, delayNextWrite: () => { nextWriteGate = deferred(); return nextWriteGate }, conflictNextWrite: (disk: Note) => { nextConflict = disk }, queuePick: (path: string, switched = true) => { nextPick = { canceled: false, switched, path } } }
 }
 
 beforeEach(() => {
@@ -847,5 +884,98 @@ describe('multi-note tabs', () => {
     expect(tabs.getAllByRole('tab').map(tab => tab.textContent)).toEqual(['另一篇', '测试'])
     expect(tabs.getByRole('tab', { name: '另一篇' })).toHaveAttribute('aria-selected', 'true')
     expect(tabs.queryByRole('tab', { name: '缺失' })).not.toBeInTheDocument()
+  })
+})
+
+describe('repository switcher', () => {
+  function stubReload() {
+    const reload = vi.fn()
+    vi.stubGlobal('location', { reload, href: 'http://localhost/' })
+    return reload
+  }
+
+  it('lists the current repository first and renames, removes, or switches another', async () => {
+    const server = createServer()
+    const editor = await openApp(server)
+    localStorage.setItem('echo:last-note', '测试.md')
+    localStorage.setItem('echo:tabs', JSON.stringify(['测试.md']))
+    localStorage.setItem('echo:draft:测试.md', JSON.stringify({ content: '# 草稿' }))
+    fireEvent.click(screen.getByRole('button', { name: '切换仓库' }))
+    const dialog = await screen.findByRole('dialog', { name: '切换仓库' })
+    expect(dialog).toHaveTextContent('本地笔记')
+    expect(dialog).toHaveTextContent('当前')
+    expect(dialog).toHaveTextContent('D:\\EchoNotes')
+    expect(dialog).toHaveTextContent('归档')
+    expect(dialog).toHaveTextContent('D:\\Archive')
+    expect(within(dialog).queryByRole('button', { name: '移除仓库 本地笔记' })).not.toBeInTheDocument()
+    fireEvent.click(within(dialog).getByRole('button', { name: '编辑仓库名称 归档' }))
+    fireEvent.change(within(dialog).getByRole('textbox', { name: '仓库名称' }), { target: { value: '资料库' } })
+    fireEvent.keyDown(within(dialog).getByRole('textbox', { name: '仓库名称' }), { key: 'Enter' })
+    expect(await within(dialog).findByRole('button', { name: '切换到 资料库' })).toBeInTheDocument()
+    expect(server.calls.some(call => call.method === 'PUT' && call.path === '/api/repositories' && (call.body as { name?: string }).name === '资料库')).toBe(true)
+    fireEvent.click(within(dialog).getByRole('button', { name: '移除仓库 资料库' }))
+    await waitFor(() => expect(within(dialog).queryByRole('button', { name: '切换到 资料库' })).not.toBeInTheDocument())
+    expect(server.calls.some(call => call.method === 'DELETE' && call.path === '/api/repositories')).toBe(true)
+    fireEvent.click(screen.getByRole('button', { name: '关闭弹窗' }))
+    const reload = stubReload()
+    fireEvent.click(screen.getByRole('button', { name: '切换仓库' }))
+    const reopened = await screen.findByRole('dialog', { name: '切换仓库' })
+    expect(within(reopened).queryByText('资料库')).not.toBeInTheDocument()
+    fireEvent.change(editor, { target: { value: '# 切换前\n' } })
+    fireEvent.click(within(reopened).getByRole('button', { name: '新增仓库' }))
+    await waitFor(() => expect(server.calls.some(call => call.path === '/api/repositories/pick')).toBe(true))
+    expect(reload).not.toHaveBeenCalled()
+    server.queuePick('D:\\Fresh')
+    fireEvent.click(within(reopened).getByRole('button', { name: '新增仓库' }))
+    await waitFor(() => expect(reload).toHaveBeenCalled())
+    const pickAt = server.calls.findIndex(call => call.path === '/api/repositories/pick')
+    const saveAt = server.calls.findIndex(call => call.method === 'PUT' && call.path === '/api/notes' && (call.body as { content?: string }).content === '# 切换前\n')
+    expect(saveAt).toBeGreaterThanOrEqual(0)
+    expect(pickAt).toBeGreaterThan(saveAt)
+    expect(localStorage.getItem('echo:last-note')).toBeNull()
+    expect(localStorage.getItem('echo:tabs')).toBeNull()
+    expect(localStorage.getItem('echo:draft:测试.md')).toBeNull()
+    expect(localStorage.getItem('echo:settings')).not.toBeNull()
+  })
+
+  it('saves the open note before switching to another repository', async () => {
+    const server = createServer()
+    const editor = await openApp(server)
+    localStorage.setItem('echo:last-note', '测试.md')
+    localStorage.setItem('echo:tabs', JSON.stringify(['测试.md']))
+    localStorage.setItem('echo:draft:测试.md', '{"content":"# 草稿"}')
+    const reload = stubReload()
+    fireEvent.click(screen.getByRole('button', { name: '切换仓库' }))
+    const dialog = await screen.findByRole('dialog', { name: '切换仓库' })
+    fireEvent.change(editor, { target: { value: '# 切换前\n' } })
+    fireEvent.click(within(dialog).getByRole('button', { name: '切换到 归档' }))
+    await waitFor(() => expect(reload).toHaveBeenCalled())
+    const switchAt = server.calls.findIndex(call => call.path === '/api/repositories/switch')
+    const saveAt = server.calls.findIndex(call => call.method === 'PUT' && call.path === '/api/notes' && (call.body as { content?: string }).content === '# 切换前\n')
+    expect(saveAt).toBeGreaterThanOrEqual(0)
+    expect(switchAt).toBeGreaterThan(saveAt)
+    expect((server.calls[switchAt].body as { path: string }).path).toBe('D:\\Archive')
+    expect(localStorage.getItem('echo:last-note')).toBeNull()
+    expect(localStorage.getItem('echo:tabs')).toBeNull()
+    expect(localStorage.getItem('echo:draft:测试.md')).toBeNull()
+    expect(localStorage.getItem('echo:settings')).not.toBeNull()
+  })
+
+  it('reloads when another window switches the repository', async () => {
+    let source: { onmessage: ((event: MessageEvent) => void) | null } | undefined
+    vi.stubGlobal('EventSource', class {
+      onmessage: ((event: MessageEvent) => void) | null = null
+      addEventListener() {}
+      close() {}
+      constructor() { source = this }
+    })
+    const server = createServer()
+    await openApp(server)
+    localStorage.setItem('echo:draft:测试.md', '{"content":"# 另一窗口"}')
+    const reload = stubReload()
+    source?.onmessage?.(new MessageEvent('message', { data: JSON.stringify({ type: 'switched' }) }))
+    await waitFor(() => expect(reload).toHaveBeenCalled())
+    expect(localStorage.getItem('echo:draft:测试.md')).toBeNull()
+    expect(server.calls.some(call => call.method === 'PUT' && call.path === '/api/notes')).toBe(false)
   })
 })
