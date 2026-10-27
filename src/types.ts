@@ -1,7 +1,8 @@
 export type Metadata = { tags: string[]; group: string }
 export type NoteSummary = { path: string; title: string; metadata: Metadata; revision: string; modified: string; metadataError?: string }
 export type Note = NoteSummary & { content: string }
-export type TreeEntry = { path: string; name: string; type: 'folder' | 'note'; children?: TreeEntry[] }
+export type TreeEntry = { path: string; name: string; type: 'folder' | 'note' | 'drawing'; children?: TreeEntry[] }
+export type Drawing = { path: string; revision: string; modified: string; content: string; markdownPath?: string }
 export type Settings = { theme: 'light' | 'dark' | 'system'; accent: string; animations: boolean; editorFontSize: number; editorLineNumbers: boolean; previewLineNumbers: boolean; multiTabs: boolean; sourceSplitPreview: boolean; assetsDir: string; shortcuts: Record<string, string> }
 export type SettingsPreview = Pick<Settings, 'theme' | 'accent' | 'editorFontSize'>
 export type StorageUsage = { root: string; assetsDir: string; databaseBytes: number; noteBytes: number; noteCount: number; assetBytes: number; assetCount: number }

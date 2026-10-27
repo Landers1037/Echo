@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -463,4 +464,142 @@ func TestMigrationRecoveryRollsBackInterruptedWrites(t *testing.T) {
 	if _, err = os.Stat(asset); !os.IsNotExist(err) {
 		t.Fatal("staged image survived rollback")
 	}
+}
+
+func findTreeEntry(entries []TreeEntry, target string) (TreeEntry, bool) {
+	for _, entry := range entries {
+		if entry.Path == target {
+			return entry, true
+		}
+		if child, ok := findTreeEntry(entry.Children, target); ok {
+			return child, true
+		}
+	}
+	return TreeEntry{}, false
+}
+
+func TestDrawingsCreateSaveMoveExportAndCleanup(t *testing.T) {
+	s := testStore(t)
+	h := NewHandler(s, false)
+	rr := request(t, h, "POST", "/api/drawings", map[string]any{"path": "图表/架构.excalidraw"})
+	if rr.Code != 201 {
+		t.Fatalf("create %d %s", rr.Code, rr.Body.String())
+	}
+	var created Drawing
+	if err := json.Unmarshal(rr.Body.Bytes(), &created); err != nil {
+		t.Fatal(err)
+	}
+	if created.Path != "图表/架构.excalidraw" || !strings.Contains(created.Content, `"type":"excalidraw"`) || created.Revision == "" {
+		t.Fatalf("created %+v", created)
+	}
+	tree, err := s.tree()
+	if err != nil {
+		t.Fatal(err)
+	}
+	entry, ok := findTreeEntry(tree, created.Path)
+	if !ok || entry.Type != "drawing" || entry.Name != "架构.excalidraw" {
+		t.Fatalf("tree entry %+v %v", entry, ok)
+	}
+	for _, body := range []any{
+		map[string]any{"path": "图表/坏.md"},
+		map[string]any{"path": ".assets/内部.excalidraw"},
+		map[string]any{"path": "图表/坏.excalidraw", "content": `{"type":"not-excalidraw"}`},
+		map[string]any{"path": "图表/架构.excalidraw"},
+	} {
+		if rr = request(t, h, "POST", "/api/drawings", body); rr.Code < 400 {
+			t.Fatalf("accepted invalid drawing %v: %d %s", body, rr.Code, rr.Body.String())
+		}
+	}
+	updatedContent := `{"type":"excalidraw","elements":[{"id":"box"}]}`
+	if rr = request(t, h, "PUT", "/api/drawings", map[string]any{"path": created.Path, "content": updatedContent, "revision": "stale"}); rr.Code != http.StatusConflict {
+		t.Fatalf("conflict %d %s", rr.Code, rr.Body.String())
+	}
+	rr = request(t, h, "PUT", "/api/drawings", map[string]any{"path": created.Path, "content": updatedContent, "revision": created.Revision})
+	if rr.Code != 200 {
+		t.Fatalf("save %d %s", rr.Code, rr.Body.String())
+	}
+	var saved Drawing
+	if err = json.Unmarshal(rr.Body.Bytes(), &saved); err != nil || saved.Content != updatedContent || saved.Revision == created.Revision {
+		t.Fatalf("saved %+v %v", saved, err)
+	}
+	note := create(t, s, "记录.md", "# 记录\n![架构](图表/架构.excalidraw)\n")
+	rr = request(t, h, "POST", "/api/drawings/move", map[string]any{"path": saved.Path, "target": "资料/架构.excalidraw", "revision": saved.Revision})
+	if rr.Code != 200 {
+		t.Fatalf("move %d %s", rr.Code, rr.Body.String())
+	}
+	note, err = s.readNote(note.Path)
+	if err != nil || !strings.Contains(note.Content, "%E8%B5%84%E6%96%99/%E6%9E%B6%E6%9E%84.excalidraw") || strings.Contains(note.Content, "图表/架构.excalidraw") {
+		t.Fatalf("reference not rewritten: %s %v", note.Content, err)
+	}
+	rr = request(t, h, "POST", "/api/drawings", map[string]any{"notePath": note.Path})
+	if rr.Code != 201 {
+		t.Fatalf("attach %d %s", rr.Code, rr.Body.String())
+	}
+	var attached struct {
+		Drawing
+		MarkdownPath string `json:"markdownPath"`
+	}
+	if err = json.Unmarshal(rr.Body.Bytes(), &attached); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(attached.Path, ".assets/") || !strings.HasSuffix(attached.Path, ".excalidraw") || attached.MarkdownPath != attached.Path {
+		t.Fatalf("attached %+v", attached)
+	}
+	if _, ok = findTreeEntry(mustTree(t, s), attached.Path); ok {
+		t.Fatal("asset drawing appeared in the directory tree")
+	}
+	note, err = s.saveNote(note.Path, note.Content+"\n![绘图]("+attached.MarkdownPath+")\n", note.Revision, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	unused, err := s.unusedAssets()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, file := range unused.Files {
+		if file.Path == attached.Path {
+			t.Fatalf("referenced drawing listed as unused: %+v", unused.Files)
+		}
+	}
+	snapshot, assets, err := s.snapshot([]string{note.Path})
+	if err != nil {
+		t.Fatal(err)
+	}
+	embedded := snapshot.Notes[0].Assets[attached.MarkdownPath]
+	if len(snapshot.Missing) != 0 || !strings.HasPrefix(embedded, "data:application/vnd.excalidraw+json;base64,") {
+		t.Fatalf("snapshot %+v", snapshot)
+	}
+	if _, ok = assets[attached.Path]; !ok {
+		t.Fatal("drawing missing from export bundle assets")
+	}
+	rr = request(t, h, "DELETE", "/api/drawings?path="+url.QueryEscape(attached.Path), nil)
+	if rr.Code != 200 {
+		t.Fatalf("delete attached %d %s", rr.Code, rr.Body.String())
+	}
+	standalone := "资料/架构.excalidraw"
+	rr = request(t, h, "DELETE", "/api/drawings?path="+url.QueryEscape(standalone), nil)
+	if rr.Code != 200 {
+		t.Fatalf("delete %d %s", rr.Code, rr.Body.String())
+	}
+	if _, ok = findTreeEntry(mustTree(t, s), standalone); ok {
+		t.Fatal("deleted drawing remained in the tree")
+	}
+	if len(s.state.Trash) == 0 {
+		t.Fatal("drawing was not recycled")
+	}
+	if err = s.restore(s.state.Trash[len(s.state.Trash)-1].ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.readDrawing(standalone); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func mustTree(t *testing.T, s *Store) []TreeEntry {
+	t.Helper()
+	tree, err := s.tree()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return tree
 }

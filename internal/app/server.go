@@ -453,6 +453,115 @@ func (h *handler) api(w http.ResponseWriter, r *http.Request) error {
 		if method == "POST" {
 			return h.upload(w, r)
 		}
+	case "/api/drawings":
+		switch method {
+		case "GET":
+			drawing, err := s.readDrawing(query.Get("path"))
+			if err != nil {
+				return err
+			}
+			jsonResponse(w, 200, drawing)
+			return nil
+		case "POST":
+			var request struct {
+				Path     string  `json:"path"`
+				NotePath string  `json:"notePath"`
+				Content  *string `json:"content"`
+			}
+			if err := decode(r, &request); err != nil {
+				return err
+			}
+			content := ""
+			if request.Content != nil {
+				content = *request.Content
+			}
+			if request.Path != "" && request.NotePath != "" {
+				return fmt.Errorf("请只提供绘图路径或笔记路径")
+			}
+			if request.NotePath != "" {
+				note, err := s.readNote(request.NotePath)
+				if err != nil {
+					return err
+				}
+				name := path.Join(s.state.Settings.AssetsDir, newID()+".excalidraw")
+				drawing, err := s.createDrawing(name, content)
+				if err != nil {
+					return err
+				}
+				s.changed()
+				jsonResponse(w, 201, struct {
+					Drawing
+					MarkdownPath string `json:"markdownPath"`
+				}{drawing, relativeLink(note.Path, drawing.Path, drawing.Path)})
+				return nil
+			}
+			if request.Path == "" {
+				return fmt.Errorf("请提供绘图路径或笔记路径")
+			}
+			name, err := cleanRelative(request.Path)
+			if err != nil {
+				return err
+			}
+			if name == s.state.Settings.AssetsDir || strings.HasPrefix(name, s.state.Settings.AssetsDir+"/") {
+				return fmt.Errorf("不能在资源目录中保存绘图")
+			}
+			drawing, err := s.createDrawing(name, content)
+			if err != nil {
+				return err
+			}
+			s.changed()
+			jsonResponse(w, 201, drawing)
+			return nil
+		case "PUT":
+			var request struct {
+				Path     string `json:"path"`
+				Content  string `json:"content"`
+				Revision string `json:"revision"`
+				Force    bool   `json:"force"`
+			}
+			if err := decode(r, &request); err != nil {
+				return err
+			}
+			drawing, err := s.saveDrawing(request.Path, request.Content, request.Revision, request.Force)
+			if err != nil {
+				return err
+			}
+			s.changed()
+			jsonResponse(w, 200, drawing)
+			return nil
+		case "DELETE":
+			if _, err := s.readDrawing(query.Get("path")); err != nil {
+				return err
+			}
+			if err := s.recycle(query.Get("path")); err != nil {
+				return err
+			}
+			s.changed()
+			jsonResponse(w, 200, map[string]bool{"ok": true})
+			return nil
+		}
+	case "/api/drawings/move":
+		if method != "POST" {
+			break
+		}
+		var request struct {
+			Path     string `json:"path"`
+			Target   string `json:"target"`
+			Revision string `json:"revision"`
+		}
+		if err := decode(r, &request); err != nil {
+			return err
+		}
+		if _, err := s.move(request.Path, request.Target, request.Revision, false); err != nil {
+			return err
+		}
+		drawing, err := s.readDrawing(request.Target)
+		if err != nil {
+			return err
+		}
+		s.changed()
+		jsonResponse(w, 200, drawing)
+		return nil
 	case "/api/tasks":
 		if method == "GET" {
 			tasks, err := s.allTasks()

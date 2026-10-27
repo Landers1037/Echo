@@ -79,7 +79,8 @@ func (s *Store) snapshot(paths []string) (ExportSnapshot, map[string]exportAsset
 					snapshot.Missing = append(snapshot.Missing, note.Path+": "+source)
 					continue
 				}
-				if !strings.HasPrefix(assetMIME(target, data), "image/") {
+				drawingAsset := strings.EqualFold(path.Ext(target), ".excalidraw")
+				if !drawingAsset && !strings.HasPrefix(assetMIME(target, data), "image/") {
 					snapshot.Missing = append(snapshot.Missing, note.Path+": "+source)
 					continue
 				}
@@ -90,7 +91,11 @@ func (s *Store) snapshot(paths []string) (ExportSnapshot, map[string]exportAsset
 				asset = exportAsset{data: data, target: target, source: source}
 				assets[target] = asset
 			}
-			item.Assets[source] = "data:" + assetMIME(target, asset.data) + ";base64," + base64.StdEncoding.EncodeToString(asset.data)
+			mediaType := assetMIME(target, asset.data)
+			if strings.EqualFold(path.Ext(target), ".excalidraw") {
+				mediaType = "application/vnd.excalidraw+json"
+			}
+			item.Assets[source] = "data:" + mediaType + ";base64," + base64.StdEncoding.EncodeToString(asset.data)
 		}
 		snapshot.Notes = append(snapshot.Notes, item)
 	}

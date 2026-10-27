@@ -8,7 +8,7 @@ import type { ViewUpdate } from '@codemirror/view'
 import { Compartment, type Extension } from '@codemirror/state'
 import { autocompletion } from '@codemirror/autocomplete'
 import { searchKeymap } from '@codemirror/search'
-import { Bold, Italic, Heading, Strikethrough, Underline, Quote, List, ListOrdered, ListTodo, Link, ImagePlus, Code, Code2, Table2, Undo2, Redo2, LoaderCircle, RefreshCw, X } from 'lucide-react'
+import { Bold, Italic, Heading, Strikethrough, Underline, Quote, List, ListOrdered, ListTodo, Link, ImagePlus, Shapes, Code, Code2, Table2, Undo2, Redo2, LoaderCircle, RefreshCw, X } from 'lucide-react'
 import { undo, redo } from '@codemirror/commands'
 import { bindingFor, formatShortcut, shortcutBindings } from '../shortcuts'
 
@@ -19,6 +19,7 @@ export type EditorProps = {
   lineNumbers: boolean
   dark: boolean
   onUpload: (file: File) => Promise<string>
+  onDrawingInsert?: () => Promise<string>
   onSave: () => void
   onTaskInsert?: () => void
   shortcuts: Record<string, string>
@@ -100,6 +101,16 @@ export function Editor(props: EditorProps) {
     const insert = lines.map(line => toggleOff ? line.replace(/^#{1,6} /, '') : marker + line.replace(/^#{1,6} /, '')).join('\n')
     editor.dispatch({ changes: { from: first.from, to: last.to, insert }, selection: { anchor: first.from, head: first.from + insert.length }, scrollIntoView: true })
     editor.focus()
+  }
+
+  function imageMarkdown(target: string) {
+    const href = target.replace(/^<|>$/g, '')
+    return /[\s()]/.test(href) ? `![绘图](<${href}>)` : `![绘图](${href})`
+  }
+
+  async function insertDrawing() {
+    const markdownPath = await latest.current.onDrawingInsert?.()
+    if (markdownPath) insertText(`\n${imageMarkdown(markdownPath)}\n`)
   }
 
   function insertText(text: string) {
@@ -221,6 +232,7 @@ export function Editor(props: EditorProps) {
     { id: 'task', icon: ListTodo, title: '待办任务', action: () => { prefixLines('- [ ] '); latest.current.onTaskInsert?.() } },
     { id: 'link', icon: Link, title: '链接', action: () => replaceSelection('[', '](https://)', '链接文字') },
     { id: 'image', icon: ImagePlus, title: '上传图片（也可直接粘贴）', action: () => fileInput.current?.click() },
+    { id: 'drawing', icon: Shapes, title: '插入绘图', action: () => { void insertDrawing() } },
     { id: 'inlineCode', icon: Code, title: toolTitle('行内代码', 'inlineCode'), action: () => commands.current.inlineCode?.() },
     { id: 'codeBlock', icon: Code2, title: toolTitle('代码块', 'codeBlock'), action: () => commands.current.codeBlock?.() },
     { id: 'table', icon: Table2, title: '插入表格', action: () => insertText('\n| 列一 | 列二 | 列三 |\n| --- | --- | --- |\n| 内容 | 内容 | 内容 |\n| 内容 | 内容 | 内容 |\n') },

@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { MarkdownView, resolveNotePath } from './MarkdownView'
 
 vi.mock('shiki', () => ({ codeToHtml: async (code: string) => `<pre class="shiki"><code><span class="line">${code.replace(/</g, '&lt;')}</span></code></pre>` }))
+vi.mock('./Drawing', () => ({ DrawingEmbed: ({ path, onEdit }: { path: string; onEdit?: (path: string) => void }) => <button type="button" onClick={() => onEdit?.(path)}>{path}</button> }))
 afterEach(cleanup)
 
 describe('Markdown rendering', () => {
@@ -61,6 +62,17 @@ describe('Markdown rendering', () => {
     expect(screen.getByRole('table')).toHaveTextContent('示例')
     expect(container.querySelector('script')).toBeNull()
     expect(screen.getByText('危险链接')).not.toHaveAttribute('href', 'javascript:alert(1)')
+  })
+
+  it('renders excalidraw references as drawings and embeds them when exporting', () => {
+    const edit = vi.fn()
+    const { rerender } = render(<MarkdownView content="![架构](../.assets/a.excalidraw)" notePath="项目/记录.md" lineNumbers={false} onEditDrawing={edit} />)
+    fireEvent.click(screen.getByRole('button', { name: '.assets/a.excalidraw' }))
+    expect(edit).toHaveBeenCalledWith('.assets/a.excalidraw')
+    rerender(<MarkdownView content="![架构](../.assets/a.excalidraw)" notePath="项目/记录.md" assets={{ '../.assets/a.excalidraw': 'data:application/vnd.excalidraw+json;base64,abc' }} lineNumbers={false} exporting />)
+    expect(screen.getByRole('button', { name: 'data:application/vnd.excalidraw+json;base64,abc' })).toBeInTheDocument()
+    rerender(<MarkdownView content="![架构](../.assets/missing.excalidraw)" notePath="项目/记录.md" lineNumbers={false} exporting />)
+    expect(screen.getByText('[绘图缺失：架构]')).toBeInTheDocument()
   })
 
   it('opens internal Markdown links through the note navigator', () => {

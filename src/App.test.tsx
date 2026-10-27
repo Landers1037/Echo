@@ -11,6 +11,10 @@ vi.mock('./components/Editor', () => ({
 vi.mock('./components/MarkdownView', () => ({ MarkdownView: ({ content, fontSize }: { content: string; fontSize?: number }) => <article data-testid="preview" style={{ fontSize }}>{content}</article> }))
 vi.mock('./components/TasksView', () => ({ TasksView: () => <div data-testid="tasks-view" /> }))
 vi.mock('./export', () => ({ exportNotes: vi.fn(async () => {}) }))
+vi.mock('./components/Drawing', () => ({
+  DrawingEmbed: () => null,
+  DrawingModal: ({ path, onClose }: { path: string; onClose: () => void }) => <div role="dialog" aria-label="绘图"><span>{path}</span><button type="button" onClick={onClose}>关闭绘图</button></div>,
+}))
 vi.mock('motion/react', async () => {
   const React = await import('react')
   type Props = React.ComponentProps<'div'> & { initial?: unknown; animate?: unknown; exit?: unknown; transition?: unknown }
@@ -32,7 +36,7 @@ function deferred() {
   return { promise, resolve }
 }
 
-function noteTree(notes: Note[], folders: string[]): TreeEntry[] {
+function noteTree(notes: Note[], folders: string[], drawings: string[] = []): TreeEntry[] {
   const root: TreeEntry[] = []
   const directories = new Map<string, TreeEntry>()
   function children(path: string): TreeEntry[] {
@@ -50,13 +54,18 @@ function noteTree(notes: Note[], folders: string[]): TreeEntry[] {
     const parts = note.path.split('/')
     children(parts.slice(0, -1).join('/')).push({ path: note.path, name: parts.at(-1)!, type: 'note' })
   }
+  for (const drawing of drawings) {
+    const parts = drawing.split('/')
+    children(parts.slice(0, -1).join('/')).push({ path: drawing, name: parts.at(-1)!, type: 'drawing' })
+  }
   return root
 }
 
-function createServer(extraNotes: Note[] = [], initialFolders: string[] = [], initialSettings: Partial<Settings> = {}) {
+function createServer(extraNotes: Note[] = [], initialFolders: string[] = [], initialSettings: Partial<Settings> = {}, initialDrawings: string[] = []) {
   let note: Note = { path: '测试.md', title: '测试笔记', metadata: { tags: [], group: '' }, revision: 'v1', modified: '2026-10-22T12:00:00Z', content: '# 初始笔记\n' }
   const createdNotes: Note[] = []
   const folders = [...initialFolders]
+  const drawings = [...initialDrawings]
   const allNotes = () => [note, ...extraNotes, ...createdNotes]
   let savedSettings = { ...settings, ...initialSettings }
   let settingsError = false
@@ -90,7 +99,14 @@ function createServer(extraNotes: Note[] = [], initialFolders: string[] = [], in
       return response({ removedCount, removedBytes: removedCount * 2048, failed: [] })
     }
     if (url.pathname === '/api/notes' && method === 'GET') return response(url.searchParams.has('path') ? allNotes().find(item => item.path === url.searchParams.get('path')) : allNotes().map(item => ({ ...item, content: '' })))
-    if (url.pathname === '/api/tree') return response(noteTree(allNotes(), folders))
+    if (url.pathname === '/api/tree') return response(noteTree(allNotes(), folders, drawings))
+    if (url.pathname === '/api/drawings' && method === 'POST') {
+      const request = body as { path?: string; notePath?: string }
+      if (request.notePath) return response({ path: '.assets/drawing.excalidraw', markdownPath: '.assets/drawing.excalidraw', revision: 'd1', modified: note.modified, content: '{"type":"excalidraw","elements":[]}' }, 201)
+      const createdPath = request.path || '未命名绘图.excalidraw'
+      drawings.push(createdPath)
+      return response({ path: createdPath, revision: 'd1', modified: note.modified, content: '{"type":"excalidraw","elements":[]}' }, 201)
+    }
     if (url.pathname === '/api/notes' && method === 'POST') {
       const request = body as { path: string; content: string }
       if (allNotes().some(item => item.path === request.path)) return response({ error: '目标笔记已经存在' }, 409)
@@ -207,6 +223,28 @@ describe('App creates items inside a folder', () => {
     fireEvent.change(screen.getByLabelText('笔记路径'), { target: { value: '根目录笔记' } })
     fireEvent.click(screen.getByRole('button', { name: '创建笔记' }))
     await waitFor(() => expect(server.calls.find(call => call.path === '/api/notes' && call.method === 'POST')?.body).toEqual({ path: '根目录笔记.md', content: '' }))
+  })
+
+  it('opens directory drawings and creates one inside the selected folder', async () => {
+    const server = createServer([], ['验收'], {}, ['图表/架构.excalidraw'])
+    await openApp(server)
+    fireEvent.click(screen.getByRole('button', { name: '图表' }))
+    fireEvent.click(screen.getByRole('button', { name: '架构' }))
+    expect(screen.getByRole('dialog', { name: '绘图' })).toHaveTextContent('图表/架构.excalidraw')
+    fireEvent.click(screen.getByRole('button', { name: '关闭绘图' }))
+    fireEvent.change(screen.getByLabelText('搜索笔记'), { target: { value: '没有这篇' } })
+    expect(screen.queryByRole('button', { name: '架构' })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '清除搜索' }))
+    fireEvent.click(screen.getByRole('button', { name: '管理文件夹 验收' }))
+    fireEvent.click(within(screen.getByRole('dialog', { name: '文件夹操作' })).getByRole('button', { name: '新建绘图' }))
+    const dialog = screen.getByRole('dialog', { name: '新建绘图' })
+    expect(dialog).toHaveTextContent('创建位置：验收')
+    fireEvent.change(within(dialog).getByLabelText('绘图名称'), { target: { value: '流程' } })
+    fireEvent.click(within(dialog).getByRole('button', { name: '创建绘图' }))
+    expect(await screen.findByRole('dialog', { name: '绘图' })).toHaveTextContent('验收/流程.excalidraw')
+    expect(server.calls.find(call => call.path === '/api/drawings' && call.method === 'POST')?.body).toEqual({ path: '验收/流程.excalidraw' })
+    expect(await screen.findByRole('button', { name: '流程' })).toBeVisible()
+    expect(screen.getByRole('button', { name: '验收' })).toHaveAttribute('aria-expanded', 'true')
   })
 })
 

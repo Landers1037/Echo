@@ -71,9 +71,23 @@ type Store struct {
 	clients     map[chan []byte]bool
 	fingerprint string
 }
-type Conflict struct{ Current Note }
+type Drawing struct {
+	Path     string `json:"path"`
+	Revision string `json:"revision"`
+	Modified string `json:"modified"`
+	Content  string `json:"content"`
+}
+type Conflict struct {
+	Current Note
+	message string
+}
 
-func (e *Conflict) Error() string { return "笔记已被其他窗口或外部程序修改" }
+func (e *Conflict) Error() string {
+	if e.message != "" {
+		return e.message
+	}
+	return "笔记已被其他窗口或外部程序修改"
+}
 
 func defaults() Settings {
 	return Settings{Theme: "system", Accent: "#72967b", Animations: true, EditorFontSize: 14, EditorLineNumbers: true, PreviewLineNumbers: false, MultiTabs: false, SourceSplitPreview: false, AssetsDir: ".assets", Shortcuts: map[string]string{}}
@@ -181,6 +195,19 @@ func (s *Store) safePath(name string) (string, error) {
 		}
 	}
 	return current, nil
+}
+func isDrawingName(name string) bool {
+	return strings.EqualFold(path.Ext(name), ".excalidraw")
+}
+func (s *Store) drawingPath(name string) (string, error) {
+	name, err := cleanRelative(name)
+	if err != nil {
+		return "", err
+	}
+	if !isDrawingName(name) {
+		return "", fmt.Errorf("绘图必须使用 .excalidraw 扩展名")
+	}
+	return s.safePath(name)
 }
 func (s *Store) notePath(name string) (string, error) {
 	name, err := cleanRelative(name)
@@ -353,6 +380,88 @@ func (s *Store) saveNote(name, content, rev string, force bool) (Note, error) {
 	}
 	return s.readNote(name)
 }
+
+const emptyDrawing = `{"type":"excalidraw","version":2,"source":"https://excalidraw.com","elements":[],"appState":{"gridSize":null,"viewBackgroundColor":"#ffffff"},"files":{}}`
+const maxDrawingBytes = 20 * 1024 * 1024
+
+func validateDrawing(content string) error {
+	if len(content) == 0 || len(content) > maxDrawingBytes {
+		return fmt.Errorf("绘图不能为空，且不能超过 20MB")
+	}
+	var document struct {
+		Type string `json:"type"`
+	}
+	if err := json.Unmarshal([]byte(content), &document); err != nil || document.Type != "excalidraw" {
+		return fmt.Errorf("绘图内容必须是 Excalidraw JSON")
+	}
+	return nil
+}
+func (s *Store) readDrawing(name string) (Drawing, error) {
+	var err error
+	name, err = cleanRelative(name)
+	if err != nil {
+		return Drawing{}, err
+	}
+	file, err := s.drawingPath(name)
+	if err != nil {
+		return Drawing{}, err
+	}
+	data, err := os.ReadFile(file)
+	if err != nil {
+		return Drawing{}, err
+	}
+	info, err := os.Stat(file)
+	if err != nil {
+		return Drawing{}, err
+	}
+	return Drawing{Path: filepath.ToSlash(name), Revision: revision(data), Modified: info.ModTime().UTC().Format(time.RFC3339Nano), Content: string(data)}, nil
+}
+func (s *Store) createDrawing(name, content string) (Drawing, error) {
+	name, err := cleanRelative(name)
+	if err != nil {
+		return Drawing{}, err
+	}
+	if content == "" {
+		content = emptyDrawing
+	}
+	if err = validateDrawing(content); err != nil {
+		return Drawing{}, err
+	}
+	file, err := s.drawingPath(name)
+	if err != nil {
+		return Drawing{}, err
+	}
+	if _, err = os.Lstat(file); err == nil {
+		return Drawing{}, fmt.Errorf("目标绘图已经存在")
+	}
+	if !os.IsNotExist(err) {
+		return Drawing{}, err
+	}
+	if err = exclusiveWrite(file, []byte(content), 0644); err != nil {
+		return Drawing{}, err
+	}
+	return s.readDrawing(name)
+}
+func (s *Store) saveDrawing(name, content, rev string, force bool) (Drawing, error) {
+	if err := validateDrawing(content); err != nil {
+		return Drawing{}, err
+	}
+	current, err := s.readDrawing(name)
+	if err != nil {
+		return Drawing{}, err
+	}
+	if !force && (rev == "" || rev != current.Revision) {
+		return Drawing{}, &Conflict{Current: Note{Path: current.Path, Content: current.Content, Revision: current.Revision, Modified: current.Modified}, message: "绘图已被其他窗口或外部程序修改"}
+	}
+	file, err := s.drawingPath(current.Path)
+	if err != nil {
+		return Drawing{}, err
+	}
+	if err = atomicWrite(file, []byte(content), 0644); err != nil {
+		return Drawing{}, err
+	}
+	return s.readDrawing(current.Path)
+}
 func (s *Store) tree() ([]TreeEntry, error) {
 	var walk func(string) ([]TreeEntry, error)
 	walk = func(dir string) ([]TreeEntry, error) {
@@ -382,6 +491,8 @@ func (s *Store) tree() ([]TreeEntry, error) {
 				result = append(result, TreeEntry{Path: p, Name: entry.Name(), Type: "folder", Children: children})
 			} else if strings.EqualFold(path.Ext(entry.Name()), ".md") {
 				result = append(result, TreeEntry{Path: p, Name: entry.Name(), Type: "note"})
+			} else if isDrawingName(entry.Name()) {
+				result = append(result, TreeEntry{Path: p, Name: entry.Name(), Type: "drawing"})
 			}
 		}
 		sort.SliceStable(result, func(i, j int) bool {
@@ -403,8 +514,8 @@ func (s *Store) recycle(name string) error {
 	if err != nil {
 		return err
 	}
-	if !info.IsDir() && !strings.EqualFold(path.Ext(name), ".md") {
-		return fmt.Errorf("只能删除笔记或文件夹")
+	if !info.IsDir() && !strings.EqualFold(path.Ext(name), ".md") && !isDrawingName(name) {
+		return fmt.Errorf("只能删除笔记、绘图或文件夹")
 	}
 	if name == s.state.Settings.AssetsDir || strings.HasPrefix(s.state.Settings.AssetsDir, name+"/") {
 		return fmt.Errorf("不能删除资源目录")

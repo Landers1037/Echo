@@ -62,6 +62,13 @@ func storageKey(name string) string {
 	return name
 }
 
+func storageAssetName(name string) bool {
+	if strings.EqualFold(path.Ext(name), ".excalidraw") {
+		return true
+	}
+	return strings.HasPrefix(mime.TypeByExtension(strings.ToLower(path.Ext(name))), "image/")
+}
+
 func withinStorageDir(name, directory string) bool {
 	name, directory = storageKey(name), storageKey(directory)
 	return name == directory || strings.HasPrefix(name, directory+"/")
@@ -113,7 +120,7 @@ func (s *Store) storageAssets(visit func(UnusedAsset, fs.FileInfo) error) error 
 		if err != nil {
 			return err
 		}
-		if entry.IsDir() || !entry.Type().IsRegular() || !strings.HasPrefix(mime.TypeByExtension(strings.ToLower(path.Ext(file))), "image/") {
+		if entry.IsDir() || !entry.Type().IsRegular() || !storageAssetName(file) {
 			return nil
 		}
 		rel, err := filepath.Rel(s.root, file)

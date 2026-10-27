@@ -259,16 +259,33 @@ func (s *Store) move(from, to, rev string, folder bool) (Note, error) {
 	if from == s.state.Settings.AssetsDir || to == s.state.Settings.AssetsDir || strings.HasPrefix(s.state.Settings.AssetsDir, from+"/") || strings.HasPrefix(to, s.state.Settings.AssetsDir+"/") {
 		return Note{}, fmt.Errorf("不能移动资源目录")
 	}
+	drawing := !folder && isDrawingName(from)
+	if drawing && !isDrawingName(to) {
+		return Note{}, fmt.Errorf("绘图必须使用 .excalidraw 扩展名")
+	}
 	if !folder {
-		current, e := s.readNote(from)
-		if e != nil {
-			return Note{}, e
-		}
-		if current.Revision != rev {
-			return Note{}, &Conflict{Current: current}
-		}
-		if _, e = s.notePath(to); e != nil {
-			return Note{}, e
+		if drawing {
+			current, e := s.readDrawing(from)
+			if e != nil {
+				return Note{}, e
+			}
+			if current.Revision != rev {
+				return Note{}, &Conflict{Current: Note{Path: current.Path, Content: current.Content, Revision: current.Revision, Modified: current.Modified}, message: "绘图已被其他窗口或外部程序修改"}
+			}
+			if _, e = s.drawingPath(to); e != nil {
+				return Note{}, e
+			}
+		} else {
+			current, e := s.readNote(from)
+			if e != nil {
+				return Note{}, e
+			}
+			if current.Revision != rev {
+				return Note{}, &Conflict{Current: current}
+			}
+			if _, e = s.notePath(to); e != nil {
+				return Note{}, e
+			}
 		}
 	}
 	oldFile, err := s.safePath(from)
@@ -340,7 +357,7 @@ func (s *Store) move(from, to, rev string, folder bool) (Note, error) {
 		}
 		return Note{}, err
 	}
-	if folder {
+	if folder || drawing {
 		return Note{}, nil
 	}
 	return s.readNote(to)

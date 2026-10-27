@@ -6,6 +6,7 @@ import remarkGfm from 'remark-gfm'
 import remarkFrontmatter from 'remark-frontmatter'
 import { codeToHtml } from 'shiki'
 import { Check, Copy } from 'lucide-react'
+import { DrawingEmbed } from './Drawing'
 
 export type MarkdownViewProps = {
   content: string
@@ -15,6 +16,8 @@ export type MarkdownViewProps = {
   fontSize?: number
   onNavigate?: (path: string) => void
   onToggleTask?: (line: number, checked: boolean) => void
+  onEditDrawing?: (path: string) => void
+  drawingVersion?: number
   exporting?: boolean
 }
 
@@ -111,7 +114,13 @@ function sourceHeading(tag: 'h1' | 'h2' | 'h3' | 'h4' | 'h5') {
 }
 const previewHeadings = { h1: sourceHeading('h1'), h2: sourceHeading('h2'), h3: sourceHeading('h3'), h4: sourceHeading('h4'), h5: sourceHeading('h5') }
 
-export function MarkdownView({ content, notePath, assets, lineNumbers, fontSize, onNavigate, onToggleTask, exporting = false }: MarkdownViewProps) {
+function drawingReference(notePath: string, src: string) {
+  const clean = decodeSafe(src).split('#')[0].split('?')[0]
+  if (/^(?:[a-z][a-z\d+.-]*:|\/\/)/i.test(clean) || !/\.excalidraw$/i.test(clean)) return ''
+  return resolveNotePath(notePath, src)
+}
+
+export function MarkdownView({ content, notePath, assets, lineNumbers, fontSize, onNavigate, onToggleTask, onEditDrawing, drawingVersion = 0, exporting = false }: MarkdownViewProps) {
   return <div className="markdown-body" style={!exporting && fontSize !== undefined ? { fontSize } : undefined}><ReactMarkdown remarkPlugins={[remarkGfm, remarkFrontmatter, remarkUnderline]} skipHtml components={{
     ...(!exporting ? previewHeadings : {}),
     pre({ children }) { return <>{children}</> },
@@ -123,6 +132,12 @@ export function MarkdownView({ content, notePath, assets, lineNumbers, fontSize,
     },
     img({ src, alt, title }) {
       if (!src) return <span className="missing-image">图片地址为空</span>
+      const drawing = drawingReference(notePath, src)
+      if (drawing) {
+        const embedded = assets?.[src] || assets?.[decodeSafe(src)]
+        if (exporting && !embedded) return <span className="missing-image">[绘图缺失：{alt || src}]</span>
+        return <DrawingEmbed path={embedded || drawing} alt={alt || '绘图'} exporting={exporting} version={drawingVersion} onEdit={exporting ? undefined : onEditDrawing} />
+      }
       const external = /^(https?:|data:|blob:|\/\/)/i.test(src)
       const embedded = assets?.[src] || assets?.[decodeSafe(src)]
       if (exporting && !external && !embedded) return <span className="missing-image">[图片缺失：{alt || src}]</span>

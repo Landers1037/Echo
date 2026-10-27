@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { BookOpen, Search, Plus, FolderPlus, FileText, ChevronRight, Folder, MoreHorizontal, LayoutGrid, ListTodo, Settings, Trash2, Tags, FolderOpen, X, ArrowUpRight, LoaderCircle } from 'lucide-react'
+import { BookOpen, Search, Plus, FolderPlus, FileText, ChevronRight, Folder, MoreHorizontal, LayoutGrid, ListTodo, Settings, Trash2, Tags, FolderOpen, X, ArrowUpRight, LoaderCircle, PenTool } from 'lucide-react'
 import { motion } from 'motion/react'
 import type { NoteSummary, TreeEntry } from '../types'
 import { Logo } from './Logo'
@@ -9,8 +9,9 @@ type Props = {
   revealEntry: { path: string } | null
   search: string; setSearch: (value: string) => void; searchPaths?: string[] | null; group: string | null; setGroup: (value: string | null) => void
   filterTags: string[]; setFilterTags: (value: string[]) => void; selected: string[]; setSelected: (value: string[]) => void
-  onSelect: (path: string) => void; onView: (view: 'tasks' | 'board') => void; onCreate: () => void; onFolder: () => void
-  onManage: (path: string, type: 'note' | 'folder') => void; onSettings: () => void; onTrash: () => void; onCategories: () => void; onClose: () => void
+  onSelect: (path: string) => void; onView: (view: 'tasks' | 'board') => void; onCreate: () => void; onFolder: () => void; onCreateDrawing: () => void
+  onOpenDrawing: (path: string) => void; activeDrawing: string
+  onManage: (path: string, type: 'note' | 'folder' | 'drawing') => void; onSettings: () => void; onTrash: () => void; onCategories: () => void; onClose: () => void
   onOpenDirectory: () => void; openingDirectory: boolean
 }
 
@@ -31,6 +32,11 @@ export function Sidebar(p: Props) {
   const filtering = p.group !== null || p.filterTags.length > 0 || p.search.length > 0
   const visible = new Set(filtered.map(note => note.path))
   const toggleSelected = (path: string) => p.setSelected(p.selected.includes(path) ? p.selected.filter(value => value !== path) : [...p.selected, path])
+  const drawingRow = (entry: TreeEntry, depth = 0) => <div className={`note-row ${p.activeDrawing === entry.path ? 'active' : ''}`} key={entry.path} style={{ paddingLeft: `${14 + depth * 16}px` }}>
+    <span className="drawing-spacer" />
+    <button className="note-link" onClick={() => p.onOpenDrawing(entry.path)} title={entry.path}><PenTool size={15} /><span>{entry.name.replace(/\.excalidraw$/i, '')}</span></button>
+    <button className="row-action icon-button" aria-label={`管理绘图 ${entry.path}`} onClick={() => p.onManage(entry.path, 'drawing')}><MoreHorizontal size={15} /></button>
+  </div>
   const noteRow = (note: NoteSummary, depth = 0) => <div className={`note-row ${p.active === note.path && p.view === 'note' ? 'active' : ''} ${p.selected.includes(note.path) ? 'is-selected' : ''}`} key={note.path} style={{ paddingLeft: `${14 + depth * 16}px` }}>
     <input type="checkbox" aria-label={`选择 ${note.title}`} className="note-check" checked={p.selected.includes(note.path)} onChange={() => toggleSelected(note.path)} />
     <button className="note-link" onClick={() => p.onSelect(note.path)} title={note.path}><FileText size={15} /><span>{note.title}</span></button>
@@ -39,14 +45,14 @@ export function Sidebar(p: Props) {
   const renderTree = (entries: TreeEntry[], depth = 0): React.ReactNode => entries.map(entry => entry.type === 'folder' ? <div key={entry.path}>
     <div className="folder-row" style={{ paddingLeft: `${14 + depth * 16}px` }}><button className="folder-link" onClick={() => setExpandedFolders(folders => ({ ...folders, [entry.path]: !folders[entry.path] }))} aria-expanded={!!expandedFolders[entry.path]}><ChevronRight size={13} className={expandedFolders[entry.path] ? 'rotated' : ''} /><Folder size={15} /><span>{entry.name}</span></button><button className="row-action icon-button" aria-label={`管理文件夹 ${entry.path}`} onClick={() => p.onManage(entry.path, 'folder')}><MoreHorizontal size={15} /></button></div>
     {expandedFolders[entry.path] && renderTree(entry.children || [], depth + 1)}
-  </div> : visible.has(entry.path) ? noteRow(p.notes.find(note => note.path === entry.path) || { path: entry.path, title: entry.name.replace(/\.md$/i, ''), metadata: { tags: [], group: '' }, modified: '', revision: '' }, depth) : null)
+  </div> : entry.type === 'drawing' ? drawingRow(entry, depth) : visible.has(entry.path) ? noteRow(p.notes.find(note => note.path === entry.path) || { path: entry.path, title: entry.name.replace(/\.md$/i, ''), metadata: { tags: [], group: '' }, modified: '', revision: '' }, depth) : null)
   return <><div className={`sidebar-scrim ${p.open ? 'visible' : ''}`} onClick={p.onClose} />
     <aside id="note-sidebar" className={`sidebar ${p.open ? 'open' : ''}`} inert={!p.open}>
       <div className="brand"><Logo /><div><strong>echo<span>.</span></strong><small>让想法有处安放</small></div><button className="icon-button mobile-close" aria-label="关闭目录" onClick={p.onClose}><X size={18} /></button></div>
       <div className="sidebar-search"><Search size={15} /><input aria-label="搜索笔记" value={p.search} onChange={e => p.setSearch(e.target.value)} placeholder="搜索笔记…" /><kbd>Ctrl K</kbd>{p.search && <button className="icon-button" aria-label="清除搜索" onClick={() => p.setSearch('')}><X size={12} /></button>}</div>
       <button className="new-note" onClick={p.onCreate}><Plus size={17} /><span>新建笔记</span></button>
       <nav className="workspace-nav" aria-label="工作区"><button className={p.view === 'note' ? 'active' : ''} onClick={() => { p.setGroup(null); p.setFilterTags([]); p.setSearch(''); if (p.notes[0]) p.onSelect(p.active || p.notes[0].path) }}><BookOpen size={16} /><span>全部笔记</span><span className="nav-count">{p.notes.length}</span></button><button className={p.view === 'tasks' ? 'active' : ''} onClick={() => p.onView('tasks')}><ListTodo size={16} /><span>计划与提醒</span></button><button className={p.view === 'board' ? 'active' : ''} onClick={() => p.onView('board')}><LayoutGrid size={16} /><span>任务看板</span></button></nav>
-      <div className="sidebar-content"><div className="sidebar-section-heading"><div className="sidebar-tabs"><button className={tab === 'directory' ? 'selected' : ''} onClick={() => { setTab('directory'); p.setGroup(null) }}>目录</button><button className={tab === 'groups' ? 'selected' : ''} onClick={() => setTab('groups')}>分组</button></div><button className="icon-button" aria-label={tab === 'directory' ? '新建文件夹' : '管理分组'} onClick={tab === 'directory' ? p.onFolder : p.onCategories}>{tab === 'directory' ? <FolderPlus size={15} /> : <Plus size={15} />}</button></div>
+      <div className="sidebar-content"><div className="sidebar-section-heading"><div className="sidebar-tabs"><button className={tab === 'directory' ? 'selected' : ''} onClick={() => { setTab('directory'); p.setGroup(null) }}>目录</button><button className={tab === 'groups' ? 'selected' : ''} onClick={() => setTab('groups')}>分组</button></div><div className="sidebar-heading-actions">{tab === 'directory' && <button className="icon-button" aria-label="新建绘图" title="新建绘图" onClick={p.onCreateDrawing}><PenTool size={15} /></button>}<button className="icon-button" aria-label={tab === 'directory' ? '新建文件夹' : '管理分组'} onClick={tab === 'directory' ? p.onFolder : p.onCategories}>{tab === 'directory' ? <FolderPlus size={15} /> : <Plus size={15} />}</button></div></div>
       {filtering && <div className="filter-summary"><span>{filtered.length} 篇笔记</span><button onClick={() => { p.setGroup(null); p.setFilterTags([]); p.setSearch('') }}>清除筛选</button></div>}
       <div className="note-tree">{tab === 'directory' ? filtering ? filtered.map(note => noteRow(note)) : renderTree(p.tree) : <>
         {[...p.groups, ''].map(group => <div className="group-section" key={group}><button className={`group-heading ${p.group === group ? 'selected' : ''}`} onClick={() => p.setGroup(p.group === group ? null : group)}><FolderOpen size={14} /><span>{group || '未分组'}</span><small>{p.notes.filter(note => note.metadata.group === group).length}</small></button>{filtered.filter(note => note.metadata.group === group).map(note => noteRow(note, 1))}</div>)}
