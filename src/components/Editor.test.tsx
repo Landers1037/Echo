@@ -36,6 +36,7 @@ describe('editor formatting shortcuts', () => {
   it('keeps formatted text when Enter follows a shortcut', () => {
     render(<Editor {...props} value="你好" />)
     const editor = EditorView.findFromDOM(document.querySelector('.cm-editor')!)
+    if (!editor) throw new Error('编辑器尚未挂载')
     editor.dispatch({ selection: { anchor: 0, head: editor.state.doc.length } })
     fireEvent.click(screen.getByRole('button', { name: /加粗/ }))
     insertNewline(editor)
