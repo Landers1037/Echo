@@ -70,9 +70,15 @@ export function Editor(props: EditorProps) {
     const editor = view.current
     if (!editor) return
     const { from, to } = editor.state.selection.main
+    const hadSelection = from !== to
     const selected = editor.state.sliceDoc(from, to) || placeholder
     const insert = before + selected + after
-    editor.dispatch({ changes: { from, to, insert }, selection: { anchor: from + before.length, head: from + before.length + selected.length }, scrollIntoView: true })
+    const placeholderFrom = from + before.length
+    editor.dispatch({
+      changes: { from, to, insert },
+      selection: hadSelection ? { anchor: from + insert.length } : { anchor: placeholderFrom, head: placeholderFrom + selected.length },
+      scrollIntoView: true,
+    })
     editor.focus()
   }
 
@@ -84,7 +90,7 @@ export function Editor(props: EditorProps) {
     const last = editor.state.doc.lineAt(to)
     const selected = editor.state.sliceDoc(first.from, last.to)
     const insert = selected.split('\n').map((line, index) => prefix === '1. ' ? `${index + 1}. ${line}` : prefix + line).join('\n')
-    editor.dispatch({ changes: { from: first.from, to: last.to, insert }, selection: { anchor: first.from, head: first.from + insert.length }, scrollIntoView: true })
+    editor.dispatch({ changes: { from: first.from, to: last.to, insert }, selection: { anchor: first.from + insert.length }, scrollIntoView: true })
     editor.focus()
   }
 
@@ -99,7 +105,7 @@ export function Editor(props: EditorProps) {
     const marker = `${'#'.repeat(level)} `
     const toggleOff = lines.every(line => line.startsWith(marker))
     const insert = lines.map(line => toggleOff ? line.replace(/^#{1,6} /, '') : marker + line.replace(/^#{1,6} /, '')).join('\n')
-    editor.dispatch({ changes: { from: first.from, to: last.to, insert }, selection: { anchor: first.from, head: first.from + insert.length }, scrollIntoView: true })
+    editor.dispatch({ changes: { from: first.from, to: last.to, insert }, selection: { anchor: first.from + insert.length }, scrollIntoView: true })
     editor.focus()
   }
 

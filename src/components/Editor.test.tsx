@@ -1,5 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { insertNewline } from '@codemirror/commands'
+import { EditorView } from '@codemirror/view'
 import { Editor } from './Editor'
 
 const emptyRect = { x: 0, y: 0, width: 0, height: 0, top: 0, left: 0, bottom: 0, right: 0, toJSON() { return {} } }
@@ -29,6 +31,20 @@ describe('editor formatting shortcuts', () => {
     rerender(<Editor {...props} shortcuts={{ bold: '', underline: 'Mod-Shift-u' }} />)
     expect(screen.getByRole('button', { name: '加粗' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /下划线/ })).toHaveAccessibleName(/下划线 \((Ctrl|Cmd) \+ Shift \+ U\)/)
+  })
+
+  it('keeps formatted text when Enter follows a shortcut', () => {
+    render(<Editor {...props} value="你好" />)
+    const editor = EditorView.findFromDOM(document.querySelector('.cm-editor')!)
+    editor.dispatch({ selection: { anchor: 0, head: editor.state.doc.length } })
+    fireEvent.click(screen.getByRole('button', { name: /加粗/ }))
+    insertNewline(editor)
+    expect(editor.state.doc.toString()).toBe('**你好**\n')
+
+    editor.dispatch({ changes: { from: 0, to: editor.state.doc.length, insert: '你好' }, selection: { anchor: 0, head: 2 } })
+    fireEvent.click(screen.getByRole('button', { name: '标题' }))
+    insertNewline(editor)
+    expect(editor.state.doc.toString()).toBe('## 你好\n')
   })
 
   it('inserts a drawing reference from the toolbar', async () => {
