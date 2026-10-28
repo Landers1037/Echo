@@ -664,6 +664,9 @@ func (s *Store) updateSettings(settings Settings) error {
 	if settings.Theme != "system" && settings.Theme != "light" && settings.Theme != "dark" {
 		return fmt.Errorf("无效主题")
 	}
+	if !validUIStyle(settings.UIStyle) {
+		return fmt.Errorf("无效界面风格")
+	}
 	if !regexp.MustCompile(`^#[0-9a-fA-F]{6}$`).MatchString(settings.Accent) {
 		return fmt.Errorf("强调色需要为 #RRGGBB")
 	}

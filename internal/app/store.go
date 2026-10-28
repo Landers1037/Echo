@@ -20,6 +20,7 @@ import (
 
 type Settings struct {
 	Theme              string            `json:"theme"`
+	UIStyle            string            `json:"uiStyle"`
 	Accent             string            `json:"accent"`
 	Animations         bool              `json:"animations"`
 	EditorFontSize     int               `json:"editorFontSize"`
@@ -92,8 +93,16 @@ func (e *Conflict) Error() string {
 	return "笔记已被其他窗口或外部程序修改"
 }
 
+func validUIStyle(value string) bool {
+	switch value {
+	case "sage", "paper", "mono", "soft", "glass", "ink":
+		return true
+	default:
+		return false
+	}
+}
 func defaults() Settings {
-	return Settings{Theme: "system", Accent: "#72967b", Animations: true, EditorFontSize: 14, EditorLineNumbers: true, PreviewLineNumbers: false, MultiTabs: false, SourceSplitPreview: false, StrictLineBreaks: false, AssetsDir: ".assets", Shortcuts: map[string]string{}}
+	return Settings{Theme: "system", UIStyle: "sage", Accent: "#72967b", Animations: true, EditorFontSize: 14, EditorLineNumbers: true, PreviewLineNumbers: false, MultiTabs: false, SourceSplitPreview: false, StrictLineBreaks: false, AssetsDir: ".assets", Shortcuts: map[string]string{}}
 }
 func newID() string { var b [12]byte; _, _ = rand.Read(b[:]); return hex.EncodeToString(b[:]) }
 func revision(content []byte) string {
@@ -143,6 +152,9 @@ func Open(root string) (*Store, error) {
 	}
 	if s.state.Settings.EditorFontSize < 12 || s.state.Settings.EditorFontSize > 32 {
 		s.state.Settings.EditorFontSize = defaults().EditorFontSize
+	}
+	if !validUIStyle(s.state.Settings.UIStyle) {
+		s.state.Settings.UIStyle = defaults().UIStyle
 	}
 	if _, err = s.safePath(s.state.Settings.AssetsDir); err != nil {
 		return nil, err

@@ -25,7 +25,7 @@ vi.mock('motion/react', async () => {
   return { MotionConfig: ({ children }: { children: React.ReactNode }) => children, AnimatePresence: ({ children }: { children: React.ReactNode }) => children, motion: { div: Div, button: Button } }
 })
 
-const settings: Settings = { theme: 'light', accent: '#72967b', animations: false, editorFontSize: 14, editorLineNumbers: true, previewLineNumbers: false, multiTabs: false, sourceSplitPreview: false, strictLineBreaks: false, assetsDir: '.assets', shortcuts: {} }
+const settings: Settings = { theme: 'light', uiStyle: 'sage', accent: '#72967b', animations: false, editorFontSize: 14, editorLineNumbers: true, previewLineNumbers: false, multiTabs: false, sourceSplitPreview: false, strictLineBreaks: false, assetsDir: '.assets', shortcuts: {} }
 type Write = { path: string; content: string; revision: string; force?: boolean }
 type Batch = { paths: string[]; tags: string[]; group: string; revisions: Record<string, string> }
 type Call = { method: string; path: string; body?: unknown }
@@ -523,6 +523,59 @@ describe('App appearance settings', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '关闭弹窗' }))
     expect(document.documentElement).toHaveAttribute('data-theme', 'light')
+    expect(document.documentElement.style.getPropertyValue('--accent')).toBe('#72967b')
+  })
+
+  it('previews an interface style immediately, restores it on cancel, and persists the saved choice', async () => {
+    const server = createServer()
+    await openApp(server)
+    expect(document.documentElement).toHaveAttribute('data-style', 'sage')
+    fireEvent.click(screen.getByRole('button', { name: '设置' }))
+    fireEvent.click(screen.getByRole('button', { name: /暖纸书写/ }))
+    expect(document.documentElement).toHaveAttribute('data-style', 'paper')
+    expect(document.documentElement.style.getPropertyValue('--accent')).toBe('#a0714f')
+    expect(screen.getByRole('button', { name: /暖纸书写/ })).toHaveAttribute('aria-pressed', 'true')
+    expect(server.calls.filter(call => call.path === '/api/settings' && call.method === 'PUT')).toHaveLength(0)
+
+    fireEvent.click(screen.getByRole('button', { name: '取消' }))
+    expect(document.documentElement).toHaveAttribute('data-style', 'sage')
+    expect(document.documentElement.style.getPropertyValue('--accent')).toBe('#72967b')
+
+    fireEvent.click(screen.getByRole('button', { name: '设置' }))
+    fireEvent.click(screen.getByRole('button', { name: /黑白编辑/ }))
+    fireEvent.click(screen.getByRole('button', { name: '暗黑' }))
+    expect(document.documentElement).toHaveAttribute('data-style', 'mono')
+    expect(document.documentElement).toHaveAttribute('data-theme', 'dark')
+    expect(document.documentElement.style.getPropertyValue('--accent')).toBe('#f4f4f4')
+    fireEvent.click(screen.getByRole('button', { name: '保存设置' }))
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: '设置' })).not.toBeInTheDocument())
+    expect(server.savedSettings()).toMatchObject({ uiStyle: 'mono', theme: 'dark', accent: '#f4f4f4' })
+    expect(JSON.parse(localStorage.getItem('echo:settings')!)).toMatchObject({ uiStyle: 'mono', theme: 'dark', accent: '#f4f4f4' })
+
+    cleanup()
+    localStorage.removeItem('echo:settings')
+    await openApp(server)
+    expect(document.documentElement).toHaveAttribute('data-style', 'mono')
+    expect(document.documentElement).toHaveAttribute('data-theme', 'dark')
+    expect(document.documentElement.style.getPropertyValue('--accent')).toBe('#f4f4f4')
+  })
+
+  it('previews the ink style and switches its accent between light and dark', async () => {
+    const server = createServer()
+    await openApp(server)
+    fireEvent.click(screen.getByRole('button', { name: '设置' }))
+    fireEvent.click(screen.getByRole('button', { name: /水墨东方/ }))
+    expect(document.documentElement).toHaveAttribute('data-style', 'ink')
+    expect(document.documentElement.style.getPropertyValue('--accent')).toBe('#b23a2b')
+    expect(screen.getByRole('button', { name: /水墨东方/ })).toHaveAttribute('aria-pressed', 'true')
+    fireEvent.click(screen.getByRole('button', { name: '暗黑' }))
+    expect(document.documentElement).toHaveAttribute('data-theme', 'dark')
+    expect(document.documentElement.style.getPropertyValue('--accent')).toBe('#d4584a')
+    fireEvent.click(screen.getByRole('button', { name: '明亮' }))
+    expect(document.documentElement.style.getPropertyValue('--accent')).toBe('#b23a2b')
+    expect(server.calls.filter(call => call.path === '/api/settings' && call.method === 'PUT')).toHaveLength(0)
+    fireEvent.click(screen.getByRole('button', { name: '取消' }))
+    expect(document.documentElement).toHaveAttribute('data-style', 'sage')
     expect(document.documentElement.style.getPropertyValue('--accent')).toBe('#72967b')
   })
 })

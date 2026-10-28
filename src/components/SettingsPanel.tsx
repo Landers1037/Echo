@@ -2,14 +2,22 @@ import { useEffect, useRef, useState } from 'react'
 import { Monitor, Moon, Sun, Palette, Sparkles, NotebookPen, HardDrive, Keyboard } from 'lucide-react'
 import { Modal, Switch } from './UI'
 import { StorageSettings } from './StorageSettings'
-import type { Settings, SettingsPreview } from '../types'
+import type { Settings, SettingsPreview, UIStyle } from '../types'
 import { canonicalShortcut, findConflict, formatShortcut, isBindableShortcut, keyFromEvent, resolveShortcuts, shortcutActions, shortcutGroups, withShortcut } from '../shortcuts'
 import './SettingsPanel.css'
 
 const accents = ['#72967b', '#5885b5', '#9379b7', '#bd8065', '#bd7790', '#a38d52']
+const uiStyles: { id: UIStyle; label: string; desc: string; accent: string; darkAccent?: string }[] = [
+  { id: 'sage', label: '鼠尾草纸感', desc: '安静留白，鼠尾草绿', accent: '#72967b' },
+  { id: 'paper', label: '暖纸书写', desc: '米黄纸页，衬线标题', accent: '#a0714f' },
+  { id: 'mono', label: '黑白编辑', desc: '高对比，直角细线', accent: '#222222', darkAccent: '#f4f4f4' },
+  { id: 'soft', label: '柔和卡片', desc: '大圆角，浮起卡片', accent: '#5b7cfa' },
+  { id: 'glass', label: '清透玻璃', desc: '渐变底，毛玻璃', accent: '#7a6ff0' },
+  { id: 'ink', label: '水墨东方', desc: '宣纸墨色，朱砂点睛', accent: '#b23a2b', darkAccent: '#d4584a' },
+]
 const sections = [{ id: 'appearance', label: '外观设置', icon: Palette }, { id: 'notes', label: '笔记设置', icon: NotebookPen }, { id: 'shortcuts', label: '快捷键设置', icon: Keyboard }, { id: 'storage', label: '存储设置', icon: HardDrive }] as const
 
-export function SettingsPanel({ settings, onPreview, onSave, onClose, beforeStorageAction }: { settings: Settings; onPreview: (appearance: SettingsPreview | null) => void; onSave: (settings: Settings) => Promise<void>; onClose: () => void; beforeStorageAction: () => Promise<void> }) {
+export function SettingsPanel({ settings, systemDark, onPreview, onSave, onClose, beforeStorageAction }: { settings: Settings; systemDark: boolean; onPreview: (appearance: SettingsPreview | null) => void; onSave: (settings: Settings) => Promise<void>; onClose: () => void; beforeStorageAction: () => Promise<void> }) {
   const [draft, setDraft] = useState(settings)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -17,7 +25,18 @@ export function SettingsPanel({ settings, onPreview, onSave, onClose, beforeStor
   const [storageBusy, setStorageBusy] = useState(false)
   const locked = busy || storageBusy
   const patch = (part: Partial<Settings>) => setDraft(value => ({ ...value, ...part }))
-  useEffect(() => { onPreview({ theme: draft.theme, accent: draft.accent, editorFontSize: draft.editorFontSize }) }, [draft.theme, draft.accent, draft.editorFontSize, onPreview])
+  const accentFor = (id: UIStyle, theme: Settings['theme']) => {
+    const style = uiStyles.find(item => item.id === id)!
+    const dark = theme === 'dark' || (theme === 'system' && systemDark)
+    return dark && style.darkAccent ? style.darkAccent : style.accent
+  }
+  const chooseStyle = (id: UIStyle) => patch({ uiStyle: id, accent: accentFor(id, draft.theme) })
+  const chooseTheme = (theme: Settings['theme']) => {
+    const style = uiStyles.find(item => item.id === draft.uiStyle)!
+    const presets = [style.accent, style.darkAccent].filter((color): color is string => Boolean(color)).map(color => color.toLowerCase())
+    patch({ theme, accent: presets.includes(draft.accent.toLowerCase()) ? accentFor(draft.uiStyle, theme) : draft.accent })
+  }
+  useEffect(() => { onPreview({ theme: draft.theme, accent: draft.accent, editorFontSize: draft.editorFontSize, uiStyle: draft.uiStyle }) }, [draft.theme, draft.accent, draft.editorFontSize, draft.uiStyle, onPreview])
   useEffect(() => () => onPreview(null), [onPreview])
   return <Modal title="设置" onClose={() => { if (!locked) onClose() }} wide className="settings-modal">
     <form className="settings-form" onSubmit={async e => { e.preventDefault(); if (locked) return; setBusy(true); setError(''); try { await onSave(draft); onClose() } catch (err) { setError((err as Error).message) } finally { setBusy(false) } }}>
@@ -26,7 +45,8 @@ export function SettingsPanel({ settings, onPreview, onSave, onClose, beforeStor
         <div className="settings-details" id="settings-details"><fieldset className="settings-fields" disabled={locked}>
           {section === 'appearance' && <>
             <div className="settings-page-heading"><h3>外观设置</h3></div>
-            <section className="settings-section"><h4>主题</h4><div className="theme-options">{([['light', '明亮', Sun], ['dark', '暗黑', Moon], ['system', '跟随系统', Monitor]] as const).map(([value, label, Icon]) => <button type="button" key={value} aria-pressed={draft.theme === value} className={`theme-option ${draft.theme === value ? 'selected' : ''}`} onClick={() => patch({ theme: value })}><Icon size={22} /><span>{label}</span></button>)}</div>
+            <section className="settings-section"><h4>界面风格</h4><div className="style-options">{uiStyles.map(style => <button type="button" key={style.id} aria-pressed={draft.uiStyle === style.id} className="style-option" onClick={() => chooseStyle(style.id)}><span className="style-swatch" data-style-preview={style.id} aria-hidden="true"><span className="style-swatch-side" /><span className="style-swatch-main"><span className="style-swatch-heading">标题</span><span className="style-swatch-line" /><span className="style-swatch-line short" /></span></span><span className="style-copy"><strong>{style.label}</strong><small>{style.desc}</small></span></button>)}</div></section>
+            <section className="settings-section"><h4>主题</h4><div className="theme-options">{([['light', '明亮', Sun], ['dark', '暗黑', Moon], ['system', '跟随系统', Monitor]] as const).map(([value, label, Icon]) => <button type="button" key={value} aria-pressed={draft.theme === value} className={`theme-option ${draft.theme === value ? 'selected' : ''}`} onClick={() => chooseTheme(value)}><Icon size={22} /><span>{label}</span></button>)}</div>
               <label className="field-label">强调色</label><div className="accent-options">{accents.map(accent => <button type="button" key={accent} aria-label={`强调色 ${accent}`} aria-pressed={draft.accent === accent} className={`accent-dot ${draft.accent === accent ? 'selected' : ''}`} style={{ background: accent }} onClick={() => patch({ accent })} />)}<label className="custom-accent" title="自定义强调色"><input type="color" aria-label="自定义强调色" value={draft.accent} onChange={e => patch({ accent: e.target.value })} /><span>自定义</span></label></div>
             </section>
             <section className="settings-section"><h4><Sparkles size={15} />交互效果</h4><div className="setting-row"><div><strong>界面动画</strong><p>为切换与展开添加自然过渡，遵循系统动态效果偏好。</p></div><Switch label="界面动画" checked={draft.animations} onChange={animations => patch({ animations })} /></div></section>

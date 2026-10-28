@@ -50,6 +50,73 @@ func TestEditorFontSizeLegacySettingsAndPersistence(t *testing.T) {
 	}
 }
 
+func TestUIStyleLegacyDefaultValidationAndPersistence(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, ".echo"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, ".echo", "state.json"), []byte(`{"settings":{"theme":"dark","accent":"#9379b7","assetsDir":".assets"}}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	s, err := Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.state.Settings.UIStyle != "sage" {
+		t.Fatalf("legacy uiStyle: %q", s.state.Settings.UIStyle)
+	}
+	h := NewHandler(attachStore(s), false)
+	rr := request(t, h, "GET", "/api/settings", nil)
+	var settings Settings
+	if err := json.Unmarshal(rr.Body.Bytes(), &settings); err != nil {
+		t.Fatal(err)
+	}
+	if rr.Code != 200 || settings.UIStyle != "sage" || settings.Theme != "dark" {
+		t.Fatalf("legacy settings response: %d %+v", rr.Code, settings)
+	}
+	stateFile := filepath.Join(root, ".echo", "state.json")
+	before, err := os.ReadFile(stateFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, style := range []any{"", "neon", "Sage"} {
+		rr = request(t, h, "PUT", "/api/settings", map[string]any{"uiStyle": style})
+		if rr.Code != 400 || s.state.Settings.UIStyle != "sage" {
+			t.Fatalf("accepted invalid style %v: %d %s", style, rr.Code, rr.Body.String())
+		}
+		after, readErr := os.ReadFile(stateFile)
+		if readErr != nil || !bytes.Equal(before, after) {
+			t.Fatalf("invalid style %v changed saved settings: %v", style, readErr)
+		}
+	}
+	rr = request(t, h, "PUT", "/api/settings", map[string]any{"uiStyle": "paper"})
+	if rr.Code != 200 || s.state.Settings.UIStyle != "paper" {
+		t.Fatalf("save style: %d %s", rr.Code, rr.Body.String())
+	}
+	rr = request(t, h, "PUT", "/api/settings", map[string]any{"editorLineNumbers": false})
+	if rr.Code != 200 || s.state.Settings.UIStyle != "paper" || s.state.Settings.EditorLineNumbers {
+		t.Fatalf("partial update lost style: %d %+v", rr.Code, s.state.Settings)
+	}
+	reopened, err := Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reopened.state.Settings.UIStyle != "paper" || reopened.state.Settings.Theme != "dark" {
+		t.Fatalf("style not persisted: %+v", reopened.state.Settings)
+	}
+	rr = request(t, h, "PUT", "/api/settings", map[string]any{"uiStyle": "ink"})
+	if rr.Code != 200 || s.state.Settings.UIStyle != "ink" {
+		t.Fatalf("save ink: %d %s", rr.Code, rr.Body.String())
+	}
+	reopened, err = Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reopened.state.Settings.UIStyle != "ink" || reopened.state.Settings.Theme != "dark" {
+		t.Fatalf("ink not persisted: %+v", reopened.state.Settings)
+	}
+}
+
 func TestEditorFontSizeValidationPreservesSettings(t *testing.T) {
 	s := testStore(t)
 	h := NewHandler(attachStore(s), false)

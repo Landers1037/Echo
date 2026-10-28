@@ -1,0 +1,310 @@
+/* 界面风格。鼠尾草纸感的界面沿用 styles.css；缩略图单独声明，避免继承当前风格。 */
+
+[data-style-preview=sage] {
+  --bg: #fff;
+  --panel: #f5f6f3;
+  --surface: #fff;
+  --text: #29312c;
+  --muted: #858d86;
+  --border: #e7eae5;
+  --accent: #72967b;
+  --font-heading: var(--font-ui);
+  --radius: 6px;
+  --radius-lg: 10px;
+}
+
+:root[data-theme=dark] [data-style-preview=sage] {
+  --bg: #1b201e;
+  --panel: #171c19;
+  --surface: #1b201e;
+  --text: #dce3dd;
+  --muted: #8c9990;
+  --border: #303a33;
+}
+
+:root[data-style=paper],
+[data-style-preview=paper] {
+  --bg: #fbf7ef;
+  --panel: #f3ecdf;
+  --surface: #fbf7ef;
+  --text: #3a2e24;
+  --muted: #8a7564;
+  --border: #e4d5c0;
+  --font-heading: "Noto Serif SC", "Source Han Serif SC", "Songti SC", Georgia, SimSun, serif;
+  --radius: 4px;
+  --radius-lg: 8px;
+  --shadow: 0 8px 24px #3a2e2412;
+  --shadow-lg: 0 24px 60px #3a2e2424;
+  --shadow-sm: none;
+  --leading: 2.12;
+}
+
+:root[data-style=paper][data-theme=dark],
+:root[data-theme=dark] [data-style-preview=paper] {
+  --bg: #241c16;
+  --panel: #1c1612;
+  --surface: #2a211a;
+  --text: #f3e6d4;
+  --muted: #b39a84;
+  --border: #43362b;
+  --shadow: 0 10px 28px #00000055;
+  --shadow-lg: 0 24px 64px #00000073;
+}
+
+:root[data-style=mono],
+[data-style-preview=mono] {
+  --bg: #fff;
+  --panel: #fff;
+  --surface: #fff;
+  --text: #111;
+  --muted: #5c5c5c;
+  --border: #cfcfcf;
+  --radius: 0px;
+  --radius-lg: 0px;
+  --shadow: none;
+  --shadow-lg: none;
+  --shadow-sm: none;
+  --leading: 1.7;
+}
+
+:root[data-style=mono][data-theme=dark],
+:root[data-theme=dark] [data-style-preview=mono] {
+  --bg: #0e0e0e;
+  --panel: #0e0e0e;
+  --surface: #161616;
+  --text: #f5f5f5;
+  --muted: #a3a3a3;
+  --border: #3a3a3a;
+}
+
+:root[data-style=soft],
+[data-style-preview=soft] {
+  --bg: #e7ebf3;
+  --panel: #dfe4ee;
+  --surface: #fff;
+  --text: #1c2434;
+  --muted: #7b8496;
+  --border: #e3e7f0;
+  --radius: 14px;
+  --radius-lg: 20px;
+  --shadow: 0 10px 28px #1c243414;
+  --shadow-lg: 0 24px 64px #1c243426;
+  --shadow-sm: 0 1px 2px #1c243414, 0 8px 18px #1c24340f;
+  --leading: 1.9;
+}
+
+:root[data-style=soft][data-theme=dark],
+:root[data-theme=dark] [data-style-preview=soft] {
+  --bg: #12151c;
+  --panel: #191d27;
+  --surface: #1e2430;
+  --text: #e7ebf3;
+  --muted: #8b93a7;
+  --border: #2c3342;
+  --shadow: 0 12px 32px #00000066;
+  --shadow-lg: 0 28px 70px #00000080;
+  --shadow-sm: 0 8px 18px #00000040;
+}
+
+:root[data-style=glass],
+[data-style-preview=glass] {
+  --bg: #f4f6fb;
+  --panel: color-mix(in srgb, #fff 52%, transparent);
+  --surface: color-mix(in srgb, #fff 68%, transparent);
+  --text: #1d2433;
+  --muted: #6d7690;
+  --border: color-mix(in srgb, #6d7690 28%, transparent);
+  --radius: 10px;
+  --radius-lg: 16px;
+  --shadow: 0 10px 30px #3a2d6e14;
+  --shadow-lg: 0 24px 70px #2a215e29;
+  --shadow-sm: 0 6px 16px #3a2d6e14;
+  --leading: 1.9;
+}
+
+:root[data-style=glass][data-theme=dark],
+:root[data-theme=dark] [data-style-preview=glass] {
+  --bg: #141722;
+  --panel: color-mix(in srgb, #1a1d2b 62%, transparent);
+  --surface: color-mix(in srgb, #1c2030 74%, transparent);
+  --text: #e8eaf6;
+  --muted: #9aa0b8;
+  --border: color-mix(in srgb, #fff 16%, transparent);
+  --shadow: 0 12px 32px #00000059;
+  --shadow-lg: 0 28px 72px #00000073;
+}
+
+:root[data-style=ink],
+[data-style-preview=ink] {
+  --bg: #f3eee2;
+  --panel: #e9e2d2;
+  --surface: #f7f3ea;
+  --text: #1f1c18;
+  --muted: #7a7266;
+  --border: #d6ccb8;
+  --font-heading: "Songti SC", "STSong", "Noto Serif SC", "Source Han Serif SC", SimSun, serif;
+  --radius: 2px;
+  --radius-lg: 2px;
+  --shadow: none;
+  --shadow-lg: none;
+  --shadow-sm: none;
+  --leading: 2.05;
+}
+
+[data-style-preview=ink] { --accent: #b23a2b }
+
+:root[data-style=ink][data-theme=dark],
+:root[data-theme=dark] [data-style-preview=ink] {
+  --bg: #191816;
+  --panel: #141311;
+  --surface: #201e1b;
+  --text: #ebe4d6;
+  --muted: #a39886;
+  --border: #3a352e;
+}
+
+:root[data-theme=dark] [data-style-preview=ink] { --accent: #d4584a }
+
+:root:is([data-style=paper], [data-style=mono], [data-style=soft], [data-style=glass], [data-style=ink]) :is(.plan-card, .kanban-column, .drawing-embed, .drawing-menu-list, .month-calendar, .time-stepper, .toast, .note-row, .folder-row, .tag, .tag-filter, .empty-symbol, .repo-row.current .repo-copy) {
+  border-radius: var(--radius);
+}
+
+:root[data-style=paper] .brand-mark .logo-paper { fill: #f3e6d0 }
+:root[data-style=paper] .brand strong { font-weight: 560; letter-spacing: -.04em }
+:root[data-style=paper] .note-title { font-size: 34px; font-weight: 560; letter-spacing: -.03em }
+:root[data-style=paper] .markdown-body { max-width: 680px }
+:root[data-style=paper] :is(.modal h2, .plan-card h2, .tasks-empty h2, .drawing-modal-title h2, .fullscreen-preview-bar h2, .note-outline-heading h2) { font-family: var(--font-heading) }
+:root[data-style=paper] .sidebar { padding-top: 34px }
+:root[data-style=paper] .note-heading { padding: 36px 64px 28px }
+:root[data-style=paper] .preview-area { padding: 12px 64px 80px }
+
+:root[data-style=ink] .brand-mark .logo-paper { fill: #f3eee2 }
+:root[data-style=ink][data-theme=dark] .brand-mark .logo-paper { fill: #201e1b }
+:root[data-style=ink] .brand-mark .logo-ink { fill: #b23a2b }
+:root[data-style=ink][data-theme=dark] .brand-mark .logo-ink { fill: #d4584a }
+:root[data-style=ink] .brand strong { font-weight: 560; letter-spacing: .12em }
+:root[data-style=ink] .note-title { font-size: 32px; font-weight: 560; letter-spacing: .08em }
+:root[data-style=ink] .note-title::after { content: ""; display: block; width: 36px; height: 1px; margin-top: 12px; background: var(--text) }
+:root[data-style=ink] .markdown-body { max-width: 680px }
+:root[data-style=ink] .markdown-body :is(h1, h2, h3) { letter-spacing: .06em; font-weight: 560 }
+:root[data-style=ink] .markdown-body h2::before { content: ""; display: inline-block; width: 6px; height: 6px; margin-right: 8px; background: var(--accent); vertical-align: .15em }
+:root[data-style=ink] .markdown-body blockquote { border-left: 1px solid var(--text); background: transparent; font-family: var(--font-heading); font-style: italic }
+:root[data-style=ink] :is(.modal h2, .plan-card h2, .tasks-empty h2, .drawing-modal-title h2, .fullscreen-preview-bar h2, .note-outline-heading h2, .tasks-heading h1) { font-family: var(--font-heading); letter-spacing: .06em }
+:root[data-style=ink] .sidebar { padding-top: 32px }
+:root[data-style=ink] .note-heading { padding: 40px 64px 24px }
+:root[data-style=ink] .preview-area { padding: 8px 64px 80px }
+:root[data-style=ink] :is(.button.primary, .new-note):hover { filter: brightness(.88) }
+:root[data-style=ink] :is(.workspace-nav button.active, .workspace-nav button.active:hover, .note-row.active, .note-row.active:hover, .note-row.is-selected, .note-row.is-selected:hover, .settings-menu button.active, .settings-menu button.active:hover) {
+  background: transparent;
+  color: var(--text);
+  font-weight: 600;
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+:root[data-style=ink] :is(.note-row.active, .note-row.is-selected, .workspace-nav button.active, .settings-menu button.active) svg { color: var(--accent) }
+:root[data-style=ink] :is(.note-link, .folder-link, .workspace-nav button, .settings-menu button):hover { background: transparent }
+:root[data-style=ink] :is(.note-row:hover, .folder-row:hover, .workspace-nav button:hover, .settings-menu button:hover) { background: color-mix(in srgb, var(--text) 5%, transparent) }
+
+:root[data-style=mono] .brand-mark .logo-paper { fill: var(--bg) }
+:root[data-style=mono] .brand strong { font-weight: 700; letter-spacing: -1.8px }
+:root[data-style=mono] .note-title { font-weight: 700; letter-spacing: -1.5px }
+:root[data-style=mono] .markdown-body { max-width: 720px }
+:root[data-style=mono] .markdown-body :is(h1, h2, h3) { letter-spacing: -.04em }
+:root[data-style=mono] .sidebar { padding: 20px 12px 0; border-right: 1px solid var(--border) }
+:root[data-style=mono] .note-heading { padding: 18px 40px 12px }
+:root[data-style=mono] .topbar { min-height: 52px }
+:root[data-style=mono] .select-menu { box-shadow: none }
+:root[data-style=mono] :is(.workspace-nav button.active, .workspace-nav button.active:hover, .note-row.active, .note-row.active:hover, .note-row.is-selected, .note-row.is-selected:hover, .settings-menu button.active, .settings-menu button.active:hover) {
+  background: var(--text);
+  color: var(--bg);
+}
+:root[data-style=mono] :is(.note-row.active, .note-row.is-selected, .workspace-nav button.active, .settings-menu button.active) svg { color: var(--bg) }
+:root[data-style=mono] :is(.note-row:hover, .folder-row:hover, .workspace-nav button:hover, .settings-menu button:hover) { background: color-mix(in srgb, var(--text) 6%, transparent) }
+:root[data-style=mono][data-theme=dark] :is(.button.primary, .new-note) { color: var(--bg) }
+
+:root[data-style=soft] .app-shell { padding: 14px; background: var(--bg) }
+:root[data-style=soft] .sidebar-resizer { width: 14px; background: transparent }
+:root[data-style=soft] .sidebar-resizer:hover { background: color-mix(in srgb, var(--accent) 28%, transparent) }
+:root[data-style=soft] :is(.sidebar, .main-panel) { border-radius: var(--radius-lg); box-shadow: var(--shadow) }
+:root[data-style=soft] .sidebar { background: var(--surface) }
+:root[data-style=soft] :is(.button, .new-note, .mode-tabs, .board-tabs, .mode-tabs button, .board-tabs button, .tag, .tag-filter) { border-radius: 999px }
+:root[data-style=soft] :is(.mode-tabs, .board-tabs) { background: var(--panel) }
+:root[data-style=soft] :is(.mode-tabs button.active, .board-tabs button.active) { background: var(--surface) }
+:root[data-style=soft] .kanban-column { background: var(--panel); border-color: transparent }
+:root[data-style=soft] :is(.task-card, .plan-card) { border-color: transparent; box-shadow: var(--shadow) }
+:root[data-style=soft] :is(.modal, .toast, .select-menu) { box-shadow: var(--shadow-lg) }
+:root[data-style=soft] .select-menu,
+:root[data-style=glass] .select-menu { background: var(--surface) }
+:root[data-style=soft] .fullscreen-preview,
+:root[data-style=soft] .fullscreen-preview:fullscreen { background: var(--surface) }
+
+:root[data-style=glass] .app-shell {
+  padding: 12px;
+  background:
+    radial-gradient(980px 520px at -10% -20%, #c5cbff 0%, transparent 58%),
+    radial-gradient(820px 480px at 110% -10%, #b7eadc 0%, transparent 52%),
+    radial-gradient(700px 420px at 70% 120%, #f0d2c0 0%, transparent 50%),
+    linear-gradient(165deg, #e3e8fb 0%, #f6f3ee 48%, #dceee6 100%);
+}
+:root[data-style=glass][data-theme=dark] .app-shell {
+  background:
+    radial-gradient(900px 480px at -10% -10%, #3a2f78 0%, transparent 56%),
+    radial-gradient(760px 440px at 110% 0%, #1d4d55 0%, transparent 52%),
+    radial-gradient(640px 380px at 70% 120%, #4a2e3a 0%, transparent 50%),
+    linear-gradient(165deg, #12131c 0%, #1a1730 52%, #101820 100%);
+}
+:root[data-style=glass] .sidebar-resizer { width: 12px; background: transparent }
+:root[data-style=glass] .sidebar-resizer:hover { background: color-mix(in srgb, var(--text) 18%, transparent) }
+:root[data-style=glass] :is(.sidebar, .main-panel) { border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow) }
+:root[data-style=glass] :is(.sidebar, .main-panel, .modal, .toast, .select-menu, .topbar) {
+  backdrop-filter: blur(18px) saturate(1.35);
+  -webkit-backdrop-filter: blur(18px) saturate(1.35);
+}
+:root[data-style=glass] .topbar { background: color-mix(in srgb, var(--surface) 42%, transparent) }
+:root[data-style=glass] .modal { background: color-mix(in srgb, var(--surface) 88%, transparent) }
+:root[data-style=glass] :is(.sidebar-search, .select-trigger, input:not([type=checkbox]):not([type=color]), select, textarea, .button:not(.primary)) {
+  background: color-mix(in srgb, var(--surface) 62%, transparent);
+}
+:root[data-style=glass] .brand-mark .logo-paper { fill: #fff }
+:root[data-style=glass][data-theme=dark] .brand-mark .logo-paper { fill: #1c2030 }
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  :root[data-style=glass],
+  [data-style-preview=glass] {
+    --panel: #f3f5fb;
+    --surface: #fff;
+    --border: #e1e4ee;
+  }
+  :root[data-style=glass][data-theme=dark],
+  :root[data-theme=dark] [data-style-preview=glass] {
+    --panel: #1a1d2b;
+    --surface: #222636;
+    --border: #34384a;
+  }
+}
+
+@media (max-width: 1050px) {
+  :root[data-style=paper] .note-heading { padding: 28px 28px 20px }
+  :root[data-style=paper] .preview-area { padding: 20px 28px 60px }
+  :root[data-style=mono] .note-heading { padding: 16px 28px 12px }
+  :root[data-style=ink] .note-heading { padding: 28px 28px 20px }
+  :root[data-style=ink] .preview-area { padding: 20px 28px 60px }
+}
+
+@media (max-width: 760px) {
+  :root[data-style=paper] .note-heading { padding: 20px 20px 16px }
+  :root[data-style=paper] .preview-area { padding: 20px }
+  :root[data-style=paper] .note-title { font-size: 28px }
+  :root[data-style=paper] .sidebar { padding-top: 28px; border-right: 0 }
+  :root[data-style=mono] .sidebar { padding: 20px 12px 0; border-right: 0 }
+  :root[data-style=mono] .note-heading { padding: 20px 20px 16px }
+  :root[data-style=ink] .note-heading { padding: 20px 20px 16px }
+  :root[data-style=ink] .preview-area { padding: 20px }
+  :root[data-style=ink] .note-title { font-size: 26px; letter-spacing: .04em }
+  :root[data-style=ink] .sidebar { padding-top: 28px }
+  :root[data-style=soft] .app-shell { padding: 0 }
+  :root[data-style=soft] .main-panel { border-radius: 0; box-shadow: none }
+  :root[data-style=soft] .sidebar { border-radius: 0 }
+  :root[data-style=glass] .app-shell { padding: 0 }
+  :root[data-style=glass] :is(.sidebar, .main-panel) { border-radius: 0; border: 0 }
+  :root[data-style=glass] .sidebar { background: color-mix(in srgb, var(--bg) 94%, transparent) }
+}
