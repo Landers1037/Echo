@@ -58,12 +58,14 @@ type HistoryEntry struct {
 	CompletedAt string `json:"completedAt"`
 }
 type diskState struct {
-	Settings  Settings       `json:"settings"`
-	Groups    []string       `json:"groups"`
-	Tags      []string       `json:"tags"`
-	Trash     []TrashEntry   `json:"trash"`
-	Reminders []Reminder     `json:"reminders"`
-	History   []HistoryEntry `json:"history"`
+	Settings    Settings       `json:"settings"`
+	Groups      []string       `json:"groups"`
+	Tags        []string       `json:"tags"`
+	Trash       []TrashEntry   `json:"trash"`
+	Reminders   []Reminder     `json:"reminders"`
+	History     []HistoryEntry `json:"history"`
+	Plans       []Plan         `json:"plans,omitempty"`
+	CustomTasks []CustomTask   `json:"customTasks,omitempty"`
 }
 type Store struct {
 	mu          sync.Mutex

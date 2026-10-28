@@ -210,26 +210,8 @@ func TestMonthlyRecurrenceAndReminderClaims(t *testing.T) {
 	note := create(t, s, "reminder.md", "# Reminder\n- [ ] overdue <!-- echo-task: {\"id\":\"stable-id\",\"status\":\"todo\",\"due\":\"2020-01-01T09:00:00+08:00\",\"timezone\":\"Asia/Shanghai\"} -->\n")
 	s.checkReminders(time.Now())
 	s.checkReminders(time.Now())
-	if len(s.state.Reminders) != 1 {
-		t.Fatalf("duplicate reminders: %+v", s.state.Reminders)
-	}
-	h := NewHandler(attachStore(s), false)
-	id := s.state.Reminders[0].ID
-	for i := 0; i < 2; i++ {
-		rr := request(t, h, "POST", "/api/reminders/ack", map[string]string{"id": id})
-		var result map[string]bool
-		_ = json.Unmarshal(rr.Body.Bytes(), &result)
-		if result["claimed"] != (i == 0) {
-			t.Fatalf("claim %d: %s", i, rr.Body.String())
-		}
-	}
-	reopened, err := Open(s.root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	reopened.checkReminders(time.Now())
-	if len(reopened.state.Reminders) != 1 || !reopened.state.Reminders[0].Acknowledged {
-		t.Fatal("claim did not persist")
+	if len(s.state.Reminders) != 0 {
+		t.Fatalf("note tasks should not create reminders: %+v", s.state.Reminders)
 	}
 	status := "done"
 	repeat := "monthly"
@@ -592,6 +574,206 @@ func TestDrawingsCreateSaveMoveExportAndCleanup(t *testing.T) {
 	}
 	if _, err = s.readDrawing(standalone); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestPlanScheduleRemindersAndCustomTasks(t *testing.T) {
+	location, err := time.LoadLocation("Asia/Shanghai")
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 10, 28, 10, 0, 0, 0, location)
+	if now.Weekday() != time.Wednesday {
+		t.Fatalf("fixture weekday changed: %s", now.Weekday())
+	}
+	created := now.Add(-30 * 24 * time.Hour).UTC().Format(time.RFC3339Nano)
+	weekly := Plan{Repeat: "weekly", Time: "09:00", Weekdays: []int{1, 3, 5}, Timezone: "Asia/Shanghai", CreatedAt: created}
+	occurrence, ok := latestOccurrence(weekly, now)
+	expected := time.Date(2026, 10, 28, 9, 0, 0, 0, location)
+	if !ok || !occurrence.Equal(expected) {
+		t.Fatalf("weekly occurrence %s ok=%v", occurrence, ok)
+	}
+	friday := weekly
+	friday.Weekdays = []int{int(time.Friday)}
+	occurrence, ok = latestOccurrence(friday, now)
+	expected = time.Date(2026, 10, 23, 9, 0, 0, 0, location)
+	if !ok || !occurrence.Equal(expected) {
+		t.Fatalf("previous friday %s ok=%v", occurrence, ok)
+	}
+	futurePlan := weekly
+	futurePlan.CreatedAt = now.Add(time.Hour).UTC().Format(time.RFC3339Nano)
+	if _, ok = latestOccurrence(futurePlan, now); ok {
+		t.Fatal("occurrence before creation should not fire")
+	}
+	early := Plan{Repeat: "daily", Time: "09:00", Timezone: "Asia/Shanghai", CreatedAt: time.Date(2026, 10, 28, 8, 0, 0, 0, location).UTC().Format(time.RFC3339Nano)}
+	if _, ok = latestOccurrence(early, time.Date(2026, 10, 28, 8, 30, 0, 0, location)); ok {
+		t.Fatal("daily occurrence before creation should not fire")
+	}
+	once := Plan{Repeat: "once", Date: "2026-10-27", Time: "09:00", Timezone: "Asia/Shanghai", CreatedAt: created}
+	occurrence, ok = latestOccurrence(once, now)
+	expected = time.Date(2026, 10, 27, 9, 0, 0, 0, location)
+	if !ok || !occurrence.Equal(expected) {
+		t.Fatalf("once occurrence %s ok=%v", occurrence, ok)
+	}
+	again, ok := latestOccurrence(once, now.Add(10*24*time.Hour))
+	if !ok || !again.Equal(occurrence) {
+		t.Fatal("once plan produced another occurrence")
+	}
+	once.Date = "2026-12-01"
+	if _, ok = latestOccurrence(once, now); ok {
+		t.Fatal("future once plan fired early")
+	}
+	once.Date = "2020-01-01"
+	if _, ok = latestOccurrence(once, now); ok {
+		t.Fatal("once plan fired before it was created")
+	}
+
+	s := testStore(t)
+	if _, err = s.createPlan(Plan{Title: "  ", Repeat: "daily", Time: "09:00"}); err == nil {
+		t.Fatal("accepted a blank title")
+	}
+	if _, err = s.createPlan(Plan{Title: "例会", Repeat: "weekly", Time: "09:00"}); err == nil {
+		t.Fatal("accepted weekly plan without weekdays")
+	}
+	if _, err = s.createPlan(Plan{Title: "例会", Repeat: "once", Time: "09:00"}); err == nil {
+		t.Fatal("accepted once plan without a date")
+	}
+	if _, err = s.createPlan(Plan{Title: "例会", Repeat: "daily", Time: "25:00"}); err == nil {
+		t.Fatal("accepted an invalid time")
+	}
+	if len(s.state.Plans) != 0 {
+		t.Fatalf("invalid plans were stored: %+v", s.state.Plans)
+	}
+
+	daily, err := s.createPlan(Plan{Title: "喝水", Repeat: "daily", Time: "08:00", Timezone: "Asia/Shanghai"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	backdatePlan(s, daily.ID, time.Now().Add(-72*time.Hour))
+	s.checkReminders(time.Now())
+	s.checkReminders(time.Now())
+	if len(s.state.Reminders) != 1 || s.state.Reminders[0].PlanID != daily.ID || s.state.Reminders[0].Text != "喝水" {
+		t.Fatalf("daily reminder: %+v", s.state.Reminders)
+	}
+	h := NewHandler(attachStore(s), false)
+	for i := 0; i < 2; i++ {
+		rr := request(t, h, "POST", "/api/reminders/ack", map[string]string{"id": s.state.Reminders[0].ID})
+		var result map[string]bool
+		_ = json.Unmarshal(rr.Body.Bytes(), &result)
+		if result["claimed"] != (i == 0) {
+			t.Fatalf("claim %d: %s", i, rr.Body.String())
+		}
+	}
+	reopened, err := Open(s.root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reopened.checkReminders(time.Now())
+	if len(reopened.state.Reminders) != 1 || !reopened.state.Reminders[0].Acknowledged {
+		t.Fatal("claim did not persist")
+	}
+
+	kept := len(s.state.Reminders)
+	s.checkReminders(time.Now().Add(72 * time.Hour))
+	if len(s.state.Reminders) != kept+1 {
+		t.Fatalf("expected the next daily reminder, got %+v", s.state.Reminders)
+	}
+	if err = s.deletePlan(daily.ID); err != nil {
+		t.Fatal(err)
+	}
+	afterDelete := len(s.state.Reminders)
+	s.checkReminders(time.Now().Add(144 * time.Hour))
+	if len(s.state.Reminders) != afterDelete {
+		t.Fatal("deleted plan still created a reminder")
+	}
+
+	oncePlan, err := s.createPlan(Plan{Title: "体检", Repeat: "once", Date: time.Now().In(location).AddDate(0, 0, -1).Format("2006-01-02"), Time: "08:00", Timezone: "Asia/Shanghai"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	backdatePlan(s, oncePlan.ID, time.Now().Add(-72*time.Hour))
+	before := len(s.state.Reminders)
+	s.checkReminders(time.Now())
+	s.checkReminders(time.Now().Add(10 * 24 * time.Hour))
+	if len(s.state.Reminders) != before+1 {
+		t.Fatalf("once plan reminded %d times: %+v", len(s.state.Reminders)-before, s.state.Reminders[before:])
+	}
+
+	rr := request(t, h, "GET", "/api/plans", nil)
+	if rr.Code != 200 {
+		t.Fatal(rr.Body.String())
+	}
+	var listed []Plan
+	if err = json.Unmarshal(rr.Body.Bytes(), &listed); err != nil || len(listed) != 1 || listed[0].ID != oncePlan.ID {
+		t.Fatalf("plans %s", rr.Body.String())
+	}
+	rr = request(t, h, "POST", "/api/plans", map[string]any{"title": "晨会", "repeat": "weekly", "time": "21:00", "weekdays": []int{1, 5, 1}, "timezone": "Asia/Shanghai"})
+	if rr.Code != 201 {
+		t.Fatal(rr.Body.String())
+	}
+	var createdPlan Plan
+	if err = json.Unmarshal(rr.Body.Bytes(), &createdPlan); err != nil {
+		t.Fatal(err)
+	}
+	if !createdPlan.Enabled || len(createdPlan.Weekdays) != 2 || createdPlan.Weekdays[0] != 1 || createdPlan.Weekdays[1] != 5 {
+		t.Fatalf("created plan %+v", createdPlan)
+	}
+	createdPlan.Title = "晨会改期"
+	createdPlan.Enabled = false
+	rr = request(t, h, "PUT", "/api/plans", createdPlan)
+	if rr.Code != 200 {
+		t.Fatal(rr.Body.String())
+	}
+	var updatedPlan Plan
+	_ = json.Unmarshal(rr.Body.Bytes(), &updatedPlan)
+	if updatedPlan.Title != "晨会改期" || updatedPlan.Enabled || updatedPlan.CreatedAt != createdPlan.CreatedAt {
+		t.Fatalf("updated plan %+v", updatedPlan)
+	}
+	rr = request(t, h, "DELETE", "/api/plans?id="+url.QueryEscape(createdPlan.ID), nil)
+	if rr.Code != 200 {
+		t.Fatal(rr.Body.String())
+	}
+
+	rr = request(t, h, "GET", "/api/custom-tasks", nil)
+	var custom []CustomTask
+	if rr.Code != 200 || json.Unmarshal(rr.Body.Bytes(), &custom) != nil || len(custom) != 0 {
+		t.Fatalf("custom tasks %s", rr.Body.String())
+	}
+	rr = request(t, h, "POST", "/api/custom-tasks", map[string]any{"text": "  ", "status": "todo"})
+	if rr.Code != 400 {
+		t.Fatalf("blank custom task %d %s", rr.Code, rr.Body.String())
+	}
+	rr = request(t, h, "POST", "/api/custom-tasks", map[string]any{"text": " 买菜 ", "description": "晚饭", "status": "doing"})
+	if rr.Code != 201 {
+		t.Fatal(rr.Body.String())
+	}
+	var customTask CustomTask
+	if err = json.Unmarshal(rr.Body.Bytes(), &customTask); err != nil {
+		t.Fatal(err)
+	}
+	if customTask.Text != "买菜" || customTask.Status != "doing" || customTask.ID == "" {
+		t.Fatalf("custom task %+v", customTask)
+	}
+	customTask.Text = "买水果"
+	customTask.Status = "done"
+	rr = request(t, h, "PUT", "/api/custom-tasks", customTask)
+	if rr.Code != 200 {
+		t.Fatal(rr.Body.String())
+	}
+	rr = request(t, h, "DELETE", "/api/custom-tasks?id="+url.QueryEscape(customTask.ID), nil)
+	if rr.Code != 200 {
+		t.Fatal(rr.Body.String())
+	}
+	if len(s.state.CustomTasks) != 0 {
+		t.Fatalf("custom task remained: %+v", s.state.CustomTasks)
+	}
+}
+
+func backdatePlan(s *Store, id string, created time.Time) {
+	for i := range s.state.Plans {
+		if s.state.Plans[i].ID == id {
+			s.state.Plans[i].CreatedAt = created.UTC().Format(time.RFC3339Nano)
+		}
 	}
 }
 

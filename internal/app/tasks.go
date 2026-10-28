@@ -49,8 +49,9 @@ type TaskUpdate struct {
 }
 type Reminder struct {
 	ID           string `json:"id"`
-	TaskID       string `json:"taskId"`
-	NotePath     string `json:"notePath"`
+	PlanID       string `json:"planId,omitempty"`
+	TaskID       string `json:"taskId,omitempty"`
+	NotePath     string `json:"notePath,omitempty"`
 	Text         string `json:"text"`
 	Due          string `json:"due"`
 	Acknowledged bool   `json:"acknowledged"`
@@ -302,39 +303,28 @@ func (s *Store) checkReminders(now time.Time) {
 	if _, err := os.Stat(s.journalPath()); err == nil {
 		return
 	}
-	tasks, err := s.allTasks()
-	if err != nil {
-		return
-	}
 	seen := map[string]bool{}
 	for _, reminder := range s.state.Reminders {
 		seen[reminder.ID] = true
 	}
 	oldCount := len(s.state.Reminders)
-	for _, task := range tasks {
-		if task.Status == "done" {
+	for _, plan := range s.state.Plans {
+		if !plan.Enabled {
 			continue
 		}
-		value := task.RemindAt
-		if value == "" {
-			value = task.Due
-		}
-		if value == "" {
+		occurrence, ok := latestOccurrence(plan, now)
+		if !ok {
 			continue
 		}
-		due, err := parseTaskTime(value, task.Timezone)
-		if err != nil || due.After(now) {
-			continue
-		}
-		id := revision([]byte(task.ID + ":" + value))[:24]
+		id := revision([]byte(plan.ID + ":" + occurrence.UTC().Format(time.RFC3339)))[:24]
 		if seen[id] {
 			continue
 		}
-		s.state.Reminders = append(s.state.Reminders, Reminder{ID: id, TaskID: task.ID, NotePath: task.NotePath, Text: task.Text, Due: due.UTC().Format(time.RFC3339), Acknowledged: false})
+		s.state.Reminders = append(s.state.Reminders, Reminder{ID: id, PlanID: plan.ID, Text: plan.Title, Due: occurrence.UTC().Format(time.RFC3339), Acknowledged: false})
 		seen[id] = true
 	}
 	if len(s.state.Reminders) > oldCount {
-		if err = s.persist(); err != nil {
+		if err := s.persist(); err != nil {
 			s.state.Reminders = s.state.Reminders[:oldCount]
 			return
 		}

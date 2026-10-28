@@ -10,6 +10,7 @@ vi.mock('./components/Editor', () => ({
 }))
 vi.mock('./components/MarkdownView', () => ({ MarkdownView: ({ content, fontSize, strictLineBreaks }: { content: string; fontSize?: number; strictLineBreaks?: boolean }) => <article data-testid="preview" data-strict-breaks={strictLineBreaks ? 'true' : 'false'} style={{ fontSize }}>{content}</article> }))
 vi.mock('./components/TasksView', () => ({ TasksView: () => <div data-testid="tasks-view" /> }))
+vi.mock('./components/PlansView', () => ({ PlansView: () => <div data-testid="plans-view" />, planScheduleLabel: () => '' }))
 vi.mock('./export', () => ({ exportNotes: vi.fn(async () => {}) }))
 vi.mock('./components/Drawing', () => ({
   DrawingEmbed: () => null,
@@ -123,7 +124,7 @@ function createServer(extraNotes: Note[] = [], initialFolders: string[] = [], in
     if (url.pathname === '/api/folders' && method === 'POST') { folders.push((body as { path: string }).path); return response({ ok: true }, 201) }
     if (url.pathname === '/api/groups') return response(['工作'])
     if (url.pathname === '/api/tags') return response(['重点', '项目'])
-    if (url.pathname === '/api/tasks' || url.pathname === '/api/reminders') return response([])
+    if (url.pathname === '/api/tasks' || url.pathname === '/api/reminders' || url.pathname === '/api/plans' || url.pathname === '/api/custom-tasks') return response([])
     if (url.pathname === '/api/notes' && method === 'PUT') {
       const write = body as Write
       writes.push(write)
@@ -649,7 +650,7 @@ describe('App sidebar navigation', () => {
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: '测试笔记' })) })
     expect(screen.getByRole('button', { name: '折叠目录' })).toHaveAttribute('aria-expanded', 'true')
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: '计划与提醒' })) })
-    expect(await screen.findByTestId('tasks-view')).toBeInTheDocument()
+    expect(await screen.findByTestId('plans-view')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '折叠目录' })).toHaveAttribute('aria-expanded', 'true')
   })
 

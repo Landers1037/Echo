@@ -575,6 +575,90 @@ func (h *handler) api(s *Store, w http.ResponseWriter, r *http.Request) error {
 		s.changed()
 		jsonResponse(w, 200, drawing)
 		return nil
+	case "/api/plans":
+		switch method {
+		case "GET":
+			plans := s.state.Plans
+			if plans == nil {
+				plans = []Plan{}
+			}
+			jsonResponse(w, 200, plans)
+			return nil
+		case "POST":
+			var plan Plan
+			if err := decode(r, &plan); err != nil {
+				return err
+			}
+			created, err := s.createPlan(plan)
+			if err != nil {
+				return err
+			}
+			s.changed()
+			s.checkReminders(time.Now())
+			jsonResponse(w, 201, created)
+			return nil
+		case "PUT":
+			var plan Plan
+			if err := decode(r, &plan); err != nil {
+				return err
+			}
+			updated, err := s.updatePlan(plan)
+			if err != nil {
+				return err
+			}
+			s.changed()
+			s.checkReminders(time.Now())
+			jsonResponse(w, 200, updated)
+			return nil
+		case "DELETE":
+			if err := s.deletePlan(query.Get("id")); err != nil {
+				return err
+			}
+			s.changed()
+			jsonResponse(w, 200, map[string]bool{"ok": true})
+			return nil
+		}
+	case "/api/custom-tasks":
+		switch method {
+		case "GET":
+			tasks := s.state.CustomTasks
+			if tasks == nil {
+				tasks = []CustomTask{}
+			}
+			jsonResponse(w, 200, tasks)
+			return nil
+		case "POST":
+			var task CustomTask
+			if err := decode(r, &task); err != nil {
+				return err
+			}
+			created, err := s.createCustomTask(task)
+			if err != nil {
+				return err
+			}
+			s.changed()
+			jsonResponse(w, 201, created)
+			return nil
+		case "PUT":
+			var task CustomTask
+			if err := decode(r, &task); err != nil {
+				return err
+			}
+			updated, err := s.updateCustomTask(task)
+			if err != nil {
+				return err
+			}
+			s.changed()
+			jsonResponse(w, 200, updated)
+			return nil
+		case "DELETE":
+			if err := s.deleteCustomTask(query.Get("id")); err != nil {
+				return err
+			}
+			s.changed()
+			jsonResponse(w, 200, map[string]bool{"ok": true})
+			return nil
+		}
 	case "/api/tasks":
 		if method == "GET" {
 			tasks, err := s.allTasks()
