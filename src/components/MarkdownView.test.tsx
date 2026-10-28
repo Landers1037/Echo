@@ -1,5 +1,6 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { imageDownloadName } from './ImagePreview'
 import { MarkdownView, resolveNotePath } from './MarkdownView'
 
 const { initializeMermaid, renderMermaid } = vi.hoisted(() => ({
@@ -121,6 +122,159 @@ describe('Markdown rendering', () => {
     expect(container.querySelector('.code-block br')).toBeNull()
     expect(container.querySelector('.code-block')).toHaveTextContent('丙')
     expect(container.querySelector('.code-block')).toHaveTextContent('丁')
+  })
+
+  it('opens an image preview with zoom, copy, and download', async () => {
+    const write = vi.fn(async (items: Array<{ data: Record<string, Blob | Promise<Blob>> }>) => {
+      const blob = await items[0].data['image/png']
+      expect(blob).toBeInstanceOf(Blob)
+      expect(blob.type).toBe('image/png')
+    })
+    const fetchMock = vi.fn(async () => ({ ok: true, headers: { get: (name: string) => name.toLowerCase() === 'content-type' ? 'image/png' : null }, blob: async () => new Blob([Uint8Array.from([137, 80, 78, 71])], { type: 'image/png' }) }))
+    const createObjectURL = vi.fn(() => 'blob:preview')
+    const revokeObjectURL = vi.fn()
+    const previousCreate = URL.createObjectURL
+    const previousRevoke = URL.revokeObjectURL
+    URL.createObjectURL = createObjectURL
+    URL.revokeObjectURL = revokeObjectURL
+    vi.stubGlobal('ClipboardItem', class { constructor(public data: Record<string, Blob | Promise<Blob>>) {} })
+    vi.stubGlobal('fetch', fetchMock)
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { write } })
+    const downloads: HTMLAnchorElement[] = []
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) { downloads.push(this) })
+    try {
+      render(<MarkdownView content={'![照片](../.assets/a.png)\n\n![封面](../.assets/b.jpg)'} notePath="项目/记录.md" lineNumbers={false} />)
+      fireEvent.click(screen.getByRole('button', { name: '预览图片：照片' }))
+      const dialog = screen.getByRole('dialog', { name: '图片预览：照片' })
+      expect(within(dialog).getByRole('img', { name: '照片' })).toHaveAttribute('src', '/api/assets?path=.assets%2Fa.png')
+      expect(dialog).toHaveTextContent('a.png')
+
+      fireEvent.click(within(dialog).getByRole('button', { name: '放大' }))
+      expect(within(dialog).getByRole('button', { name: /重置缩放/ })).toHaveTextContent('125%')
+      fireEvent.click(within(dialog).getByRole('button', { name: '缩小' }))
+      expect(within(dialog).getByRole('button', { name: /重置缩放/ })).toHaveTextContent('100%')
+      fireEvent.wheel(dialog, { deltaY: -100 })
+      expect(within(dialog).getByRole('button', { name: /重置缩放/ })).toHaveTextContent('125%')
+      fireEvent.click(within(dialog).getByRole('button', { name: /重置缩放/ }))
+      fireEvent.keyDown(document, { key: '+' })
+      expect(within(dialog).getByRole('button', { name: /重置缩放/ })).toHaveTextContent('125%')
+      fireEvent.keyDown(document, { key: '0' })
+      expect(within(dialog).getByRole('button', { name: /重置缩放/ })).toHaveTextContent('100%')
+      fireEvent.doubleClick(within(dialog).getByRole('img', { name: '照片' }))
+      expect(within(dialog).getByRole('button', { name: /重置缩放/ })).toHaveTextContent('200%')
+      fireEvent.doubleClick(within(dialog).getByRole('img', { name: '照片' }))
+      expect(within(dialog).getByRole('button', { name: /重置缩放/ })).toHaveTextContent('100%')
+
+      const zoomIn = within(dialog).getByRole('button', { name: '放大' })
+      for (let count = 0; count < 8; count++) fireEvent.click(zoomIn)
+      expect(zoomIn).toBeDisabled()
+      expect(within(dialog).getByRole('button', { name: /重置缩放/ })).toHaveTextContent('400%')
+      fireEvent.click(within(dialog).getByRole('button', { name: /重置缩放/ }))
+      const zoomOut = within(dialog).getByRole('button', { name: '缩小' })
+      for (let count = 0; count < 8; count++) fireEvent.click(zoomOut)
+      expect(zoomOut).toBeDisabled()
+      expect(within(dialog).getByRole('button', { name: /重置缩放/ })).toHaveTextContent('25%')
+      fireEvent.click(within(dialog).getByRole('button', { name: /重置缩放/ }))
+      fireEvent.click(zoomIn)
+
+      const photo = within(dialog).getByRole('img', { name: '照片' })
+      fireEvent.mouseDown(photo, { button: 0, clientX: 10, clientY: 12 })
+      fireEvent.mouseMove(photo, { clientX: 46, clientY: 30 })
+      fireEvent.mouseUp(photo, { button: 0, clientX: 46, clientY: 30 })
+      expect(photo.getAttribute('style')).toContain('translate(36px, 18px)')
+      expect(photo.getAttribute('style')).toContain('scale(1.25)')
+
+      fireEvent.click(within(dialog).getByRole('button', { name: '复制图片' }))
+      expect(await within(dialog).findByRole('status')).toHaveTextContent('已复制图片')
+      expect(write).toHaveBeenCalledOnce()
+      fireEvent.click(within(dialog).getByRole('button', { name: '下载图片' }))
+      await waitFor(() => expect(downloads).toHaveLength(1))
+      expect(downloads[0].download).toBe('a.png')
+      expect(downloads[0].href).toContain('blob:preview')
+      expect(createObjectURL).toHaveBeenCalledOnce()
+
+      fireEvent.click(within(dialog).getByRole('img', { name: '照片' }))
+      expect(dialog).toBeInTheDocument()
+      fireEvent.click(dialog.querySelector('.image-preview-stage')!)
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+
+      fireEvent.click(screen.getByRole('button', { name: '预览图片：封面' }))
+      const cover = screen.getByRole('dialog', { name: '图片预览：封面' })
+      expect(within(cover).getByRole('img', { name: '封面' })).toHaveAttribute('src', '/api/assets?path=.assets%2Fb.jpg')
+      fireEvent.keyDown(document, { key: 'Escape' })
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    } finally {
+      if (previousCreate) URL.createObjectURL = previousCreate
+      else Reflect.deleteProperty(URL, 'createObjectURL')
+      if (previousRevoke) URL.revokeObjectURL = previousRevoke
+      else Reflect.deleteProperty(URL, 'revokeObjectURL')
+      vi.unstubAllGlobals()
+      vi.restoreAllMocks()
+      Reflect.deleteProperty(navigator, 'clipboard')
+    }
+  })
+
+  it('keeps broken images and exports static, and does not navigate away from an image link', () => {
+    const { rerender } = render(<MarkdownView content="[![照片](../.assets/a.png)](https://example.com/page)" notePath="项目/记录.md" lineNumbers={false} />)
+    const image = screen.getByRole('button', { name: '预览图片：照片' })
+    expect(fireEvent.click(image)).toBe(false)
+    expect(screen.getByRole('dialog', { name: '图片预览：照片' })).toBeInTheDocument()
+    expect(screen.getByRole('link')).toHaveAttribute('href', 'https://example.com/page')
+    fireEvent.click(screen.getByRole('button', { name: '关闭图片预览' }))
+
+    fireEvent.error(image)
+    fireEvent.click(image)
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+
+    rerender(<MarkdownView content="![照片](https://example.com/a.png)" notePath="项目/记录.md" lineNumbers={false} exporting />)
+    expect(screen.getByAltText('照片')).not.toHaveAttribute('role')
+    expect(screen.queryByRole('button', { name: '预览图片：照片' })).not.toBeInTheDocument()
+  })
+
+  it('reports when a remote image cannot be copied or downloaded', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('network') }))
+    vi.stubGlobal('ClipboardItem', class { constructor(public data: Record<string, Blob | Promise<Blob>>) {} })
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { write: vi.fn(async (items: Array<{ data: Record<string, Promise<Blob>> }>) => { await items[0].data['image/png'] }) } })
+    const downloads: HTMLAnchorElement[] = []
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) { downloads.push(this) })
+    try {
+      render(<MarkdownView content="![猫](https://example.com/pics/cat.jpg)" notePath="笔记.md" lineNumbers={false} />)
+      fireEvent.click(screen.getByRole('button', { name: '预览图片：猫' }))
+      const dialog = screen.getByRole('dialog', { name: '图片预览：猫' })
+      fireEvent.click(within(dialog).getByRole('button', { name: '复制图片' }))
+      expect(await within(dialog).findByRole('status')).toHaveTextContent('无法复制这张图片')
+      fireEvent.click(within(dialog).getByRole('button', { name: '下载图片' }))
+      expect(await within(dialog).findByRole('status')).toHaveTextContent('无法下载这张图片')
+      expect(downloads).toHaveLength(0)
+    } finally {
+      vi.unstubAllGlobals()
+      vi.restoreAllMocks()
+      Reflect.deleteProperty(navigator, 'clipboard')
+    }
+  })
+
+  it('falls back to the original address when a local image cannot be fetched', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('offline') }))
+    const downloads: HTMLAnchorElement[] = []
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) { downloads.push(this) })
+    try {
+      render(<MarkdownView content="![照片](../.assets/a.png)" notePath="项目/记录.md" lineNumbers={false} />)
+      fireEvent.click(screen.getByRole('button', { name: '预览图片：照片' }))
+      fireEvent.click(screen.getByRole('button', { name: '下载图片' }))
+      await waitFor(() => expect(downloads).toHaveLength(1))
+      expect(downloads[0].download).toBe('a.png')
+      expect(downloads[0].href).toContain('/api/assets?path=.assets%2Fa.png')
+    } finally {
+      vi.unstubAllGlobals()
+      vi.restoreAllMocks()
+    }
+  })
+
+  it('names downloads from the asset path, remote file, or image description', () => {
+    expect(imageDownloadName('/api/assets?path=.assets%2F%E7%85%A7%E7%89%87.png', '别名')).toBe('照片.png')
+    expect(imageDownloadName('https://example.com/pics/cat.jpg?x=1', '猫')).toBe('cat.jpg')
+    expect(imageDownloadName('data:image/png;base64,abc', '封面')).toBe('封面.png')
+    expect(imageDownloadName('https://example.com/download', '')).toBe('图片.png')
   })
 
   it('opens internal Markdown links through the note navigator', () => {

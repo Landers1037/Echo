@@ -8,6 +8,7 @@ import remarkFrontmatter from 'remark-frontmatter'
 import { codeToHtml } from 'shiki'
 import { Check, Copy } from 'lucide-react'
 import { DrawingEmbed } from './Drawing'
+import { ImagePreview, PreviewableImage } from './ImagePreview'
 import { MermaidBlock } from './Mermaid'
 
 export type MarkdownViewProps = {
@@ -125,6 +126,8 @@ function drawingReference(notePath: string, src: string) {
 }
 
 export function MarkdownView({ content, notePath, assets, lineNumbers, fontSize, onNavigate, onToggleTask, onEditDrawing, drawingVersion = 0, exporting = false, dark = false, strictLineBreaks = false }: MarkdownViewProps) {
+  const [imagePreview, setImagePreview] = useState<{ src: string; alt: string } | null>(null)
+  useEffect(() => { setImagePreview(null) }, [notePath, exporting])
   const remarkPlugins = strictLineBreaks ? [remarkGfm, remarkBreaks, remarkFrontmatter, remarkUnderline] : [remarkGfm, remarkFrontmatter, remarkUnderline]
   return <div className="markdown-body" style={!exporting && fontSize !== undefined ? { fontSize } : undefined}><ReactMarkdown remarkPlugins={remarkPlugins} skipHtml components={{
     ...(!exporting ? previewHeadings : {}),
@@ -148,7 +151,8 @@ export function MarkdownView({ content, notePath, assets, lineNumbers, fontSize,
       const embedded = assets?.[src] || assets?.[decodeSafe(src)]
       if (exporting && !external && !embedded) return <span className="missing-image">[图片缺失：{alt || src}]</span>
       const image = embedded || (external ? src : `/api/assets?path=${encodeURIComponent(resolveNotePath(notePath, src))}`)
-      return <img src={image} alt={alt || ''} title={title} loading={exporting ? 'eager' : 'lazy'} onError={event => { event.currentTarget.classList.add('image-error') }} />
+      if (exporting) return <img src={image} alt={alt || ''} title={title} loading="eager" onError={event => { event.currentTarget.classList.add('image-error') }} />
+      return <PreviewableImage src={image} alt={alt || ''} title={title} onOpen={() => setImagePreview({ src: image, alt: alt || '' })} />
     },
     a({ href, children, title }) {
       const internal = Boolean(href && !/^(?:[a-z][a-z\d+.-]*:|\/\/|#)/i.test(href) && /\.md(?:[?#]|$)/i.test(href))
@@ -161,7 +165,7 @@ export function MarkdownView({ content, notePath, assets, lineNumbers, fontSize,
     },
     input({ type, checked }) { return type === 'checkbox' ? <TaskCheckbox checked={checked} onToggle={onToggleTask} /> : null },
     table({ children }) { return <div className="markdown-table-wrap"><table>{children}</table></div> },
-  }}>{content}</ReactMarkdown></div>
+  }}>{content}</ReactMarkdown>{imagePreview && <ImagePreview src={imagePreview.src} alt={imagePreview.alt} onClose={() => setImagePreview(null)} />}</div>
 }
 
 function decodeSafe(value: string) { try { return decodeURIComponent(value) } catch { return value } }
