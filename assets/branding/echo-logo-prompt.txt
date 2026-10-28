@@ -5,4 +5,5 @@ A warm paper disc with a deep-green keyline. A solid ink circle sits up and to t
 Colors: paper #F4F1E8, ink #3A5739, sage #7C9A74.
 Source geometry: echo-logo.svg, 64-unit viewBox.
 Derivatives: echo-logo.png at 1024, public/logo.png at 256, public/favicon.png at 64.
+The sidebar mark is the same geometry inlined in Logo.tsx. Its ink and rings use --accent, so they follow the chosen theme color. The favicon stays the default-green PNG.
 Ring strokes are heavier than the first study so both arcs stay distinct at 42px and in the favicon.
