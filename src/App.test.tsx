@@ -90,6 +90,7 @@ function createServer(extraNotes: Note[] = [], initialFolders: string[] = [], in
     const body = typeof init?.body === 'string' ? JSON.parse(init.body) : undefined
     calls.push({ method, path: url.pathname, body })
     if (url.pathname === '/api/storage/open' && method === 'POST') return response({ ok: true })
+    if (url.pathname === '/api/agent/config') return response({ enabled: false, baseURL: 'https://api.openai.com/v1', hasKey: false, apiKeyHint: '', model: 'gpt-4o-mini', contextTokens: 32000, maxOutputTokens: 4096, temperature: 0.7, systemPrompt: '' })
     if (url.pathname === '/api/settings') {
       if (method === 'PUT') {
         if (settingsError) { settingsError = false; return response({ error: '设置写入失败' }, 500) }

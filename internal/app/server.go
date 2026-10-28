@@ -96,7 +96,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if h.dev {
 			w.Header().Set("Access-Control-Allow-Origin", origin)
 			w.Header().Set("Vary", "Origin")
-			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
 			w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 		}
 	}
@@ -119,6 +119,12 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if strings.HasPrefix(r.URL.Path, "/api/repositories") {
 		if err := h.repositories(w, r); err != nil {
+			fail(w, err)
+		}
+		return
+	}
+	if strings.HasPrefix(r.URL.Path, "/api/agent") {
+		if err := h.agentRoutes(w, r); err != nil {
 			fail(w, err)
 		}
 		return

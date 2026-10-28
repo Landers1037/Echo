@@ -20,3 +20,17 @@ export type TrashEntry = { id: string; path: string; deletedAt: string }
 export type Repository = { path: string; name: string; lastOpened: string }
 export type RepositoryList = { current: string; items: Repository[]; switched: boolean; canceled: boolean }
 export type ExportSnapshot = { notes: (Note & { assets: Record<string, string> })[]; missing: string[]; external: string[] }
+export type AgentMode = 'note' | 'chat'
+export type AgentConfig = { enabled: boolean; baseURL: string; hasKey: boolean; apiKeyHint: string; model: string; contextTokens: number; maxOutputTokens: number; temperature: number; systemPrompt: string }
+export type AgentConfigInput = { enabled: boolean; baseURL: string; apiKey: string; model: string; contextTokens: number; maxOutputTokens: number; temperature: number; systemPrompt: string }
+export type Conversation = { id: string; title: string; mode: AgentMode; notePath: string; createdAt: string; updatedAt: string }
+export type AgentToolCall = { id: string; name: string; arguments: string }
+export type AgentMessage = { id: string; conversationId: string; role: 'user' | 'assistant' | 'tool'; content: string; toolCalls?: AgentToolCall[]; toolCallId?: string; outcome?: '' | 'accepted' | 'rejected'; createdAt: string }
+export type AgentEvent =
+  | { type: 'meta'; conversationId: string; title: string; userMessageId: string }
+  | { type: 'delta'; text: string }
+  | { type: 'tool_start'; id: string; name: string }
+  | { type: 'tool_delta'; id: string; arguments: string }
+  | { type: 'tool_end'; id: string; name: string; arguments: string }
+  | { type: 'done'; conversationId?: string; messageId: string }
+  | { type: 'error'; error: string; conversationId?: string; messageId?: string }

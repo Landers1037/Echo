@@ -139,10 +139,12 @@ func (w *Workspace) Run(ctx context.Context) {
 	<-ctx.Done()
 	w.mu.Lock()
 	cancel = w.cancel
+	store = w.store
 	w.mu.Unlock()
 	if cancel != nil {
 		cancel()
 	}
+	store.closeAgent()
 }
 
 func (w *Workspace) List() RepositoryList {
@@ -206,6 +208,7 @@ func (w *Workspace) Switch(raw string) (RepositoryList, error) {
 	if oldCancel != nil {
 		oldCancel()
 	}
+	old.closeAgent()
 	w.broadcast(map[string]any{"type": "switched"})
 	return list, saveErr
 }

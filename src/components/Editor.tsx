@@ -3,14 +3,36 @@ import type { CSSProperties } from 'react'
 import CodeMirror from '@uiw/react-codemirror'
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
 import { languages } from '@codemirror/language-data'
-import { EditorView, keymap } from '@codemirror/view'
-import type { ViewUpdate } from '@codemirror/view'
-import { Compartment, type Extension } from '@codemirror/state'
+import { Decoration, EditorView, keymap } from '@codemirror/view'
+import type { DecorationSet, ViewUpdate } from '@codemirror/view'
+import { Annotation, Compartment, EditorState, StateEffect, StateField, type Extension } from '@codemirror/state'
+import { NoteAiSession } from '../agent/editorSession'
 import { autocompletion } from '@codemirror/autocomplete'
 import { searchKeymap } from '@codemirror/search'
 import { Bold, Italic, Heading, Strikethrough, Underline, Quote, List, ListOrdered, ListTodo, Link, ImagePlus, Shapes, Code, Code2, Table2, Undo2, Redo2, LoaderCircle, RefreshCw, X } from 'lucide-react'
 import { undo, redo } from '@codemirror/commands'
 import { bindingFor, formatShortcut, shortcutBindings } from '../shortcuts'
+
+const aiAnnotation = Annotation.define<true>()
+const setAiHighlight = StateEffect.define<DecorationSet>()
+const aiEditMark = Decoration.mark({ class: 'cm-ai-edit' })
+const aiHighlightField = StateField.define<DecorationSet>({
+  create: () => Decoration.none,
+  update(value, transaction) {
+    value = value.map(transaction.changes)
+    for (const effect of transaction.effects) if (effect.is(setAiHighlight)) value = effect.value
+    return value
+  },
+  provide: field => EditorView.decorations.from(field),
+})
+
+export type EditorController = {
+  getDoc: () => string
+  beginAiSession: () => void
+  applyAiStream: (toolId: string, name: string, partialArgs: string) => void
+  finishAiSession: () => { failures: string[] }
+  resolveAiSession: (action: 'accept' | 'reject') => void
+}
 
 export type EditorProps = {
   value: string
@@ -23,6 +45,7 @@ export type EditorProps = {
   onSave: () => void
   onTaskInsert?: () => void
   shortcuts: Record<string, string>
+  onReady?: (controller: EditorController) => void
 }
 
 type Upload = { id: number; file: File; status: 'uploading' | 'error'; error?: string }
@@ -40,6 +63,39 @@ export function Editor(props: EditorProps) {
   const latest = useRef(props)
   latest.current = props
   const shortcutCompartment = useRef(new Compartment()).current
+  const readOnlyCompartment = useRef(new Compartment()).current
+  const aiActive = useRef(false)
+  const [aiLocked, setAiLocked] = useState(false)
+  const session = useRef<NoteAiSession | null>(null)
+  if (!session.current) {
+    session.current = new NoteAiSession({
+      getDoc: () => view.current?.state.doc.toString() ?? '',
+      replace(from, to, insert) {
+        view.current?.dispatch({ changes: { from, to, insert }, annotations: aiAnnotation.of(true) })
+      },
+      setHighlights(ranges) {
+        const editor = view.current
+        if (!editor) return
+        const marks = ranges.filter(range => range.from >= 0 && range.to > range.from && range.to <= editor.state.doc.length).map(range => aiEditMark.range(range.from, range.to))
+        editor.dispatch({ annotations: aiAnnotation.of(true), effects: setAiHighlight.of(marks.length ? Decoration.set(marks, true) : Decoration.none) })
+      },
+      setLocked(locked) {
+        aiActive.current = locked
+        setAiLocked(locked)
+        view.current?.dispatch({ annotations: aiAnnotation.of(true), effects: readOnlyCompartment.reconfigure(locked ? EditorState.readOnly.of(true) : []) })
+      },
+    })
+  }
+  const controller = useRef<EditorController | null>(null)
+  if (!controller.current) {
+    controller.current = {
+      getDoc: () => view.current?.state.doc.toString() ?? '',
+      beginAiSession: () => { session.current?.begin(); requestAnimationFrame(() => view.current?.requestMeasure()) },
+      applyAiStream: (toolId, name, partialArgs) => session.current?.apply(toolId, name, partialArgs),
+      finishAiSession: () => session.current?.finish() ?? { failures: [] },
+      resolveAiSession: action => session.current?.resolve(action),
+    }
+  }
   const commands = useRef<Record<string, () => void>>({})
   const anchors = useRef(new Map<number, Anchor>())
   const uploadCounter = useRef(0)
@@ -68,7 +124,7 @@ export function Editor(props: EditorProps) {
 
   function replaceSelection(before: string, after = '', placeholder = '文字') {
     const editor = view.current
-    if (!editor) return
+    if (!editor || aiActive.current) return
     const { from, to } = editor.state.selection.main
     const hadSelection = from !== to
     const selected = editor.state.sliceDoc(from, to) || placeholder
@@ -84,7 +140,7 @@ export function Editor(props: EditorProps) {
 
   function prefixLines(prefix: string) {
     const editor = view.current
-    if (!editor) return
+    if (!editor || aiActive.current) return
     const { from, to } = editor.state.selection.main
     const first = editor.state.doc.lineAt(from)
     const last = editor.state.doc.lineAt(to)
@@ -96,7 +152,7 @@ export function Editor(props: EditorProps) {
 
   function setHeading(level: number) {
     const editor = view.current
-    if (!editor) return
+    if (!editor || aiActive.current) return
     const { from, to } = editor.state.selection.main
     const first = editor.state.doc.lineAt(from)
     const last = editor.state.doc.lineAt(to)
@@ -121,7 +177,7 @@ export function Editor(props: EditorProps) {
 
   function insertText(text: string) {
     const editor = view.current
-    if (!editor) return
+    if (!editor || aiActive.current) return
     const { from, to } = editor.state.selection.main
     editor.dispatch({ changes: { from, to, insert: text }, selection: { anchor: from + text.length }, scrollIntoView: true })
     editor.focus()
@@ -149,7 +205,7 @@ export function Editor(props: EditorProps) {
 
   function uploadFile(file: File, position?: number) {
     const editor = view.current
-    if (!editor) return
+    if (!editor || aiActive.current) return
     const id = ++uploadCounter.current
     anchors.current.set(id, position === undefined ? { from: editor.state.selection.main.from, to: editor.state.selection.main.to } : { from: position, to: position })
     void performUpload({ id, file, status: 'uploading' })
@@ -185,6 +241,12 @@ export function Editor(props: EditorProps) {
       })
     }),
     shortcutCompartment.of(shortcutExtension(props.shortcuts, commands)),
+    readOnlyCompartment.of([]),
+    aiHighlightField,
+    EditorState.transactionFilter.of(transaction => {
+      if (!aiActive.current || !transaction.docChanged || transaction.annotation(aiAnnotation)) return transaction
+      return []
+    }),
     keymap.of([
       { key: 'Mod-s', run: () => { latest.current.onSave(); return true } },
       ...searchKeymap,
@@ -216,8 +278,9 @@ export function Editor(props: EditorProps) {
       '.cm-activeLineGutter': { backgroundColor: 'transparent' },
       '&.cm-focused': { outline: 'none' },
       '.cm-selectionBackground, &.cm-focused .cm-selectionBackground': { backgroundColor: 'var(--selection)' },
+      '.cm-ai-edit': { backgroundColor: 'color-mix(in srgb, var(--accent) 32%, transparent)', borderRadius: '2px' },
     }),
-  ], [commands, props.shortcuts, shortcutCompartment])
+  ], [commands, props.shortcuts, readOnlyCompartment, shortcutCompartment])
   useEffect(() => {
     view.current?.dispatch({ effects: shortcutCompartment.reconfigure(shortcutExtension(props.shortcuts, commands)) })
   }, [commands, props.shortcuts, shortcutCompartment])
@@ -246,10 +309,10 @@ export function Editor(props: EditorProps) {
 
   return <div className="editor-shell" style={{ '--editor-font-size': `${props.fontSize}px` } as CSSProperties}>
     <div className="editor-toolbar" role="toolbar" aria-label="Markdown 快捷操作">
-      {tools.map(({ id, icon: Icon, title, action }) => <button key={id} type="button" className="icon-button" title={title} aria-label={title} onMouseDown={event => event.preventDefault()} onClick={action}><Icon size={16} strokeWidth={1.7} /></button>)}
+      {tools.map(({ id, icon: Icon, title, action }) => <button key={id} type="button" className="icon-button" title={title} aria-label={title} disabled={aiLocked} onMouseDown={event => event.preventDefault()} onClick={action}><Icon size={16} strokeWidth={1.7} /></button>)}
       <span className="toolbar-separator" />
-      <button type="button" className="icon-button" title="撤销" aria-label="撤销" onClick={() => { if (view.current) undo(view.current) }}><Undo2 size={16} /></button>
-      <button type="button" className="icon-button" title="重做" aria-label="重做" onClick={() => { if (view.current) redo(view.current) }}><Redo2 size={16} /></button>
+      <button type="button" className="icon-button" title="撤销" aria-label="撤销" disabled={aiLocked} onClick={() => { if (view.current) undo(view.current) }}><Undo2 size={16} /></button>
+      <button type="button" className="icon-button" title="重做" aria-label="重做" disabled={aiLocked} onClick={() => { if (view.current) redo(view.current) }}><Redo2 size={16} /></button>
       <input ref={fileInput} type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple hidden onChange={event => { Array.from(event.target.files || []).forEach(file => uploadFile(file)); event.target.value = '' }} />
     </div>
     {uploads.length > 0 && <div className="upload-status" role="status">{uploads.map(upload => <div className={upload.status === 'error' ? 'upload-item error' : 'upload-item'} key={upload.id}>
@@ -257,6 +320,6 @@ export function Editor(props: EditorProps) {
       <span>{upload.file.name} · {upload.status === 'uploading' ? '正在上传…' : upload.error}</span>
       {upload.status === 'error' && <><button type="button" onClick={() => void performUpload(upload)}><RefreshCw size={13} /> 重试</button><button type="button" aria-label="取消上传" onClick={() => { anchors.current.delete(upload.id); setUploads(items => items.filter(item => item.id !== upload.id)) }}><X size={13} /></button></>}
     </div>)}</div>}
-    <CodeMirror value={props.value} theme={props.dark ? 'dark' : 'light'} extensions={extensions} basicSetup={{ lineNumbers: props.lineNumbers, foldGutter: true, highlightActiveLineGutter: false, highlightActiveLine: true, autocompletion: true, closeBrackets: true, searchKeymap: true }} onCreateEditor={editor => { view.current = editor }} onChange={props.onChange} className="codemirror-editor" aria-label="Markdown 源码编辑器" />
+    <CodeMirror value={props.value} theme={props.dark ? 'dark' : 'light'} extensions={extensions} basicSetup={{ lineNumbers: props.lineNumbers, foldGutter: true, highlightActiveLineGutter: false, highlightActiveLine: true, autocompletion: true, closeBrackets: true, searchKeymap: true }} onCreateEditor={editor => { view.current = editor; latest.current.onReady?.(controller.current!) }} onChange={props.onChange} className="codemirror-editor" aria-label="Markdown 源码编辑器" />
   </div>
 }

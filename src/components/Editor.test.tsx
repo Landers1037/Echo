@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { insertNewline } from '@codemirror/commands'
 import { EditorView } from '@codemirror/view'
 import { Editor } from './Editor'
+import type { EditorController } from './Editor'
 
 const emptyRect = { x: 0, y: 0, width: 0, height: 0, top: 0, left: 0, bottom: 0, right: 0, toJSON() { return {} } }
 const emptyRects = { length: 0, item: () => null, [Symbol.iterator]: function* iterate() {} } as unknown as DOMRectList
@@ -46,6 +47,18 @@ describe('editor formatting shortcuts', () => {
     fireEvent.click(screen.getByRole('button', { name: '标题' }))
     insertNewline(editor)
     expect(editor.state.doc.toString()).toBe('## 你好\n')
+  })
+
+  it('streams an AI edit into the document and restores it when rejected', async () => {
+    const ready = { current: null as EditorController | null }
+    const onChange = vi.fn()
+    render(<Editor {...props} value={'# 标题\n\n你好世界'} onChange={onChange} onReady={value => { ready.current = value }} />)
+    await waitFor(() => expect(ready.current).toBeTruthy())
+    ready.current?.beginAiSession()
+    ready.current?.applyAiStream('edit-1', 'edit_note', '{"edits":[{"search":"你好世界","replace":"你好，Echo"}]}')
+    await waitFor(() => expect(onChange.mock.calls.some(call => String(call[0]).includes('你好，Echo'))).toBe(true))
+    ready.current?.resolveAiSession('reject')
+    await waitFor(() => expect(onChange.mock.calls.at(-1)?.[0]).toBe('# 标题\n\n你好世界'))
   })
 
   it('inserts a drawing reference from the toolbar', async () => {
