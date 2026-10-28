@@ -106,6 +106,23 @@ describe('Markdown rendering', () => {
     await waitFor(() => expect(container.querySelector('[data-rendering]')).toBeNull())
   })
 
+  it('turns a single newline into a line break only in strict mode, including emphasis and code blocks', () => {
+    const content = '飒飒撒**重点**\n111\n\n```\n丙\n丁\n```'
+    const { container, rerender } = render(<MarkdownView content={content} notePath="笔记.md" lineNumbers={false} />)
+    const paragraph = container.querySelector('p')
+    expect(paragraph?.querySelector('br')).toBeNull()
+    expect(paragraph).toHaveTextContent('飒飒撒重点')
+    expect(paragraph).toHaveTextContent('111')
+    expect(container.querySelector('.code-block')).toHaveTextContent('丙')
+    expect(container.querySelector('.code-block')).toHaveTextContent('丁')
+    rerender(<MarkdownView content={content} notePath="笔记.md" lineNumbers={false} strictLineBreaks />)
+    expect(container.querySelector('p strong')).toHaveTextContent('重点')
+    expect(container.querySelector('p')?.innerHTML).toMatch(/重点[\s\S]*<br\s*\/?>[\s\S]*111/)
+    expect(container.querySelector('.code-block br')).toBeNull()
+    expect(container.querySelector('.code-block')).toHaveTextContent('丙')
+    expect(container.querySelector('.code-block')).toHaveTextContent('丁')
+  })
+
   it('opens internal Markdown links through the note navigator', () => {
     const navigate = vi.fn()
     render(<MarkdownView content="[另一篇](../文档/介绍.md#标题)" notePath="项目/记录.md" lineNumbers={false} onNavigate={navigate} />)

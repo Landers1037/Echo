@@ -8,7 +8,7 @@ import { keyFromEvent } from './shortcuts'
 vi.mock('./components/Editor', () => ({
   Editor: ({ value, onChange, fontSize }: { value: string; onChange: (value: string) => void; fontSize: number }) => <textarea className="cm-editor" aria-label="笔记源码" style={{ fontSize }} value={value} onChange={event => onChange(event.target.value)} />,
 }))
-vi.mock('./components/MarkdownView', () => ({ MarkdownView: ({ content, fontSize }: { content: string; fontSize?: number }) => <article data-testid="preview" style={{ fontSize }}>{content}</article> }))
+vi.mock('./components/MarkdownView', () => ({ MarkdownView: ({ content, fontSize, strictLineBreaks }: { content: string; fontSize?: number; strictLineBreaks?: boolean }) => <article data-testid="preview" data-strict-breaks={strictLineBreaks ? 'true' : 'false'} style={{ fontSize }}>{content}</article> }))
 vi.mock('./components/TasksView', () => ({ TasksView: () => <div data-testid="tasks-view" /> }))
 vi.mock('./export', () => ({ exportNotes: vi.fn(async () => {}) }))
 vi.mock('./components/Drawing', () => ({
@@ -24,7 +24,7 @@ vi.mock('motion/react', async () => {
   return { MotionConfig: ({ children }: { children: React.ReactNode }) => children, AnimatePresence: ({ children }: { children: React.ReactNode }) => children, motion: { div: Div, button: Button } }
 })
 
-const settings: Settings = { theme: 'light', accent: '#72967b', animations: false, editorFontSize: 14, editorLineNumbers: true, previewLineNumbers: false, multiTabs: false, sourceSplitPreview: false, assetsDir: '.assets', shortcuts: {} }
+const settings: Settings = { theme: 'light', accent: '#72967b', animations: false, editorFontSize: 14, editorLineNumbers: true, previewLineNumbers: false, multiTabs: false, sourceSplitPreview: false, strictLineBreaks: false, assetsDir: '.assets', shortcuts: {} }
 type Write = { path: string; content: string; revision: string; force?: boolean }
 type Batch = { paths: string[]; tags: string[]; group: string; revisions: Record<string, string> }
 type Call = { method: string; path: string; body?: unknown }
@@ -806,6 +806,21 @@ describe('source split preview', () => {
     expect(editor).not.toBeVisible()
     expect(screen.getByTestId('preview')).toBeVisible()
     expect(screen.getByTestId('preview').closest('.note-content')).not.toHaveClass('split-preview')
+  })
+
+  it('saves strict line breaks from note settings', async () => {
+    const server = createServer()
+    await openApp(server)
+    fireEvent.click(screen.getByRole('button', { name: '设置' }))
+    fireEvent.click(screen.getByRole('button', { name: '笔记设置' }))
+    const toggle = screen.getByRole('switch', { name: '严格换行模式' })
+    expect(toggle).toHaveAttribute('aria-checked', 'false')
+    expect(screen.getByText('开启后，预览里的一次换行就会换行。关闭时仍按 Markdown 默认规则，单次换行保持在同一段中。')).toBeInTheDocument()
+    fireEvent.click(toggle)
+    fireEvent.click(screen.getByRole('button', { name: '保存设置' }))
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: '设置' })).not.toBeInTheDocument())
+    expect(server.savedSettings().strictLineBreaks).toBe(true)
+    expect(screen.getByTestId('preview')).toHaveAttribute('data-strict-breaks', 'true')
   })
 })
 

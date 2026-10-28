@@ -42,6 +42,17 @@ describe('note export', () => {
     vi.unstubAllGlobals()
   })
 
+  it('keeps a single newline as a break in exported HTML when strict line breaks are enabled', async () => {
+    let exported: Blob | undefined
+    vi.stubGlobal('URL', class extends URL { static createObjectURL = (blob: Blob) => { exported = blob; return 'blob:export' }; static revokeObjectURL = vi.fn() })
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ notes: [{ path: '记录.md', title: '记录', content: '甲**乙**\n丙', metadata: { tags: [], group: '' }, revision: 'a', modified: '', assets: {} }], missing: [], external: [] }), { headers: { 'Content-Type': 'application/json' } })))
+    await exportNotes({ paths: ['记录.md'], format: 'html', lineNumbers: false, strictLineBreaks: true, beforeExport: async () => {}, onWarning: async () => true })
+    const html = await new Promise<string>(resolve => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.readAsText(exported!) })
+    expect(html).toMatch(/乙[\s\S]*<br\s*\/?>[\s\S]*丙/)
+    vi.unstubAllGlobals()
+  })
+
   it('does not export if saving fails', async () => {
     const fetcher = vi.fn()
     vi.stubGlobal('fetch', fetcher)

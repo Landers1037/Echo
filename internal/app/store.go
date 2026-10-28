@@ -27,6 +27,7 @@ type Settings struct {
 	PreviewLineNumbers bool              `json:"previewLineNumbers"`
 	MultiTabs          bool              `json:"multiTabs"`
 	SourceSplitPreview bool              `json:"sourceSplitPreview"`
+	StrictLineBreaks   bool              `json:"strictLineBreaks"`
 	AssetsDir          string            `json:"assetsDir"`
 	Shortcuts          map[string]string `json:"shortcuts"`
 }
@@ -90,7 +91,7 @@ func (e *Conflict) Error() string {
 }
 
 func defaults() Settings {
-	return Settings{Theme: "system", Accent: "#72967b", Animations: true, EditorFontSize: 14, EditorLineNumbers: true, PreviewLineNumbers: false, MultiTabs: false, SourceSplitPreview: false, AssetsDir: ".assets", Shortcuts: map[string]string{}}
+	return Settings{Theme: "system", Accent: "#72967b", Animations: true, EditorFontSize: 14, EditorLineNumbers: true, PreviewLineNumbers: false, MultiTabs: false, SourceSplitPreview: false, StrictLineBreaks: false, AssetsDir: ".assets", Shortcuts: map[string]string{}}
 }
 func newID() string { var b [12]byte; _, _ = rand.Read(b[:]); return hex.EncodeToString(b[:]) }
 func revision(content []byte) string {

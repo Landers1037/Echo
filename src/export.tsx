@@ -9,6 +9,7 @@ type ExportOptions = {
   paths: string[]
   format: ExportFormat
   lineNumbers: boolean
+  strictLineBreaks?: boolean
   beforeExport: () => Promise<void>
   onWarning: (warning: Warning) => Promise<boolean>
 }
@@ -51,13 +52,13 @@ function download(blob: Blob, name: string) {
   window.setTimeout(() => URL.revokeObjectURL(url), 30_000)
 }
 
-async function renderNote(note: ExportSnapshot['notes'][number], lineNumbers: boolean, selected: Set<string>, merged = false) {
+async function renderNote(note: ExportSnapshot['notes'][number], lineNumbers: boolean, strictLineBreaks: boolean, selected: Set<string>, merged = false) {
   const container = document.createElement('div')
   container.style.cssText = 'position:fixed;left:-20000px;top:0;width:800px;pointer-events:none;'
   document.body.append(container)
   const root = createRoot(container)
   try {
-    root.render(<MarkdownView content={note.content} notePath={note.path} assets={note.assets} lineNumbers={lineNumbers} exporting />)
+    root.render(<MarkdownView content={note.content} notePath={note.path} assets={note.assets} lineNumbers={lineNumbers} strictLineBreaks={strictLineBreaks} exporting />)
     // Wait for React's commit and Shiki's asynchronous language loading.
     const deadline = Date.now() + 15_000
     while (Date.now() < deadline) {
@@ -88,7 +89,7 @@ async function checkResponse(response: Response) {
   throw new Error(error.error || `导出失败 (${response.status})`)
 }
 
-export async function exportNotes({ paths, format, lineNumbers, beforeExport, onWarning }: ExportOptions): Promise<void> {
+export async function exportNotes({ paths, format, lineNumbers, strictLineBreaks = false, beforeExport, onWarning }: ExportOptions): Promise<void> {
   if (!paths.length) throw new Error('请先选择要导出的笔记')
   // Reserve a same-origin print window in the original user gesture, before saving/fetching.
   const printWindow = format === 'pdf' ? window.open('', '_blank') : null
@@ -125,7 +126,7 @@ export async function exportNotes({ paths, format, lineNumbers, beforeExport, on
     if (!snapshot.notes.length) throw new Error('没有可导出的笔记')
     const selected = new Set(snapshot.notes.map(note => note.path))
     if (format === 'html') {
-      const pages = await Promise.all(snapshot.notes.map(async note => ({ note, body: await renderNote(note, lineNumbers, selected) })))
+      const pages = await Promise.all(snapshot.notes.map(async note => ({ note, body: await renderNote(note, lineNumbers, strictLineBreaks, selected) })))
       if (pages.length === 1) download(new Blob([documentHtml(pages[0].note.title, pages[0].body)], { type: 'text/html;charset=utf-8' }), fileName(pages[0].note.path, '.html'))
       else {
         const files: Record<string, Uint8Array> = {}
@@ -140,7 +141,7 @@ export async function exportNotes({ paths, format, lineNumbers, beforeExport, on
       return
     }
     if (!printWindow || printWindow.closed) throw new Error('打印窗口已关闭，请重新导出')
-    const articles = await Promise.all(snapshot.notes.map(note => renderNote(note, lineNumbers, selected, true)))
+    const articles = await Promise.all(snapshot.notes.map(note => renderNote(note, lineNumbers, strictLineBreaks, selected, true)))
     const toc = snapshot.notes.length > 1 ? `<nav class="export-toc"><h2>目录</h2><ol>${snapshot.notes.map(note => `<li><a href="#note-${escapeHtml(encodeURIComponent(note.path))}">${escapeHtml(note.title)}</a></li>`).join('')}</ol></nav>` : ''
     printWindow.document.open()
     printWindow.document.write(documentHtml(snapshot.notes.length === 1 ? snapshot.notes[0].title : 'Echo 笔记合集', toc + articles.join('')))

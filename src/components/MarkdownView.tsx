@@ -3,6 +3,7 @@ import type { ComponentPropsWithoutRef, ReactNode } from 'react'
 import ReactMarkdown from 'react-markdown'
 import type { ExtraProps } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import remarkBreaks from 'remark-breaks'
 import remarkFrontmatter from 'remark-frontmatter'
 import { codeToHtml } from 'shiki'
 import { Check, Copy } from 'lucide-react'
@@ -21,6 +22,7 @@ export type MarkdownViewProps = {
   drawingVersion?: number
   exporting?: boolean
   dark?: boolean
+  strictLineBreaks?: boolean
 }
 
 const TaskLineContext = createContext(-1)
@@ -122,8 +124,9 @@ function drawingReference(notePath: string, src: string) {
   return resolveNotePath(notePath, src)
 }
 
-export function MarkdownView({ content, notePath, assets, lineNumbers, fontSize, onNavigate, onToggleTask, onEditDrawing, drawingVersion = 0, exporting = false, dark = false }: MarkdownViewProps) {
-  return <div className="markdown-body" style={!exporting && fontSize !== undefined ? { fontSize } : undefined}><ReactMarkdown remarkPlugins={[remarkGfm, remarkFrontmatter, remarkUnderline]} skipHtml components={{
+export function MarkdownView({ content, notePath, assets, lineNumbers, fontSize, onNavigate, onToggleTask, onEditDrawing, drawingVersion = 0, exporting = false, dark = false, strictLineBreaks = false }: MarkdownViewProps) {
+  const remarkPlugins = strictLineBreaks ? [remarkGfm, remarkBreaks, remarkFrontmatter, remarkUnderline] : [remarkGfm, remarkFrontmatter, remarkUnderline]
+  return <div className="markdown-body" style={!exporting && fontSize !== undefined ? { fontSize } : undefined}><ReactMarkdown remarkPlugins={remarkPlugins} skipHtml components={{
     ...(!exporting ? previewHeadings : {}),
     pre({ children }) { return <>{children}</> },
     code({ className, children, node }) {

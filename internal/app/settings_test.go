@@ -122,6 +122,29 @@ func TestSourceSplitPreviewPersistence(t *testing.T) {
 	}
 }
 
+func TestStrictLineBreaksPersistence(t *testing.T) {
+	root := t.TempDir()
+	s, err := Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.state.Settings.StrictLineBreaks {
+		t.Fatal("strictLineBreaks should default to false")
+	}
+	h := NewHandler(attachStore(s), false)
+	rr := request(t, h, "PUT", "/api/settings", map[string]any{"strictLineBreaks": true})
+	if rr.Code != 200 || !s.state.Settings.StrictLineBreaks {
+		t.Fatalf("save strictLineBreaks: %d %s", rr.Code, rr.Body.String())
+	}
+	reopened, err := Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reopened.state.Settings.StrictLineBreaks || reopened.state.Settings.EditorFontSize != 14 || reopened.state.Settings.Theme != "system" {
+		t.Fatalf("strictLineBreaks not persisted: %+v", reopened.state.Settings)
+	}
+}
+
 func TestShortcutPersistenceAndReplacement(t *testing.T) {
 	s := testStore(t)
 	if s.state.Settings.Shortcuts == nil {
