@@ -6,7 +6,8 @@ import remarkGfm from 'remark-gfm'
 import remarkBreaks from 'remark-breaks'
 import remarkFrontmatter from 'remark-frontmatter'
 import { codeToHtml } from 'shiki'
-import { Check, Copy } from 'lucide-react'
+import { Check, Copy, FileSymlink } from 'lucide-react'
+import { NOTE_REF_TITLE } from '../noteReference'
 import { DrawingEmbed } from './Drawing'
 import { ImagePreview, PreviewableImage } from './ImagePreview'
 import { MermaidBlock } from './Mermaid'
@@ -17,6 +18,7 @@ export type MarkdownViewProps = {
   assets?: Record<string, string>
   lineNumbers: boolean
   fontSize?: number
+  noteTitles?: Record<string, string>
   onNavigate?: (path: string) => void
   onToggleTask?: (line: number, checked: boolean) => void
   onEditDrawing?: (path: string) => void
@@ -125,7 +127,7 @@ function drawingReference(notePath: string, src: string) {
   return resolveNotePath(notePath, src)
 }
 
-export function MarkdownView({ content, notePath, assets, lineNumbers, fontSize, onNavigate, onToggleTask, onEditDrawing, drawingVersion = 0, exporting = false, dark = false, strictLineBreaks = false }: MarkdownViewProps) {
+export function MarkdownView({ content, notePath, assets, lineNumbers, fontSize, noteTitles, onNavigate, onToggleTask, onEditDrawing, drawingVersion = 0, exporting = false, dark = false, strictLineBreaks = false }: MarkdownViewProps) {
   const [imagePreview, setImagePreview] = useState<{ src: string; alt: string } | null>(null)
   useEffect(() => { setImagePreview(null) }, [notePath, exporting])
   const remarkPlugins = strictLineBreaks ? [remarkGfm, remarkBreaks, remarkFrontmatter, remarkUnderline] : [remarkGfm, remarkFrontmatter, remarkUnderline]
@@ -157,6 +159,18 @@ export function MarkdownView({ content, notePath, assets, lineNumbers, fontSize,
     a({ href, children, title }) {
       const internal = Boolean(href && !/^(?:[a-z][a-z\d+.-]*:|\/\/|#)/i.test(href) && /\.md(?:[?#]|$)/i.test(href))
       const target = internal && href ? resolveNotePath(notePath, href) : ''
+      if (internal && title === NOTE_REF_TITLE) {
+        const known = Boolean(noteTitles && Object.prototype.hasOwnProperty.call(noteTitles, target))
+        const filename = target.split('/').pop()?.replace(/\.md$/i, '') || target
+        const label = known ? (noteTitles?.[target] || filename) : noteTitles ? filename : children
+        const missing = Boolean(noteTitles) && !known
+        const open = () => onNavigate?.(target)
+        const icon = <FileSymlink size={16} strokeWidth={1.7} />
+        return <span className={missing ? 'note-ref missing' : 'note-ref'} title={missing ? '笔记不存在' : undefined}>
+          {exporting ? <span className="note-ref-icon" aria-hidden="true">{icon}</span> : <button type="button" className="note-ref-icon" aria-label="打开引用的笔记" onClick={open}>{icon}</button>}
+          {exporting ? <span className="note-ref-title">{label}</span> : <button type="button" className="note-ref-title" onClick={open}>{label}</button>}
+        </span>
+      }
       return <a href={href} title={title} data-note-link={internal ? target : undefined} onClick={internal && onNavigate ? event => { event.preventDefault(); onNavigate(target) } : undefined} target={!internal && href && /^(https?:|\/\/)/i.test(href) ? '_blank' : undefined} rel="noreferrer">{children}</a>
     },
     li({ children, className, node }) {

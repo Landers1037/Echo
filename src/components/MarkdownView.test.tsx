@@ -277,6 +277,23 @@ describe('Markdown rendering', () => {
     expect(imageDownloadName('https://example.com/download', '')).toBe('图片.png')
   })
 
+  it('renders a note reference as a card and opens it from the marker', () => {
+    const navigate = vi.fn()
+    const content = '[旧标题](../文档/介绍.md "echo-ref")\n\n[普通链接](other.md "see")\n\n[缺失](gone.md "echo-ref")'
+    const { container, rerender } = render(<MarkdownView content={content} notePath="项目/记录.md" lineNumbers={false} noteTitles={{ '文档/介绍.md': '介绍' }} onNavigate={navigate} />)
+    expect(screen.getByRole('button', { name: '介绍' })).toBeInTheDocument()
+    expect(container.querySelector('.note-ref.missing')).toHaveTextContent('gone')
+    expect(container.querySelector('.note-ref.missing')).toHaveAttribute('title', '笔记不存在')
+    expect(screen.getByRole('link', { name: '普通链接' })).toHaveAttribute('href', 'other.md')
+    fireEvent.click(screen.getAllByRole('button', { name: '打开引用的笔记' })[0])
+    expect(navigate).toHaveBeenCalledWith('文档/介绍.md')
+    fireEvent.click(screen.getByRole('button', { name: '介绍' }))
+    expect(navigate).toHaveBeenLastCalledWith('文档/介绍.md')
+    rerender(<MarkdownView content={'[旧标题](介绍.md "echo-ref")'} notePath="项目/记录.md" lineNumbers={false} noteTitles={{ '项目/介绍.md': '介绍' }} exporting />)
+    expect(screen.queryByRole('button', { name: '打开引用的笔记' })).toBeNull()
+    expect(container.querySelector('.note-ref-title')).toHaveTextContent('介绍')
+  })
+
   it('opens internal Markdown links through the note navigator', () => {
     const navigate = vi.fn()
     render(<MarkdownView content="[另一篇](../文档/介绍.md#标题)" notePath="项目/记录.md" lineNumbers={false} onNavigate={navigate} />)

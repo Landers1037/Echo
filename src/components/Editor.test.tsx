@@ -61,6 +61,16 @@ describe('editor formatting shortcuts', () => {
     await waitFor(() => expect(onChange.mock.calls.at(-1)?.[0]).toBe('# 标题\n\n你好世界'))
   })
 
+  it('inserts a note reference returned by the picker', async () => {
+    const onChange = vi.fn()
+    const onNoteReference = vi.fn(async () => '[介绍](../文档/介绍.md "echo-ref")')
+    render(<Editor {...props} value="正文" onChange={onChange} onNoteReference={onNoteReference} />)
+    fireEvent.click(screen.getByRole('button', { name: '引用笔记' }))
+    await waitFor(() => expect(onChange).toHaveBeenCalled())
+    expect(onNoteReference).toHaveBeenCalledOnce()
+    expect(String(onChange.mock.calls.at(-1)?.[0])).toContain('[介绍](../文档/介绍.md "echo-ref")')
+  })
+
   it('inserts a drawing reference from the toolbar', async () => {
     const onChange = vi.fn()
     const onDrawingInsert = vi.fn(async () => '../.assets/diagram.excalidraw')

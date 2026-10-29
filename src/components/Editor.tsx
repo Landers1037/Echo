@@ -9,7 +9,7 @@ import { Annotation, Compartment, EditorState, StateEffect, StateField, type Ext
 import { NoteAiSession } from '../agent/editorSession'
 import { autocompletion } from '@codemirror/autocomplete'
 import { searchKeymap } from '@codemirror/search'
-import { Bold, Italic, Heading, Strikethrough, Underline, Quote, List, ListOrdered, ListTodo, Link, ImagePlus, Shapes, Code, Code2, Table2, Undo2, Redo2, LoaderCircle, RefreshCw, X } from 'lucide-react'
+import { Bold, Italic, Heading, Strikethrough, Underline, Quote, List, ListOrdered, ListTodo, Link, FileSymlink, ImagePlus, Shapes, Code, Code2, Table2, Undo2, Redo2, LoaderCircle, RefreshCw, X } from 'lucide-react'
 import { undo, redo } from '@codemirror/commands'
 import { bindingFor, formatShortcut, shortcutBindings } from '../shortcuts'
 
@@ -42,6 +42,7 @@ export type EditorProps = {
   dark: boolean
   onUpload: (file: File) => Promise<string>
   onDrawingInsert?: () => Promise<string>
+  onNoteReference?: () => Promise<string | null>
   onSave: () => void
   onTaskInsert?: () => void
   shortcuts: Record<string, string>
@@ -175,6 +176,11 @@ export function Editor(props: EditorProps) {
     if (markdownPath) insertText(`\n${imageMarkdown(markdownPath)}\n`)
   }
 
+  async function insertNoteReference() {
+    const markdown = await latest.current.onNoteReference?.()
+    if (markdown) insertText(`\n${markdown}\n`)
+  }
+
   function insertText(text: string) {
     const editor = view.current
     if (!editor || aiActive.current) return
@@ -300,6 +306,7 @@ export function Editor(props: EditorProps) {
     { id: 'ordered', icon: ListOrdered, title: toolTitle('有序列表', 'orderedList'), action: () => commands.current.orderedList?.() },
     { id: 'task', icon: ListTodo, title: '待办任务', action: () => { prefixLines('- [ ] '); latest.current.onTaskInsert?.() } },
     { id: 'link', icon: Link, title: '链接', action: () => replaceSelection('[', '](https://)', '链接文字') },
+    { id: 'noteRef', icon: FileSymlink, title: '引用笔记', action: () => { void insertNoteReference() } },
     { id: 'image', icon: ImagePlus, title: '上传图片（也可直接粘贴）', action: () => fileInput.current?.click() },
     { id: 'drawing', icon: Shapes, title: '插入绘图', action: () => { void insertDrawing() } },
     { id: 'inlineCode', icon: Code, title: toolTitle('行内代码', 'inlineCode'), action: () => commands.current.inlineCode?.() },
