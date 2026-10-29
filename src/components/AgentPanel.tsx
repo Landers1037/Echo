@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { Check, History, LoaderCircle, NotebookPen, Plus, SendHorizontal, Square, Trash2, Undo2, X } from 'lucide-react'
+import { Check, Copy, History, LoaderCircle, NotebookPen, Plus, SendHorizontal, Square, Trash2, Undo2, X } from 'lucide-react'
 import { ApiError } from '../api'
 import { deleteConversation, getConversation, listConversations, setMessageOutcome, streamChat } from '../agent/client'
 import type { EditorController } from './Editor'
@@ -301,12 +301,34 @@ function toolLabel(name: string) {
   return '调用工具'
 }
 
+function formatMessageTime(value: string) {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  return date.toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })
+}
+
 function MessageBubble({ message, pending, thinking = false }: { message: AgentMessage; pending: boolean; thinking?: boolean }) {
+  const [copied, setCopied] = useState(false)
   const outcome = message.outcome === 'accepted' ? '已保留' : message.outcome === 'rejected' ? '已撤销' : pending ? '等待确认' : message.toolCalls?.length ? '未确认' : ''
-  return <article className={`agent-bubble ${message.role}`}>
-    {message.role === 'assistant' && message.content && <div className="agent-markdown"><ReactMarkdown remarkPlugins={[remarkGfm]} components={{ a: props => <a href={props.href} target="_blank" rel="noreferrer">{props.children}</a> }}>{message.content}</ReactMarkdown></div>}
-    {message.role === 'user' && <p>{message.content}</p>}
-    {message.toolCalls?.map(call => <div className="agent-tool" key={call.id}><NotebookPen size={14} /><span>{toolLabel(call.name)}</span>{outcome && <small>{outcome}</small>}</div>)}
-    {thinking && <p className="agent-thinking" role="status">思考中</p>}
+  const time = thinking ? '' : formatMessageTime(message.createdAt)
+  function copy() {
+    const text = message.content
+    if (!text) return
+    void navigator.clipboard.writeText(text).then(() => {
+      setCopied(true)
+      window.setTimeout(() => setCopied(false), 1600)
+    })
+  }
+  return <article className={`agent-message ${message.role}`}>
+    <div className={`agent-bubble ${message.role}`}>
+      {message.role === 'assistant' && message.content && <div className="agent-markdown"><ReactMarkdown remarkPlugins={[remarkGfm]} components={{ a: props => <a href={props.href} target="_blank" rel="noreferrer">{props.children}</a> }}>{message.content}</ReactMarkdown></div>}
+      {message.role === 'user' && <p>{message.content}</p>}
+      {message.toolCalls?.map(call => <div className="agent-tool" key={call.id}><NotebookPen size={14} /><span>{toolLabel(call.name)}</span>{outcome && <small>{outcome}</small>}</div>)}
+      {thinking && <p className="agent-thinking" role="status">思考中</p>}
+    </div>
+    {time && <div className="agent-message-meta">
+      <time dateTime={message.createdAt}>{time}</time>
+      <button type="button" className="agent-copy" aria-label={copied ? '已复制' : '复制消息'} disabled={!message.content} onClick={copy}>{copied ? <Check size={13} /> : <Copy size={13} />}</button>
+    </div>}
   </article>
 }

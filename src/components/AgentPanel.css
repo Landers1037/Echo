@@ -16,12 +16,18 @@
 .agent-empty{margin:auto;text-align:center;color:var(--muted);padding:24px 12px}
 .agent-empty svg{color:var(--accent)}
 .agent-empty p{margin:12px 0 0;font-size:12px;line-height:1.7}
+.agent-message{display:flex;flex-direction:column;gap:4px;max-width:100%;min-width:0}
+.agent-message.user{align-self:flex-end;max-width:92%;align-items:flex-end}
+.agent-message.assistant{align-self:stretch;align-items:flex-start}
 .agent-bubble{max-width:100%;font-size:13px;line-height:1.7}
-.agent-bubble.user{align-self:flex-end;max-width:92%;padding:8px 12px;border-radius:12px 12px 4px 12px;background:var(--accent-soft)}
+.agent-bubble.user{padding:8px 12px;border-radius:12px 12px 4px 12px;background:var(--accent-soft)}
 .agent-bubble.user p{margin:0;white-space:pre-wrap;overflow-wrap:anywhere}
-.agent-bubble.assistant{align-self:stretch}
+.agent-message-meta{display:flex;align-items:center;gap:2px;color:var(--muted);font-size:11px;line-height:1}
+.agent-message-meta time{font-variant-numeric:tabular-nums}
+.agent-copy{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;padding:0;color:var(--muted)}
+.agent-copy:disabled{opacity:.35}
 .agent-thinking{margin:8px 0 0;color:var(--muted);font-size:13px;animation:agent-thinking 1.2s ease-in-out infinite}
-.agent-bubble.assistant>.agent-thinking:first-child{margin-top:0}
+.agent-bubble>.agent-thinking:first-child{margin-top:0}
 @keyframes agent-thinking{0%,100%{opacity:.35}50%{opacity:1}}
 .agent-markdown{overflow-wrap:anywhere}
 .agent-markdown>:first-child{margin-top:0}
