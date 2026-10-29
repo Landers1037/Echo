@@ -286,6 +286,48 @@ describe('App creates items inside a folder', () => {
     expect(await screen.findByRole('button', { name: '流程' })).toBeVisible()
     expect(screen.getByRole('button', { name: '验收' })).toHaveAttribute('aria-expanded', 'true')
   })
+
+  it('locates the open note in the directory tree', async () => {
+    const nested: Note = { path: '项目/资料/纪要.md', title: '会议纪要', content: '# 纪要\n', metadata: { tags: ['重点'], group: '工作' }, revision: 'v2', modified: '2026-10-22T12:00:00Z' }
+    await openApp(createServer([nested], ['项目/资料', '其他']))
+    const locate = screen.getByRole('button', { name: '在目录中定位当前笔记' })
+    expect(within(locate.parentElement!).getAllByRole('button').map(button => button.getAttribute('aria-label'))).toEqual(['在目录中定位当前笔记', '新建绘图', '新建文件夹'])
+    expect(locate).toBeEnabled()
+
+    fireEvent.click(screen.getByRole('button', { name: '项目' }))
+    fireEvent.click(screen.getByRole('button', { name: '资料' }))
+    fireEvent.click(screen.getByRole('button', { name: '会议纪要' }))
+    await waitFor(() => expect(screen.getByRole('textbox', { name: '笔记源码' })).toHaveValue('# 纪要\n'))
+    fireEvent.click(screen.getByRole('button', { name: '项目' }))
+    expect(screen.getByRole('button', { name: '项目' })).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.queryByRole('button', { name: '会议纪要' })).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: '分组' }))
+    fireEvent.click(screen.getAllByRole('button', { name: /^工作/ }).find(button => button.className.includes('group-heading'))!)
+    fireEvent.change(screen.getByLabelText('搜索笔记'), { target: { value: '不存在' } })
+    fireEvent.click(screen.getAllByRole('button', { name: '# 重点' }).find(button => button.className.includes('tag-filter'))!)
+    const scroll = vi.fn()
+    const previousScroll = Element.prototype.scrollIntoView
+    Element.prototype.scrollIntoView = scroll
+    try {
+      fireEvent.click(locate)
+
+      expect(screen.getByLabelText('搜索笔记')).toHaveValue('')
+      expect(screen.getByRole('button', { name: '目录' })).toHaveClass('selected')
+      expect(screen.getAllByRole('button', { name: '# 重点' }).find(button => button.className.includes('tag-filter'))).not.toHaveClass('active')
+      expect(screen.getByRole('button', { name: '项目' })).toHaveAttribute('aria-expanded', 'true')
+      expect(screen.getByRole('button', { name: '资料' })).toHaveAttribute('aria-expanded', 'true')
+      expect(screen.getByRole('button', { name: '其他' })).toHaveAttribute('aria-expanded', 'false')
+      const noteButton = screen.getByRole('button', { name: '会议纪要' })
+      const row = noteButton.closest('.note-row')
+      expect(noteButton).toBeVisible()
+      expect(row).toHaveClass('is-located')
+      expect(scroll).toHaveBeenCalledWith({ block: 'center', inline: 'nearest', behavior: 'auto' })
+      expect(scroll.mock.instances[0]).toBe(row)
+    } finally {
+      Element.prototype.scrollIntoView = previousScroll
+    }
+  })
 })
 
 describe('App note navigation', () => {
