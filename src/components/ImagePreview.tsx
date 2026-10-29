@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { Check, Copy, Download, X, ZoomIn, ZoomOut } from 'lucide-react'
@@ -27,10 +27,11 @@ export function PreviewableImage({ src, alt, title, onOpen }: { src: string; alt
   return <img className="preview-image" src={src} alt={alt} title={title} role="button" tabIndex={0} aria-label={alt ? `预览图片：${alt}` : '预览图片'} draggable={false} loading="lazy" onClick={open} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') open(event) }} onError={event => event.currentTarget.classList.add('image-error')} />
 }
 
-export function ImagePreview({ src, alt, onClose }: { src: string; alt: string; onClose: () => void }) {
+export function ImagePreview({ src, alt, onClose, fileName, kind = 'image', markup = '' }: { src: string; alt: string; onClose: () => void; fileName?: string; kind?: 'image' | 'diagram'; markup?: string }) {
   const frame = useRef<HTMLDivElement>(null)
   const stage = useRef<HTMLDivElement>(null)
-  const photo = useRef<HTMLImageElement>(null)
+  const photo = useRef<HTMLElement>(null)
+  const rememberPhoto = useCallback((node: HTMLElement | null) => { photo.current = node }, [])
   const drag = useRef<Drag | null>(null)
   const pointerDrag = useRef(false)
   const suppressClick = useRef(false)
@@ -45,7 +46,9 @@ export function ImagePreview({ src, alt, onClose }: { src: string; alt: string; 
   const [busy, setBusy] = useState<'copy' | 'download' | ''>('')
   const [notice, setNotice] = useState<Notice | null>(null)
   const [root, setRoot] = useState<Element>(() => document.fullscreenElement ?? document.body)
-  const name = imageDownloadName(src, alt)
+  const diagram = kind === 'diagram'
+  const name = fileName || imageDownloadName(src, alt)
+  const dialogLabel = diagram ? '图表预览' : (alt ? `图片预览：${alt}` : '图片预览')
   const percent = Math.round(scale * 100)
   const api = useRef<PreviewApi>({ step: () => {}, reset: () => {}, close: () => {} })
 
@@ -162,7 +165,7 @@ export function ImagePreview({ src, alt, onClose }: { src: string; alt: string; 
     }
   }, [])
 
-  function beginDrag(id: number, x: number, y: number, target: HTMLImageElement, capture: boolean) {
+  function beginDrag(id: number, x: number, y: number, target: HTMLElement, capture: boolean) {
     if (scaleRef.current <= 1 || !Number.isFinite(x) || !Number.isFinite(y)) return
     drag.current = { id, x, y, ox: offsetRef.current.x, oy: offsetRef.current.y, moved: false }
     setPanning(true)
@@ -188,24 +191,24 @@ export function ImagePreview({ src, alt, onClose }: { src: string; alt: string; 
     setPanning(false)
   }
 
-  function onPointerDown(event: ReactPointerEvent<HTMLImageElement>) {
+  function onPointerDown(event: ReactPointerEvent<HTMLElement>) {
     if (!realPointer(event) || event.button !== 0) return
     pointerDrag.current = true
     beginDrag(event.pointerId, event.clientX, event.clientY, event.currentTarget, true)
   }
 
-  function onPointerMove(event: ReactPointerEvent<HTMLImageElement>) {
+  function onPointerMove(event: ReactPointerEvent<HTMLElement>) {
     if (!realPointer(event)) return
     moveDrag(event.pointerId, event.clientX, event.clientY)
   }
 
-  function onPointerUp(event: ReactPointerEvent<HTMLImageElement>) {
+  function onPointerUp(event: ReactPointerEvent<HTMLElement>) {
     if (!realPointer(event)) return
     finishDrag(event.pointerId)
     pointerDrag.current = false
   }
 
-  function onMouseDown(event: ReactMouseEvent<HTMLImageElement>) {
+  function onMouseDown(event: ReactMouseEvent<HTMLElement>) {
     if (pointerDrag.current || event.button !== 0) return
     beginDrag(0, event.clientX, event.clientY, event.currentTarget, false)
   }
@@ -215,7 +218,7 @@ export function ImagePreview({ src, alt, onClose }: { src: string; alt: string; 
     setBusy('copy')
     setNotice(null)
     try {
-      await copyImage(src, photo.current)
+      await copyImage(src, photo.current instanceof HTMLImageElement ? photo.current : null)
       showNotice('已复制图片')
     } catch {
       showNotice('无法复制这张图片')
@@ -231,26 +234,26 @@ export function ImagePreview({ src, alt, onClose }: { src: string; alt: string; 
     try {
       await downloadImage(src, name)
     } catch {
-      showNotice('无法下载这张图片')
+      showNotice(diagram ? '无法下载这张图表' : '无法下载这张图片')
     } finally {
       setBusy('')
     }
   }
 
   const copied = notice?.text === '已复制图片'
-  return createPortal(<div ref={frame} className={`image-preview${scale > 1 ? ' is-zoomed' : ''}${panning ? ' is-panning' : ''}`} role="dialog" aria-modal="true" aria-label={alt ? `图片预览：${alt}` : '图片预览'} tabIndex={-1}>
+  return createPortal(<div ref={frame} className={`image-preview${scale > 1 ? ' is-zoomed' : ''}${panning ? ' is-panning' : ''}`} role="dialog" aria-modal="true" aria-label={dialogLabel} tabIndex={-1}>
     <p className="image-preview-name" title={name}>{name}</p>
-    <button type="button" className="image-preview-close" aria-label="关闭图片预览" title="关闭（Esc）" onClick={onClose}><X size={18} /></button>
+    <button type="button" className="image-preview-close" aria-label={diagram ? '关闭图表预览' : '关闭图片预览'} title="关闭（Esc）" onClick={onClose}><X size={18} /></button>
     <div ref={stage} className="image-preview-stage" onClick={event => { if (suppressClick.current) { suppressClick.current = false; return } if (event.target === event.currentTarget) onClose() }}>
-      {failed ? <p className="image-preview-missing">这张图片无法显示</p> : <img ref={photo} className="image-preview-photo" src={src} alt={alt || '图片'} draggable={false} title={scale > 1 ? '拖动查看，双击还原' : '双击放大'} style={{ transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})` }} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp} onMouseDown={onMouseDown} onMouseMove={event => { if (!pointerDrag.current) moveDrag(0, event.clientX, event.clientY) }} onMouseUp={() => { if (!pointerDrag.current) finishDrag(0) }} onDoubleClick={event => { event.stopPropagation(); if (Math.abs(scaleRef.current - 1) < 0.001) zoomTo(2, event.clientX, event.clientY); else zoomTo(1) }} onDragStart={event => event.preventDefault()} onError={() => setFailed(true)} />}
+      {markup ? <div ref={rememberPhoto} className="image-preview-photo diagram-preview" title={scale > 1 ? '拖动查看，双击还原' : '双击放大'} style={{ transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})` }} dangerouslySetInnerHTML={{ __html: markup }} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp} onMouseDown={onMouseDown} onMouseMove={event => { if (!pointerDrag.current) moveDrag(0, event.clientX, event.clientY) }} onMouseUp={() => { if (!pointerDrag.current) finishDrag(0) }} onDoubleClick={event => { event.stopPropagation(); if (Math.abs(scaleRef.current - 1) < 0.001) zoomTo(2, event.clientX, event.clientY); else zoomTo(1) }} /> : failed ? <p className="image-preview-missing">这张图片无法显示</p> : <img ref={rememberPhoto} className="image-preview-photo" src={src} alt={alt || '图片'} draggable={false} title={scale > 1 ? '拖动查看，双击还原' : '双击放大'} style={{ transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})` }} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp} onMouseDown={onMouseDown} onMouseMove={event => { if (!pointerDrag.current) moveDrag(0, event.clientX, event.clientY) }} onMouseUp={() => { if (!pointerDrag.current) finishDrag(0) }} onDoubleClick={event => { event.stopPropagation(); if (Math.abs(scaleRef.current - 1) < 0.001) zoomTo(2, event.clientX, event.clientY); else zoomTo(1) }} onDragStart={event => event.preventDefault()} onError={() => setFailed(true)} />}
     </div>
-    <div className="image-preview-toolbar" role="toolbar" aria-label="图片操作">
+    <div className="image-preview-toolbar" role="toolbar" aria-label={diagram ? '图表操作' : '图片操作'}>
       <button type="button" className="image-preview-tool" aria-label="缩小" title="缩小（-）" disabled={!canStep(-1) || busy !== ''} onClick={() => stepBy(-1)}><ZoomOut size={16} /></button>
       <button type="button" className="image-preview-scale" aria-label={`重置缩放，当前 ${percent}%`} title="重置缩放（0）" disabled={busy !== ''} onClick={() => zoomTo(1)}>{percent}%</button>
       <button type="button" className="image-preview-tool" aria-label="放大" title="放大（+）" disabled={!canStep(1) || busy !== ''} onClick={() => stepBy(1)}><ZoomIn size={16} /></button>
       <span className="image-preview-divider" />
-      <button type="button" className="image-preview-action" aria-label={copied ? '已复制图片' : '复制图片'} disabled={busy !== ''} onClick={() => { void copy() }}>{copied ? <Check size={15} /> : <Copy size={15} />}{copied ? '已复制' : '复制'}</button>
-      <button type="button" className="image-preview-action" aria-label="下载图片" disabled={busy !== ''} onClick={() => { void download() }}><Download size={15} />下载</button>
+      {!diagram && <button type="button" className="image-preview-action" aria-label={copied ? '已复制图片' : '复制图片'} disabled={busy !== ''} onClick={() => { void copy() }}>{copied ? <Check size={15} /> : <Copy size={15} />}{copied ? '已复制' : '复制'}</button>}
+      <button type="button" className="image-preview-action" aria-label={diagram ? '下载图表' : '下载图片'} disabled={busy !== ''} onClick={() => { void download() }}><Download size={15} />下载</button>
     </div>
     {notice && <p className="image-preview-status" role="status">{notice.text}</p>}
   </div>, root)
@@ -344,7 +347,7 @@ function saveAnchor(href: string, name: string) {
   anchor.remove()
 }
 
-function realPointer(event: ReactPointerEvent<HTMLImageElement>) {
+function realPointer(event: ReactPointerEvent<HTMLElement>) {
   return typeof PointerEvent === 'function' && event.nativeEvent instanceof PointerEvent && Number.isFinite(event.clientX) && Number.isFinite(event.clientY)
 }
 

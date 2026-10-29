@@ -7,7 +7,7 @@ const { initializeMermaid, renderMermaid } = vi.hoisted(() => ({
   initializeMermaid: vi.fn(),
   renderMermaid: vi.fn(async (id: string, code: string) => {
     if (code.includes('BAD')) throw new Error('Parse error on line 1')
-    return { svg: `<svg class="diagram" id="${id}"></svg>` }
+    return { svg: `<svg class="diagram" id="${id}"><defs><marker id="arrow"/></defs><path marker-end="url(#arrow)"/></svg>` }
   }),
 }))
 
@@ -97,6 +97,41 @@ describe('Markdown rendering', () => {
     const exported = render(<MarkdownView content={'```mermaid\ngraph TD\nC-->D\n```'} notePath="笔记.md" lineNumbers={false} dark exporting />)
     await waitFor(() => expect(exported.container.querySelector('.mermaid-block svg')).toBeInTheDocument())
     expect(initializeMermaid).toHaveBeenCalledWith(expect.objectContaining({ theme: 'default' }))
+  })
+
+  it('opens a mermaid diagram preview with zoom and download', async () => {
+    const downloads: HTMLAnchorElement[] = []
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) { downloads.push(this) })
+    try {
+      const { rerender } = render(<MarkdownView content={'```mermaid\ngraph LR\nA-->B\n```'} notePath="笔记.md" lineNumbers={false} />)
+      const opener = await screen.findByRole('button', { name: '预览图表' })
+      fireEvent.click(opener)
+      const dialog = screen.getByRole('dialog', { name: '图表预览' })
+      const inlineId = opener.querySelector('svg')?.id
+      const previewId = dialog.querySelector('.diagram-preview svg')?.id
+      expect(inlineId).toBeTruthy()
+      expect(previewId).toBeTruthy()
+      expect(previewId).not.toBe(inlineId)
+      expect(opener.innerHTML).toContain('url(#arrow)')
+      expect(opener.innerHTML).not.toContain('arrow-preview')
+      expect(dialog.querySelector('.diagram-preview svg')?.innerHTML).toMatch(/url\(#arrow-preview\d+\)/)
+      expect(within(dialog).queryByRole('button', { name: '复制图片' })).not.toBeInTheDocument()
+      fireEvent.click(within(dialog).getByRole('button', { name: '放大' }))
+      expect(within(dialog).getByRole('button', { name: /重置缩放/ })).toHaveTextContent('125%')
+      fireEvent.click(within(dialog).getByRole('button', { name: '缩小' }))
+      expect(within(dialog).getByRole('button', { name: /重置缩放/ })).toHaveTextContent('100%')
+      fireEvent.keyDown(document, { key: '+' })
+      expect(within(dialog).getByRole('button', { name: /重置缩放/ })).toHaveTextContent('125%')
+      fireEvent.click(within(dialog).getByRole('button', { name: '下载图表' }))
+      await waitFor(() => expect(downloads).toHaveLength(1))
+      expect(downloads[0].download).toBe('图表.svg')
+      fireEvent.keyDown(document, { key: 'Escape' })
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+      rerender(<MarkdownView content={'```mermaid\ngraph LR\nA-->B\n```'} notePath="笔记.md" lineNumbers={false} exporting />)
+      expect(screen.queryByRole('button', { name: '预览图表' })).not.toBeInTheDocument()
+    } finally {
+      vi.restoreAllMocks()
+    }
   })
 
   it('falls back to the source block when a mermaid diagram cannot be rendered', async () => {

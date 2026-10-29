@@ -138,7 +138,7 @@ export function MarkdownView({ content, notePath, assets, lineNumbers, fontSize,
       const code = String(children).replace(/\n$/, '')
       const language = /language-([^\s]+)/.exec(className || '')?.[1] || 'text'
       const block = Boolean(className) || (node?.position?.start.line !== node?.position?.end.line) || String(children).endsWith('\n')
-      if (language === 'mermaid' && block) return <MermaidBlock code={code} dark={!exporting && dark} fallback={<CodeBlock code={code} language={language} lineNumbers={lineNumbers} exporting={exporting} />} />
+      if (language === 'mermaid' && block) return <MermaidBlock code={code} dark={!exporting && dark} preview={!exporting} fallback={<CodeBlock code={code} language={language} lineNumbers={lineNumbers} exporting={exporting} />} />
       return block ? <CodeBlock code={code} language={language} lineNumbers={lineNumbers} exporting={exporting} /> : <code className={className}>{children}</code>
     },
     img({ src, alt, title }) {
