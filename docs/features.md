@@ -129,9 +129,9 @@
 
 ### 8.2 Draw.io
 
-- **离线编辑器**：`scripts/fetch-drawio.mjs` 会下载 Draw.io `v32.6.1` 标签里的静态站点（与 `draw.war` 中的网页是同一套文件，不含用不到的 Java 服务）到 `third_party/drawio/`，并且不提交进仓库。`npm run dev` 和 `npm run build` 都会先执行它，因此第一次需要联网。开发时由 Vite 提供 `/drawio/`；生产构建把这套静态文件打进可执行文件，编辑和预览都不访问外网。
+- **离线编辑器**：`scripts/fetch-drawio.mjs` 固定拉取 Draw.io `v32.6.1` 标签压缩包中的 `src/main/webapp`（与发行包 `draw.war` 里的网页是同一套文件），解压到 `third_party/drawio/`，并删除其中的 `WEB-INF` 和 `META-INF`。已有同版本且关键文件齐全时会跳过下载。该目录不提交进仓库，也不放在 Go 的 `vendor/` 下。`npm run dev` 和 `npm run build` 都会先执行这个脚本，因此第一次需要联网。开发时由 Vite 提供 `/drawio/`；生产构建复制到 `internal/web/dist/drawio` 后打进可执行文件。`PreConfig.js` 把 `DRAWIO_BASE_URL` 设成本机的 `/drawio`，编辑器地址带 `offline=1` 和 `pwa=0`，避免云存储和 Service Worker。
 - **新建**：侧栏底部回收站按钮左侧的 Draw 按钮在笔记库根目录新建 `.drawio`。文件夹操作弹框里的「新建 Draw.io」在该目录下新建。默认内容是一份空的 `<mxfile>`。
-- **引用**：编辑器工具栏「引用笔记」旁边的「引用 Draw.io」打开选择器，只列出笔记目录中的 `.drawio`（资源目录不在目录树里）。选中后插入 `![名称](相对路径.drawio)`。预览用自托管的 `viewer-static.min.js` 渲染成图，右下角可以打开编辑器；导出笔记时按 `application/vnd.jgraph.mxfile` 内联。被引用的 `.drawio` 不会被未引用资源清理删掉。
+- **引用**：编辑器工具栏「引用笔记」旁边的「引用 Draw.io」打开 `NotePicker`（`kind="drawio"`），只列出笔记目录中的 `.drawio`（资源目录不在目录树里）。选中后由 `drawioReferenceMarkdown` 插入 `![名称](相对路径.drawio)`。预览在加载自托管的 `viewer-static.min.js` 之前设置 `STENCIL_PATH` 等路径，再用 `GraphViewer.createViewerForElement` 渲染；右下角可以打开编辑器。导出笔记时按 `application/vnd.jgraph.mxfile` 内联。资源目录里被引用的 `.drawio` 不会被未引用资源清理删掉；未被引用的会被列出来。
 - **编辑**：`DrawioModal` 用同源 iframe 加载 `/drawio/index.html` 的 embed 协议。收到 `init` 后加载 XML，并打开 autosave；停止操作约 800ms 后保存，冲突处理与 Excalidraw 相同。可以导出 SVG/PNG。
 - **校验**：`.drawio` 内容必须是根元素为 `mxfile` 的 XML，不能为空，且不超过 20MB。
 - 切换仓库、执行文件操作前，会通过 `registerDrawingFlush` 先保存正在编辑的绘图（两种编辑器共用这一入口）。
@@ -172,12 +172,12 @@
 | 格式 | 范围 | 实现 |
 | --- | --- | --- |
 | Markdown（`md`） | 仅单篇 | 后端直接返回原始文件下载，不包含图片 |
-| Markdown 资源包（`bundle`） | 单篇或多篇 | 后端生成 ZIP，保留目录结构，图片放在包内 `.assets`，并改写导出副本中的引用 |
-| HTML（`html`） | 单篇导出为 `.html`；多篇导出为 ZIP（含索引页） | 前端从后端获取 `snapshot`（笔记 + base64 资源），用 `MarkdownView` 离屏渲染，内嵌样式、图片和代码高亮；批量导出时修正所选笔记之间的链接 |
+| Markdown 资源包（`bundle`） | 单篇或多篇 | 后端生成 ZIP，保留目录结构，图片和被引用的绘图放在包内 `.assets`，并改写导出副本中的引用 |
+| HTML（`html`） | 单篇导出为 `.html`；多篇导出为 ZIP（含索引页） | 前端从后端获取 `snapshot`（笔记 + base64 资源），用 `MarkdownView` 离屏渲染，内嵌样式、图片、绘图和代码高亮；批量导出时修正所选笔记之间的链接 |
 | PDF（`pdf`） | 单篇或合并多篇 | 打开专用打印页，用户通过浏览器「另存为 PDF」；每篇另起一页 |
 
 - 导出范围：当前笔记、所选笔记、当前筛选结果，或从笔记操作菜单导出指定笔记。
-- 导出前先保存；本地图片缺失时返回 422，并列出缺失和外链图片，用户确认后带 `allowMissing` 重新导出。外链图片不会下载。
+- 导出前先保存；本地图片或绘图缺失时返回 422，并列出缺失和外链图片，用户确认后带 `allowMissing` 重新导出。外链图片不会下载。`.excalidraw` 内联为 `application/vnd.excalidraw+json`，`.drawio` 内联为 `application/vnd.jgraph.mxfile`。
 
 ## 13. 设置（`SettingsPanel.tsx`）
 
@@ -247,7 +247,7 @@
 | GET / POST / PUT / DELETE | `/groups`、`/tags` | 列表 / 新增 `{name}` / 重命名 `{name, newName}` / 删除 `?name=` |
 | GET / HEAD | `/assets?path=` | 读取图片 |
 | POST | `/assets?notePath=` | multipart 上传图片，字段为 `file` |
-| GET / POST / PUT / DELETE | `/drawings` | 读取 `?path=` / 新建 `{path}` 或 `{notePath}` / 保存 `{path, content, revision, force?}` / 删除 `?path=` |
+| GET / POST / PUT / DELETE | `/drawings` | 读取 `?path=` / 新建 `{path}`（`.excalidraw` 或 `.drawio`）或 `{notePath}`（只在资源目录创建 `.excalidraw`）/ 保存 `{path, content, revision, force?}` / 删除 `?path=` |
 | POST | `/drawings/move` | `{path, target, revision}` |
 | GET / PUT | `/settings` | 读取 / 保存设置（可能触发资源目录迁移） |
 | GET | `/storage` | 存储占用 |

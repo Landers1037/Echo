@@ -17,9 +17,9 @@ Echo 是**个人本机使用**的 Markdown 笔记 WebApp：一个 Go 进程同�
 | 层 | 技术 |
 | --- | --- |
 | 后端 | Go 1.26（`go.mod`），标准库 `net/http`；`gopkg.in/yaml.v3`（frontmatter）、`github.com/yuin/goldmark`（Markdown AST，用于识别代码块和图片引用）、`modernc.org/sqlite`（纯 Go SQLite，仅用于 Agent 聊天记录） |
-| 前端 | React 19 + TypeScript 5 + Vite 6；CodeMirror 6（`@uiw/react-codemirror`）编辑器；`react-markdown` + `remark-gfm` / `remark-breaks` / `remark-frontmatter` 预览；`shiki` 代码高亮；`mermaid` 图表；`@excalidraw/excalidraw` 绘图；`motion` 动画；`lucide-react` 图标；`fflate` 生成 ZIP |
+| 前端 | React 19 + TypeScript 5 + Vite 6；CodeMirror 6（`@uiw/react-codemirror`）编辑器；`react-markdown` + `remark-gfm` / `remark-breaks` / `remark-frontmatter` 预览；`shiki` 代码高亮；`mermaid` 图表；`@excalidraw/excalidraw` 绘图；Draw.io `v32.6.1` 静态站点（不作为 npm 依赖，见 `scripts/fetch-drawio.mjs`）；`motion` 动画；`lucide-react` 图标；`fflate` 生成 ZIP |
 | 测试 | Go `testing`；Vitest + jsdom + Testing Library；`scripts/smoke.mjs` 针对运行中服务的 API 冒烟测试 |
-| 构建脚本 | `scripts/dev.mjs`（开发）、`scripts/build.mjs`（发布） |
+| 构建脚本 | `scripts/dev.mjs`（开发）、`scripts/build.mjs`（发布）、`scripts/fetch-drawio.mjs`（拉取离线 Draw.io） |
 
 ## 3. 目录结构
 
@@ -55,7 +55,8 @@ Echo/
 │   ├── shortcuts.ts            # 编辑器快捷键定义与冲突检测
 │   ├── noteTitle.ts / noteOutline.ts / noteReference.ts  # 纯函数工具
 │   └── *.css
-├── scripts/                    # dev.mjs / build.mjs / smoke.mjs
+├── scripts/                    # dev.mjs / build.mjs / fetch-drawio.mjs / smoke.mjs
+├── third_party/drawio/         # Draw.io 静态站点（gitignore；由 fetch-drawio.mjs 下载，构建时复制进 dist）
 ├── public/                     # favicon、logo
 ├── assets/branding/            # 品牌素材源文件
 ├── notes/                      # 默认开发笔记库（已 gitignore）
@@ -173,6 +174,8 @@ flowchart LR
 - `cleanRelative`：只接受相对路径；拒绝 `..`、盘符/冒号、NUL、`.echo` 段，以及以空格或点结尾的段（Windows 兼容）。
 - `safePath`：逐级 `Lstat`，**拒绝任何符号链接**。
 - `notePath` 要求扩展名为 `.md` 并且不在资源目录中；`drawingPath` 要求扩展名为 `.excalidraw` 或 `.drawio`，移动时必须保持原扩展名。
+- `.excalidraw` 内容必须是 `type: "excalidraw"` 的 JSON；`.drawio` 内容必须是根元素为 `mxfile` 的 XML。两者都不能为空，且不超过 20MB。
+- Draw.io 编辑器是同源 iframe（`/drawio/index.html`）。父页面只接受来自该 iframe、且 `origin` 为本页的 `postMessage`。预览在加载 `viewer-static.min.js` 之前把形状、样式和 mxGraph 路径指到 `/drawio`，避免请求 `viewer.diagrams.net`。下载的站点会删掉 `WEB-INF` 和 `META-INF`，不提供 Draw.io 的 Java 服务。
 - 打开笔记库时如果 `.echo` 及其关键文件是符号链接，拒绝打开。
 - 目录树和笔记列表跳过点开头的目录、资源目录和符号链接。
 - `/api/assets` 只返回 `image/*` 并排除 SVG（防 XSS）；上传按文件内容嗅探类型，只接受 PNG/JPEG/GIF/WebP，大小不超过 20MB，以随机 ID 命名。
@@ -262,7 +265,7 @@ echo:
 [目标笔记标题](../other/目标.md "echo-ref")
 ```
 
-**图片与绘图引用**：相对于笔记所在目录的相对路径，例如 `![绘图](../.assets/<id>.excalidraw)`。移动笔记、移动目录、迁移资源目录时，后端用 goldmark 跳过代码区域，通过正则改写内联链接和引用式定义（`rewriteLinks`）。
+**图片与绘图引用**：相对于笔记所在目录的相对路径。Excalidraw 内嵌图例如 `![绘图](../.assets/<id>.excalidraw)`；笔记目录中的 Draw.io 例如 `![流程](../图表/流程.drawio)`。移动笔记、移动目录、迁移资源目录时，后端用 goldmark 跳过代码区域，通过正则改写内联链接和引用式定义（`rewriteLinks`）。
 
 ### 6.4 Agent 数据库（`agent.db`）
 
@@ -299,15 +302,16 @@ messages(id PK, conversation_id FK→conversations ON DELETE CASCADE, seq, role,
 
 | 组件 | 职责 |
 | --- | --- |
-| `Sidebar` | 目录树、分组/标签筛选、搜索、多选、入口按钮 |
-| `Editor` | CodeMirror 编辑器、工具栏、快捷键、图片上传/粘贴/拖放、插入绘图和笔记引用、AI 修改会话（只读锁定 + 高亮） |
-| `MarkdownView` | 预览渲染：GFM、shiki、Mermaid、绘图静态图、内部链接跳转、任务勾选、下划线 |
+| `Sidebar` | 目录树、分组/标签筛选、搜索、多选、入口按钮；底部 Draw 按钮新建 `.drawio` |
+| `Editor` | CodeMirror 编辑器、工具栏、快捷键、图片上传/粘贴/拖放、插入 Excalidraw、引用笔记、引用 Draw.io、AI 修改会话（只读锁定 + 高亮） |
+| `MarkdownView` | 预览渲染：GFM、shiki、Mermaid、Excalidraw / Draw.io 静态图、内部链接跳转、任务勾选、下划线 |
 | `AgentPanel` | Agent 对话、历史记录、流式显示、修改确认 |
 | `TasksView` / `PlansView` | 任务看板 / 计划提醒 |
 | `SettingsPanel` (+ `AgentSettings`、`StorageSettings`) | 设置的各个分页 |
 | `RepoSwitcher` | 仓库列表、切换、重命名、移除、选择文件夹 |
-| `Drawing` | Excalidraw 弹框，自动保存，冲突检测 |
-| `NotePicker` | 选择要引用的笔记 |
+| `Drawing` | Excalidraw 弹框与笔记内静态图，自动保存，冲突检测 |
+| `Drawio` | Draw.io 弹框（iframe embed）与笔记内静态图（`viewer-static.min.js`）；和 Excalidraw 共用 `registerDrawingFlush` |
+| `NotePicker` | 选择要引用的笔记，或（`kind="drawio"`）选择笔记目录中的 `.drawio` |
 | `UI` / `Select` | 通用的 Modal、下拉框 |
 
 ## 8. Agent 子系统
@@ -350,13 +354,13 @@ sequenceDiagram
 
 | 命令 | 行为 |
 | --- | --- |
-| `npm run dev` | `scripts/dev.mjs`：启动 Vite（5173，`/api` 代理到 8080）；把 Go 编译到 `.echo-dev/` 并以 `--dev` 运行；监视 Go 源码并防抖重编译，编译失败时保留旧进程；`ECHO_DATA_DIR` 可指定笔记库 |
-| `npm run build` | `scripts/build.mjs`：`tsc --noEmit` → 清理 `internal/web/dist`（保留 `.placeholder`）→ `vite build` → `go build -trimpath -o dist/echo(.exe) ./cmd/echo` |
+| `npm run dev` | `scripts/dev.mjs`：先执行 `fetch-drawio.mjs`，再启动 Vite（5173，`/api` 代理到 8080）；把 Go 编译到 `.echo-dev/` 并以 `--dev` 运行；监视 Go 源码并防抖重编译，编译失败时保留旧进程；`ECHO_DATA_DIR` 可指定笔记库 |
+| `npm run build` | `scripts/build.mjs`：`fetch-drawio.mjs` → `tsc --noEmit` → 清理 `internal/web/dist`（保留 `.placeholder`）→ `vite build` → `go build -trimpath -o dist/echo(.exe) ./cmd/echo` |
 | `npm run typecheck` | `tsc --noEmit` |
 | `npm test` | `go test ./... && vitest run` |
 | `node scripts/smoke.mjs` | 对运行中的服务（`ECHO_TEST_URL`，默认 8080）做端到端 API 冒烟测试，测试数据会自行清理 |
 
-Vite 插件 `excalidrawAssets` 在开发时提供 Excalidraw 字体，构建时把字体复制到 `internal/web/dist/excalidraw-assets/fonts`。
+Vite 插件 `excalidrawAssets` 在开发时提供 Excalidraw 字体，构建时把字体复制到 `internal/web/dist/excalidraw-assets/fonts`。`drawioAssets` 在开发时把 `/drawio` 映射到 `third_party/drawio`，构建时整份复制到 `internal/web/dist/drawio`，随 `go:embed` 打进可执行文件（体积会增加约 100MB）。`third_party/` 不入库；不要把这套文件放进 Go 的 `vendor/`，否则 `go build` 会把它当成模块依赖目录。
 
 测试分布：Go 测试覆盖 API、存储、设置/迁移、仓库、桌面调用、Agent 配置、数据库和流式解析；前端测试覆盖 `App` 主流程、编辑器、预览、任务与计划视图、Select、导出、快捷键，以及 Agent 的增量 JSON 解析和编辑会话。
 
