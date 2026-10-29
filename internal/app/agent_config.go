@@ -10,13 +10,16 @@ import (
 )
 
 const (
-	defaultAgentBaseURL       = "https://api.openai.com/v1"
-	defaultAgentModel         = "gpt-4o-mini"
-	defaultContextTokens      = 32000
-	defaultMaxOutputTokens    = 4096
-	defaultAgentTemperature   = 0.7
-	defaultAgentSystemPrompt  = "你是 Echo 笔记里的助手。用用户使用的语言回答，简洁、准确，不要编造笔记里没有的内容。"
-	maxAgentSystemPromptRunes = 20000
+	defaultAgentBaseURL        = "https://api.openai.com/v1"
+	defaultAgentModel          = "gpt-4o-mini"
+	defaultContextTokens       = 32000
+	defaultMaxOutputTokens     = 4096
+	defaultAgentTemperature    = 0.7
+	defaultAgentSystemPrompt   = "你是 Echo 笔记里的助手。用用户使用的语言回答，简洁、准确，不要编造笔记里没有的内容。"
+	maxAgentSystemPromptRunes  = 20000
+	defaultAgentTimeoutSeconds = 90
+	minAgentTimeoutSeconds     = 5
+	maxAgentTimeoutSeconds     = 600
 )
 
 type AgentConfig struct {
@@ -28,6 +31,7 @@ type AgentConfig struct {
 	MaxOutputTokens int     `json:"maxOutputTokens"`
 	Temperature     float64 `json:"temperature"`
 	SystemPrompt    string  `json:"systemPrompt"`
+	TimeoutSeconds  int     `json:"timeoutSeconds"`
 }
 
 type AgentConfigView struct {
@@ -40,6 +44,7 @@ type AgentConfigView struct {
 	MaxOutputTokens int     `json:"maxOutputTokens"`
 	Temperature     float64 `json:"temperature"`
 	SystemPrompt    string  `json:"systemPrompt"`
+	TimeoutSeconds  int     `json:"timeoutSeconds"`
 }
 
 type agentConfigUpdate struct {
@@ -51,6 +56,7 @@ type agentConfigUpdate struct {
 	MaxOutputTokens int     `json:"maxOutputTokens"`
 	Temperature     float64 `json:"temperature"`
 	SystemPrompt    string  `json:"systemPrompt"`
+	TimeoutSeconds  *int    `json:"timeoutSeconds"`
 }
 
 func defaultAgentConfig() AgentConfig {
@@ -61,6 +67,7 @@ func defaultAgentConfig() AgentConfig {
 		MaxOutputTokens: defaultMaxOutputTokens,
 		Temperature:     defaultAgentTemperature,
 		SystemPrompt:    defaultAgentSystemPrompt,
+		TimeoutSeconds:  defaultAgentTimeoutSeconds,
 	}
 }
 
@@ -91,6 +98,9 @@ func loadAgentConfig(root string) (AgentConfig, error) {
 	}
 	if cfg.MaxOutputTokens == 0 {
 		cfg.MaxOutputTokens = defaultMaxOutputTokens
+	}
+	if cfg.TimeoutSeconds == 0 {
+		cfg.TimeoutSeconds = defaultAgentTimeoutSeconds
 	}
 	cfg.APIKey = normalizeAPIKey(cfg.APIKey)
 	cfg.BaseURL = strings.TrimRight(strings.TrimSpace(cfg.BaseURL), "/")
@@ -132,7 +142,7 @@ func configView(cfg AgentConfig) AgentConfigView {
 	return AgentConfigView{
 		Enabled: cfg.Enabled, BaseURL: cfg.BaseURL, HasKey: cfg.APIKey != "", APIKeyHint: apiKeyHint(cfg.APIKey),
 		Model: cfg.Model, ContextTokens: cfg.ContextTokens, MaxOutputTokens: cfg.MaxOutputTokens,
-		Temperature: cfg.Temperature, SystemPrompt: cfg.SystemPrompt,
+		Temperature: cfg.Temperature, SystemPrompt: cfg.SystemPrompt, TimeoutSeconds: cfg.TimeoutSeconds,
 	}
 }
 
@@ -199,6 +209,12 @@ func normalizeAgentConfig(current AgentConfig, update agentConfigUpdate) (AgentC
 		return AgentConfig{}, fmt.Errorf("温度需要在 0 到 2 之间")
 	}
 	next.SystemPrompt = update.SystemPrompt
+	if update.TimeoutSeconds != nil {
+		next.TimeoutSeconds = *update.TimeoutSeconds
+	}
+	if next.TimeoutSeconds < minAgentTimeoutSeconds || next.TimeoutSeconds > maxAgentTimeoutSeconds {
+		return AgentConfig{}, fmt.Errorf("超时时间需要在 %d 到 %d 秒之间", minAgentTimeoutSeconds, maxAgentTimeoutSeconds)
+	}
 	if len([]rune(next.SystemPrompt)) > maxAgentSystemPromptRunes {
 		return AgentConfig{}, fmt.Errorf("系统提示词过长")
 	}

@@ -9,7 +9,7 @@ export function saveAgentConfig(input: AgentConfigInput) {
   return api<AgentConfig>('/agent/config', json('PUT', input))
 }
 
-export function testAgentConnection(input: { baseURL?: string; apiKey?: string; model?: string }) {
+export function testAgentConnection(input: { baseURL?: string; apiKey?: string; model?: string; timeoutSeconds?: number }) {
   return api<{ ok: boolean; reply: string }>('/agent/test', json('POST', input))
 }
 

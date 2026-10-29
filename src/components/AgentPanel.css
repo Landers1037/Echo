@@ -20,6 +20,9 @@
 .agent-bubble.user{align-self:flex-end;max-width:92%;padding:8px 12px;border-radius:12px 12px 4px 12px;background:var(--accent-soft)}
 .agent-bubble.user p{margin:0;white-space:pre-wrap;overflow-wrap:anywhere}
 .agent-bubble.assistant{align-self:stretch}
+.agent-thinking{margin:8px 0 0;color:var(--muted);font-size:13px;animation:agent-thinking 1.2s ease-in-out infinite}
+.agent-bubble.assistant>.agent-thinking:first-child{margin-top:0}
+@keyframes agent-thinking{0%,100%{opacity:.35}50%{opacity:1}}
 .agent-markdown{overflow-wrap:anywhere}
 .agent-markdown>:first-child{margin-top:0}
 .agent-markdown>:last-child{margin-bottom:0}

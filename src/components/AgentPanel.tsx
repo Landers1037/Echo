@@ -262,7 +262,7 @@ export function AgentPanel({ open, width, note, getNoteContent, editor, onPendin
     <div className="agent-transcript">
       {!messages.length && !live && <div className="agent-empty"><NotebookPen size={28} strokeWidth={1.4} /><p>{mode === 'note' ? '笔记模式会修改当前打开的笔记。修改会先标出来，你可以保留或撤销。' : '聊天模式只对话，不会改动笔记。'}</p></div>}
       {messages.filter(item => item.role !== 'tool').map(item => <MessageBubble key={item.id} message={item} pending={review?.messageId === item.id} />)}
-      {live && <MessageBubble message={{ id: 'live', conversationId: activeId, role: 'assistant', content: live.content, toolCalls: live.toolCalls, createdAt: '' }} pending={sessionRef.current} />}
+      {live && <MessageBubble message={{ id: 'live', conversationId: activeId, role: 'assistant', content: live.content, toolCalls: live.toolCalls, createdAt: '' }} pending={sessionRef.current} thinking={streaming} />}
       <div ref={bottomRef} />
     </div>
     {error && <p className="agent-error" role="alert">{error}<button type="button" aria-label="关闭错误" onClick={() => setError('')}><X size={13} /></button></p>}
@@ -298,11 +298,12 @@ function toolLabel(name: string) {
   return '调用工具'
 }
 
-function MessageBubble({ message, pending }: { message: AgentMessage; pending: boolean }) {
+function MessageBubble({ message, pending, thinking = false }: { message: AgentMessage; pending: boolean; thinking?: boolean }) {
   const outcome = message.outcome === 'accepted' ? '已保留' : message.outcome === 'rejected' ? '已撤销' : pending ? '等待确认' : message.toolCalls?.length ? '未确认' : ''
   return <article className={`agent-bubble ${message.role}`}>
     {message.role === 'assistant' && message.content && <div className="agent-markdown"><ReactMarkdown remarkPlugins={[remarkGfm]} components={{ a: props => <a href={props.href} target="_blank" rel="noreferrer">{props.children}</a> }}>{message.content}</ReactMarkdown></div>}
     {message.role === 'user' && <p>{message.content}</p>}
     {message.toolCalls?.map(call => <div className="agent-tool" key={call.id}><NotebookPen size={14} /><span>{toolLabel(call.name)}</span>{outcome && <small>{outcome}</small>}</div>)}
+    {thinking && <p className="agent-thinking" role="status">思考中</p>}
   </article>
 }

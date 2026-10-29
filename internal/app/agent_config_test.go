@@ -14,12 +14,13 @@ func TestAgentConfigHidesKeyAndKeepsItWhenOmitted(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if view.Enabled || view.HasKey || view.BaseURL != defaultAgentBaseURL || view.Model != defaultAgentModel || view.ContextTokens != defaultContextTokens || view.MaxOutputTokens != defaultMaxOutputTokens || view.Temperature != defaultAgentTemperature {
+	if view.Enabled || view.HasKey || view.BaseURL != defaultAgentBaseURL || view.Model != defaultAgentModel || view.ContextTokens != defaultContextTokens || view.MaxOutputTokens != defaultMaxOutputTokens || view.Temperature != defaultAgentTemperature || view.TimeoutSeconds != defaultAgentTimeoutSeconds {
 		t.Fatalf("defaults: %+v", view)
 	}
+	timeout := 45
 	saved := request(t, h, "PUT", "/api/agent/config", agentConfigUpdate{
 		Enabled: true, BaseURL: "https://example.com/v1/", APIKey: "Bearer sk-test-secret", Model: "demo",
-		ContextTokens: 8000, MaxOutputTokens: 1000, Temperature: 0, SystemPrompt: "简短回答",
+		ContextTokens: 8000, MaxOutputTokens: 1000, Temperature: 0, SystemPrompt: "简短回答", TimeoutSeconds: &timeout,
 	})
 	if saved.Code != 200 || strings.Contains(saved.Body.String(), "sk-test-secret") {
 		t.Fatalf("save leaked or failed: %d %s", saved.Code, saved.Body.String())
@@ -28,7 +29,7 @@ func TestAgentConfigHidesKeyAndKeepsItWhenOmitted(t *testing.T) {
 	if err = json.Unmarshal(saved.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
 	}
-	if !body.Enabled || !body.HasKey || body.APIKeyHint != "****cret" || body.BaseURL != "https://example.com/v1" || body.Temperature != 0 || body.Model != "demo" {
+	if !body.Enabled || !body.HasKey || body.APIKeyHint != "****cret" || body.BaseURL != "https://example.com/v1" || body.Temperature != 0 || body.Model != "demo" || body.TimeoutSeconds != 45 {
 		t.Fatalf("view: %+v", body)
 	}
 	kept := request(t, h, "PUT", "/api/agent/config", agentConfigUpdate{
@@ -39,7 +40,7 @@ func TestAgentConfigHidesKeyAndKeepsItWhenOmitted(t *testing.T) {
 		t.Fatalf("keep key: %d %s", kept.Code, kept.Body.String())
 	}
 	cfg, err := agent.Config()
-	if err != nil || cfg.APIKey != "sk-test-secret" || cfg.Temperature != 0.7 {
+	if err != nil || cfg.APIKey != "sk-test-secret" || cfg.Temperature != 0.7 || cfg.TimeoutSeconds != 45 {
 		t.Fatalf("stored key: %+v %v", cfg, err)
 	}
 	file, err := os.ReadFile(agentConfigPath(s.root))
@@ -64,6 +65,13 @@ func TestAgentConfigHidesKeyAndKeepsItWhenOmitted(t *testing.T) {
 
 	fresh := testStore(t)
 	t.Cleanup(func() { fresh.closeAgent() })
+	tooShort := 2
+	rejected := request(t, h, "PUT", "/api/agent/config", agentConfigUpdate{
+		Enabled: true, BaseURL: "https://example.com/v1", Model: "demo", ContextTokens: 8000, MaxOutputTokens: 1000, Temperature: 0.7, TimeoutSeconds: &tooShort,
+	})
+	if rejected.Code != 400 || !strings.Contains(rejected.Body.String(), "超时时间") {
+		t.Fatalf("invalid timeout: %d %s", rejected.Code, rejected.Body.String())
+	}
 	denied := request(t, NewHandler(attachStore(fresh), false), "PUT", "/api/agent/config", agentConfigUpdate{
 		Enabled: true, BaseURL: "https://example.com/v1", Model: "demo", ContextTokens: 8000, MaxOutputTokens: 1000, Temperature: 0.7,
 	})

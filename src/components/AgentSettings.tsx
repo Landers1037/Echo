@@ -12,7 +12,7 @@ export function AgentSettings({ draft, apiKey, disabled, onChange, onKeyChange }
     setFailed(false)
     setResult('正在连接…')
     try {
-      const response = await testAgentConnection({ baseURL: draft.baseURL, apiKey: apiKey.trim(), model: draft.model })
+      const response = await testAgentConnection({ baseURL: draft.baseURL, apiKey: apiKey.trim(), model: draft.model, timeoutSeconds: draft.timeoutSeconds })
       setResult(response.reply ? `连接成功：${response.reply}` : '连接成功。')
     } catch (error) {
       setFailed(true)
@@ -35,6 +35,9 @@ export function AgentSettings({ draft, apiKey, disabled, onChange, onKeyChange }
       <input id="agent-api-key" type="password" value={apiKey} spellCheck={false} autoComplete="off" placeholder={draft.hasKey ? `已配置 ${draft.apiKeyHint}，留空则不修改` : 'sk-...'} onChange={event => onKeyChange(event.target.value)} />
       <label className="field-label" htmlFor="agent-model">模型</label>
       <input id="agent-model" value={draft.model} spellCheck={false} autoComplete="off" onChange={event => onChange({ model: event.target.value })} />
+      <label className="field-label" htmlFor="agent-timeout">超时时间（秒）</label>
+      <input id="agent-timeout" type="number" min={5} max={600} step={1} value={draft.timeoutSeconds} onChange={event => { const value = Number(event.target.value); if (Number.isFinite(value)) onChange({ timeoutSeconds: value }) }} />
+      <p className="field-help">等待模型开始响应的时间，5–600 秒，默认 90 秒。开始输出后不再计时。</p>
     </section>
     <section className="settings-section">
       <h4>上下文</h4>

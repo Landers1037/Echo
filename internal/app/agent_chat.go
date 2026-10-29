@@ -26,23 +26,29 @@ func init() {
 	}
 }
 
-var agentHTTP = &http.Client{
-	Transport: &http.Transport{
-		Proxy:                 http.ProxyFromEnvironment,
-		DialContext:           (&net.Dialer{Timeout: 15 * time.Second, KeepAlive: 30 * time.Second}).DialContext,
-		TLSHandshakeTimeout:   15 * time.Second,
-		ResponseHeaderTimeout: 90 * time.Second,
-		ExpectContinueTimeout: time.Second,
-	},
-	CheckRedirect: func(req *http.Request, via []*http.Request) error {
-		if len(via) >= 5 {
-			return fmt.Errorf("重定向次数过多")
-		}
-		if req.URL.Scheme != "https" && req.URL.Scheme != "http" {
-			return fmt.Errorf("不允许的重定向")
-		}
-		return nil
-	},
+func agentClient(cfg AgentConfig) *http.Client {
+	timeout := time.Duration(cfg.TimeoutSeconds) * time.Second
+	if timeout <= 0 {
+		timeout = time.Duration(defaultAgentTimeoutSeconds) * time.Second
+	}
+	return &http.Client{
+		Transport: &http.Transport{
+			Proxy:                 http.ProxyFromEnvironment,
+			DialContext:           (&net.Dialer{Timeout: timeout, KeepAlive: 30 * time.Second}).DialContext,
+			TLSHandshakeTimeout:   timeout,
+			ResponseHeaderTimeout: timeout,
+			ExpectContinueTimeout: time.Second,
+		},
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if len(via) >= 5 {
+				return fmt.Errorf("重定向次数过多")
+			}
+			if req.URL.Scheme != "https" && req.URL.Scheme != "http" {
+				return fmt.Errorf("不允许的重定向")
+			}
+			return nil
+		},
+	}
 }
 
 type apiMessage struct {
@@ -318,14 +324,15 @@ func (a *Agent) serveTest(w http.ResponseWriter, r *http.Request) error {
 		return nil
 	}
 	var req struct {
-		BaseURL string `json:"baseURL"`
-		APIKey  string `json:"apiKey"`
-		Model   string `json:"model"`
+		BaseURL        string `json:"baseURL"`
+		APIKey         string `json:"apiKey"`
+		Model          string `json:"model"`
+		TimeoutSeconds int    `json:"timeoutSeconds"`
 	}
 	if err := decode(r, &req); err != nil {
 		return err
 	}
-	reply, err := a.testConnection(r.Context(), req.BaseURL, req.APIKey, req.Model)
+	reply, err := a.testConnection(r.Context(), req.BaseURL, req.APIKey, req.Model, req.TimeoutSeconds)
 	if err != nil {
 		return err
 	}
@@ -333,7 +340,7 @@ func (a *Agent) serveTest(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-func (a *Agent) testConnection(parent context.Context, baseURL, apiKey, model string) (string, error) {
+func (a *Agent) testConnection(parent context.Context, baseURL, apiKey, model string, timeoutSeconds int) (string, error) {
 	ctx, stop, err := a.start(parent)
 	if err != nil {
 		return "", err
@@ -358,7 +365,16 @@ func (a *Agent) testConnection(parent context.Context, baseURL, apiKey, model st
 	if _, err = validateBaseURL(cfg.BaseURL); err != nil {
 		return "", err
 	}
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	if timeoutSeconds > 0 {
+		if timeoutSeconds < minAgentTimeoutSeconds || timeoutSeconds > maxAgentTimeoutSeconds {
+			return "", fmt.Errorf("超时时间需要在 %d 到 %d 秒之间", minAgentTimeoutSeconds, maxAgentTimeoutSeconds)
+		}
+		cfg.TimeoutSeconds = timeoutSeconds
+	}
+	if cfg.TimeoutSeconds <= 0 {
+		cfg.TimeoutSeconds = defaultAgentTimeoutSeconds
+	}
+	ctx, cancel := context.WithTimeout(ctx, time.Duration(cfg.TimeoutSeconds)*time.Second)
 	defer cancel()
 	body := completionRequest{
 		Model: cfg.Model, Messages: []apiMessage{apiText("user", "ping")}, Temperature: 0, MaxTokens: 16, Stream: false,
@@ -407,7 +423,7 @@ func (a *Agent) complete(ctx context.Context, cfg AgentConfig, body completionRe
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("User-Agent", "Echo")
-	resp, err := agentHTTP.Do(req)
+	resp, err := agentClient(cfg).Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("无法连接模型接口：%s", clipText(strings.ReplaceAll(err.Error(), cfg.APIKey, "****"), 300))
 	}
@@ -690,7 +706,7 @@ func (a *Agent) openStream(ctx context.Context, cfg AgentConfig, body completion
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "text/event-stream")
 	req.Header.Set("User-Agent", "Echo")
-	resp, err := agentHTTP.Do(req)
+	resp, err := agentClient(cfg).Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("无法连接模型接口：%s", clipText(strings.ReplaceAll(err.Error(), cfg.APIKey, "****"), 300))
 	}
