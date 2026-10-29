@@ -6,7 +6,7 @@ Echo 是**个人本机使用**的 Markdown 笔记 WebApp：一个 Go 进程同�
 
 贯穿全项目的原则：
 
-1. **笔记即普通文件**。笔记是 `.md`，绘图是 `.excalidraw`，图片在资源目录中；分类写在 YAML frontmatter，任务元数据写在行尾 HTML 注释。不依赖数据库也能用其他编辑器打开和修改。
+1. **笔记即普通文件**。笔记是 `.md`，绘图是 `.excalidraw` 或 `.drawio`，图片在资源目录中；分类写在 YAML frontmatter，任务元数据写在行尾 HTML 注释。不依赖数据库也能用其他编辑器打开和修改。
 2. **只服务本机**。监听地址必须是回环地址；每个请求都校验 `Host`、`Origin` 和 `Sec-Fetch-Site`。没有登录、同步或多人协作。
 3. **不静默覆盖**。所有写入都基于内容哈希做乐观并发控制，冲突返回 HTTP 409，由用户决定保留哪个版本。
 4. **写入可回滚**。多文件写入失败时回滚已写入的文件；资源目录迁移使用持久化日志，在崩溃后也能恢复。
@@ -80,7 +80,7 @@ flowchart LR
     H --> WS --> ST --> AG
     H --> WEB
   end
-  FS[(笔记库目录<br/>.md / .excalidraw / .assets / .echo)]
+  FS[(笔记库目录<br/>.md / .excalidraw / .drawio / .assets / .echo)]
   HIST[(用户配置目录<br/>Echo/repositories.json)]
   LLM[OpenAI 兼容接口]
   UI -- /api JSON / multipart --> H
@@ -172,7 +172,7 @@ flowchart LR
 
 - `cleanRelative`：只接受相对路径；拒绝 `..`、盘符/冒号、NUL、`.echo` 段，以及以空格或点结尾的段（Windows 兼容）。
 - `safePath`：逐级 `Lstat`，**拒绝任何符号链接**。
-- `notePath` 要求扩展名为 `.md` 并且不在资源目录中；`drawingPath` 要求扩展名为 `.excalidraw`。
+- `notePath` 要求扩展名为 `.md` 并且不在资源目录中；`drawingPath` 要求扩展名为 `.excalidraw` 或 `.drawio`，移动时必须保持原扩展名。
 - 打开笔记库时如果 `.echo` 及其关键文件是符号链接，拒绝打开。
 - 目录树和笔记列表跳过点开头的目录、资源目录和符号链接。
 - `/api/assets` 只返回 `image/*` 并排除 SVG（防 XSS）；上传按文件内容嗅探类型，只接受 PNG/JPEG/GIF/WebP，大小不超过 20MB，以随机 ID 命名。
@@ -192,7 +192,8 @@ flowchart LR
 ```text
 <笔记库>/
 ├── **/*.md                     # 笔记
-├── **/*.excalidraw             # 独立绘图
+├── **/*.excalidraw             # 独立 Excalidraw 绘图
+├── **/*.drawio                 # 独立 Draw.io 绘图
 ├── .assets/                    # 资源目录（可配置）：上传图片、笔记内嵌绘图
 └── .echo/
     ├── state.json              # 设置、分组、标签、回收站索引、提醒、任务完成历史、计划、自定义任务

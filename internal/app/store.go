@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"encoding/xml"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -227,7 +228,20 @@ func (s *Store) safePath(name string) (string, error) {
 	return current, nil
 }
 func isDrawingName(name string) bool {
-	return strings.EqualFold(path.Ext(name), ".excalidraw")
+	ext := strings.ToLower(path.Ext(name))
+	return ext == ".excalidraw" || ext == ".drawio"
+}
+func isDrawioName(name string) bool {
+	return strings.EqualFold(path.Ext(name), ".drawio")
+}
+func drawingMediaType(name string) string {
+	if isDrawioName(name) {
+		return "application/vnd.jgraph.mxfile"
+	}
+	if strings.EqualFold(path.Ext(name), ".excalidraw") {
+		return "application/vnd.excalidraw+json"
+	}
+	return ""
 }
 func (s *Store) drawingPath(name string) (string, error) {
 	name, err := cleanRelative(name)
@@ -235,7 +249,7 @@ func (s *Store) drawingPath(name string) (string, error) {
 		return "", err
 	}
 	if !isDrawingName(name) {
-		return "", fmt.Errorf("绘图必须使用 .excalidraw 扩展名")
+		return "", fmt.Errorf("绘图必须使用 .excalidraw 或 .drawio 扩展名")
 	}
 	return s.safePath(name)
 }
@@ -412,11 +426,32 @@ func (s *Store) saveNote(name, content, rev string, force bool) (Note, error) {
 }
 
 const emptyDrawing = `{"type":"excalidraw","version":2,"source":"https://excalidraw.com","elements":[],"appState":{"gridSize":null,"viewBackgroundColor":"#ffffff"},"files":{}}`
+const emptyDrawio = `<mxfile host="echo" version="1.0"><diagram id="page-1" name="第 1 页"><mxGraphModel dx="1200" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="827" pageHeight="1169" math="0" shadow="0"><root><mxCell id="0"/><mxCell id="1" parent="0"/></root></mxGraphModel></diagram></mxfile>`
 const maxDrawingBytes = 20 * 1024 * 1024
 
-func validateDrawing(content string) error {
+func validateDrawio(content string) error {
+	decoder := xml.NewDecoder(strings.NewReader(strings.TrimPrefix(content, "\uFEFF")))
+	for {
+		token, err := decoder.Token()
+		if err != nil {
+			return fmt.Errorf("绘图内容必须是 Draw.io XML")
+		}
+		start, ok := token.(xml.StartElement)
+		if !ok {
+			continue
+		}
+		if start.Name.Local != "mxfile" {
+			return fmt.Errorf("绘图内容必须是 Draw.io XML")
+		}
+		return nil
+	}
+}
+func validateDrawing(name, content string) error {
 	if len(content) == 0 || len(content) > maxDrawingBytes {
 		return fmt.Errorf("绘图不能为空，且不能超过 20MB")
+	}
+	if isDrawioName(name) {
+		return validateDrawio(content)
 	}
 	var document struct {
 		Type string `json:"type"`
@@ -452,9 +487,13 @@ func (s *Store) createDrawing(name, content string) (Drawing, error) {
 		return Drawing{}, err
 	}
 	if content == "" {
-		content = emptyDrawing
+		if isDrawioName(name) {
+			content = emptyDrawio
+		} else {
+			content = emptyDrawing
+		}
 	}
-	if err = validateDrawing(content); err != nil {
+	if err = validateDrawing(name, content); err != nil {
 		return Drawing{}, err
 	}
 	file, err := s.drawingPath(name)
@@ -473,7 +512,7 @@ func (s *Store) createDrawing(name, content string) (Drawing, error) {
 	return s.readDrawing(name)
 }
 func (s *Store) saveDrawing(name, content, rev string, force bool) (Drawing, error) {
-	if err := validateDrawing(content); err != nil {
+	if err := validateDrawing(name, content); err != nil {
 		return Drawing{}, err
 	}
 	current, err := s.readDrawing(name)

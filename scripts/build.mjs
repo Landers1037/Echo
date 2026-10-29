@@ -15,6 +15,8 @@ function run(command, args) {
 }
 
 try {
+  console.log('[echo] Checking Draw.io…')
+  await run(process.execPath, [join(root, 'scripts/fetch-drawio.mjs')])
   console.log('[echo] Checking TypeScript…')
   await run(process.execPath, [join(root, 'node_modules/typescript/bin/tsc'), '--noEmit'])
   await mkdir(frontend, { recursive: true })

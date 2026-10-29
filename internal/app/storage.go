@@ -63,7 +63,7 @@ func storageKey(name string) string {
 }
 
 func storageAssetName(name string) bool {
-	if strings.EqualFold(path.Ext(name), ".excalidraw") {
+	if isDrawingName(name) {
 		return true
 	}
 	return strings.HasPrefix(mime.TypeByExtension(strings.ToLower(path.Ext(name))), "image/")

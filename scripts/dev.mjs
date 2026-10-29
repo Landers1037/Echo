@@ -183,6 +183,8 @@ process.on('unhandledRejection', error => {
 
 await mkdir(scratch, { recursive: true })
 await setupWatchers()
+console.log('[echo] Checking Draw.io…')
+if (await completed(launch(process.execPath, [join(root, 'scripts/fetch-drawio.mjs')])) !== 0) await shutdown(1)
 const vite = launch(process.execPath, [join(root, 'node_modules/vite/bin/vite.js'), '--host', '127.0.0.1', '--port', '5173', '--strictPort'])
 vite.once('close', code => {
   if (!stopping) void shutdown(code ?? 1)

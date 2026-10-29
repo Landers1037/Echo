@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
-import { BookOpen, Search, Plus, FolderPlus, FileText, ChevronRight, Folder, MoreHorizontal, LayoutGrid, ListTodo, Settings, Trash2, Tags, FolderOpen, X, ArrowUpRight, Box, LoaderCircle, PenTool, LocateFixed } from 'lucide-react'
+import { BookOpen, Search, Plus, FolderPlus, FileText, ChevronRight, Folder, MoreHorizontal, LayoutGrid, ListTodo, Settings, Trash2, Tags, FolderOpen, X, ArrowUpRight, Box, LoaderCircle, PenTool, LocateFixed, Workflow } from 'lucide-react'
 import { motion } from 'motion/react'
 import type { NoteSummary, TreeEntry } from '../types'
 import { Logo } from './Logo'
@@ -12,7 +12,7 @@ type Props = {
   filterTags: string[]; setFilterTags: (value: string[]) => void; selected: string[]; setSelected: (value: string[]) => void
   onSelect: (path: string) => void; onView: (view: 'plans' | 'board') => void; onCreate: () => void; onFolder: () => void; onCreateDrawing: () => void
   onOpenDrawing: (path: string) => void; activeDrawing: string
-  onManage: (path: string, type: 'note' | 'folder' | 'drawing') => void; onSettings: () => void; onTrash: () => void; onRepositories: () => void; onCategories: () => void; onClose: () => void
+  onManage: (path: string, type: 'note' | 'folder' | 'drawing') => void; onDraw: () => void; onSettings: () => void; onTrash: () => void; onRepositories: () => void; onCategories: () => void; onClose: () => void
   onOpenDirectory: () => void; openingDirectory: boolean
 }
 
@@ -60,11 +60,15 @@ export function Sidebar(p: Props) {
   const filtering = p.group !== null || p.filterTags.length > 0 || p.search.length > 0
   const visible = new Set(filtered.map(note => note.path))
   const toggleSelected = (path: string) => p.setSelected(p.selected.includes(path) ? p.selected.filter(value => value !== path) : [...p.selected, path])
-  const drawingRow = (entry: TreeEntry, depth = 0) => <div className={`note-row ${p.activeDrawing === entry.path ? 'active' : ''}`} key={entry.path} style={{ paddingLeft: `${14 + depth * 16}px` }}>
-    <span className="drawing-spacer" />
-    <button className="note-link" onClick={() => p.onOpenDrawing(entry.path)} title={entry.path}><PenTool size={15} /><span>{entry.name.replace(/\.excalidraw$/i, '')}</span></button>
-    <button className="row-action icon-button" aria-label={`管理绘图 ${entry.path}`} onClick={() => p.onManage(entry.path, 'drawing')}><MoreHorizontal size={15} /></button>
-  </div>
+  const drawingRow = (entry: TreeEntry, depth = 0) => {
+    const drawio = /\.drawio$/i.test(entry.name)
+    const Icon = drawio ? Workflow : PenTool
+    return <div className={`note-row ${p.activeDrawing === entry.path ? 'active' : ''}`} key={entry.path} style={{ paddingLeft: `${14 + depth * 16}px` }}>
+      <span className="drawing-spacer" />
+      <button className="note-link" onClick={() => p.onOpenDrawing(entry.path)} title={entry.path}><Icon size={15} /><span>{entry.name.replace(/\.(?:excalidraw|drawio)$/i, '')}</span></button>
+      <button className="row-action icon-button" aria-label={`管理绘图 ${entry.path}`} onClick={() => p.onManage(entry.path, 'drawing')}><MoreHorizontal size={15} /></button>
+    </div>
+  }
   const noteRow = (note: NoteSummary, depth = 0) => <div className={`note-row ${p.active === note.path && p.view === 'note' ? 'active' : ''} ${p.selected.includes(note.path) ? 'is-selected' : ''} ${located?.path === note.path ? `is-located locate-${located.token % 2}` : ''}`} data-tree-path={note.path} key={note.path} style={{ paddingLeft: `${14 + depth * 16}px` }}>
     <input type="checkbox" aria-label={`选择 ${note.title}`} className="note-check" checked={p.selected.includes(note.path)} onChange={() => toggleSelected(note.path)} />
     <button className="note-link" onClick={() => p.onSelect(note.path)} title={note.path}><FileText size={15} /><span>{note.title}</span></button>
@@ -88,6 +92,6 @@ export function Sidebar(p: Props) {
       <div className="sidebar-section-heading tags-heading"><span>标签</span><button className="icon-button" aria-label="管理标签" onClick={p.onCategories}><Tags size={14} /></button></div><div className="sidebar-tags">{p.tags.map(tag => <button key={tag} className={`tag-filter ${p.filterTags.includes(tag) ? 'active' : ''}`} onClick={() => p.setFilterTags(p.filterTags.includes(tag) ? p.filterTags.filter(t => t !== tag) : [...p.filterTags, tag])}><span>#</span>{tag}</button>)}{!p.tags.length && <span className="muted tiny">为笔记添加标签，串联灵感。</span>}</div>
       </div>
       <motion.button type="button" className="local-card" aria-label="本地空间：打开笔记库目录" title="在文件浏览器中打开笔记库目录" aria-busy={p.openingDirectory} disabled={p.openingDirectory} onClick={p.onOpenDirectory} initial={{ opacity: 0 }} animate={{ opacity: 1 }}><span className="local-dot" /><span className="local-card-copy"><strong>本地空间</strong><small>{p.openingDirectory ? '正在打开文件浏览器…' : '笔记保存在你的设备上'}</small></span>{p.openingDirectory ? <LoaderCircle size={14} className="spin" /> : <ArrowUpRight size={14} />}</motion.button>
-      <div className="sidebar-footer"><button onClick={p.onSettings} title="设置" aria-label="设置"><Settings size={16} /></button><button onClick={p.onTrash} title="回收站" aria-label="回收站"><Trash2 size={16} /></button><button onClick={p.onRepositories} title="切换仓库" aria-label="切换仓库"><Box size={16} /></button><span className="version">v1.0</span></div>
+      <div className="sidebar-footer"><button onClick={p.onSettings} title="设置" aria-label="设置"><Settings size={16} /></button><button onClick={p.onDraw} title="Draw.io 绘图" aria-label="Draw.io 绘图"><Workflow size={16} /></button><button onClick={p.onTrash} title="回收站" aria-label="回收站"><Trash2 size={16} /></button><button onClick={p.onRepositories} title="切换仓库" aria-label="切换仓库"><Box size={16} /></button><span className="version">v1.0</span></div>
     </aside></>
 }

@@ -9,6 +9,7 @@ import { codeToHtml } from 'shiki'
 import { Check, Copy, FileSymlink } from 'lucide-react'
 import { NOTE_REF_TITLE } from '../noteReference'
 import { DrawingEmbed } from './Drawing'
+import { DrawioEmbed } from './Drawio'
 import { ImagePreview, PreviewableImage } from './ImagePreview'
 import { MermaidBlock } from './Mermaid'
 
@@ -121,10 +122,12 @@ function sourceHeading(tag: 'h1' | 'h2' | 'h3' | 'h4' | 'h5') {
 }
 const previewHeadings = { h1: sourceHeading('h1'), h2: sourceHeading('h2'), h3: sourceHeading('h3'), h4: sourceHeading('h4'), h5: sourceHeading('h5') }
 
-function drawingReference(notePath: string, src: string) {
+function drawingKind(src: string) {
   const clean = decodeSafe(src).split('#')[0].split('?')[0]
-  if (/^(?:[a-z][a-z\d+.-]*:|\/\/)/i.test(clean) || !/\.excalidraw$/i.test(clean)) return ''
-  return resolveNotePath(notePath, src)
+  if (/^(?:[a-z][a-z\d+.-]*:|\/\/)/i.test(clean)) return ''
+  if (/\.drawio$/i.test(clean)) return 'drawio'
+  if (/\.excalidraw$/i.test(clean)) return 'excalidraw'
+  return ''
 }
 
 export function MarkdownView({ content, notePath, assets, lineNumbers, fontSize, noteTitles, onNavigate, onToggleTask, onEditDrawing, drawingVersion = 0, exporting = false, dark = false, strictLineBreaks = false }: MarkdownViewProps) {
@@ -143,11 +146,13 @@ export function MarkdownView({ content, notePath, assets, lineNumbers, fontSize,
     },
     img({ src, alt, title }) {
       if (!src) return <span className="missing-image">图片地址为空</span>
-      const drawing = drawingReference(notePath, src)
-      if (drawing) {
+      const kind = drawingKind(src)
+      if (kind) {
+        const drawing = resolveNotePath(notePath, src)
         const embedded = assets?.[src] || assets?.[decodeSafe(src)]
         if (exporting && !embedded) return <span className="missing-image">[绘图缺失：{alt || src}]</span>
-        return <DrawingEmbed path={embedded || drawing} alt={alt || '绘图'} exporting={exporting} version={drawingVersion} onEdit={exporting ? undefined : onEditDrawing} />
+        const embed = { path: embedded || drawing, alt: alt || '绘图', exporting, version: drawingVersion, onEdit: exporting ? undefined : onEditDrawing }
+        return kind === 'drawio' ? <DrawioEmbed {...embed} /> : <DrawingEmbed {...embed} />
       }
       const external = /^(https?:|data:|blob:|\/\/)/i.test(src)
       const embedded = assets?.[src] || assets?.[decodeSafe(src)]

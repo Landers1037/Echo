@@ -23,3 +23,8 @@ function linkLabel(title: string, path: string) {
 export function noteReferenceMarkdown(fromPath: string, target: { path: string; title: string }) {
   return `[${linkLabel(target.title, target.path)}](${relativeNoteHref(fromPath, target.path)} "${NOTE_REF_TITLE}")`
 }
+
+export function drawioReferenceMarkdown(fromPath: string, targetPath: string) {
+  const file = targetPath.split('/').pop() || targetPath
+  return `![${linkLabel(file.replace(/\.drawio$/i, ''), targetPath)}](${relativeNoteHref(fromPath, targetPath)})`
+}

@@ -80,4 +80,18 @@ describe('editor formatting shortcuts', () => {
     expect(onDrawingInsert).toHaveBeenCalledOnce()
     expect(String(onChange.mock.calls.at(-1)?.[0])).toContain('![绘图](../.assets/diagram.excalidraw)')
   })
+
+  it('places the draw.io reference beside the note reference and inserts its markdown', async () => {
+    const onChange = vi.fn()
+    const onDrawioReference = vi.fn(async () => '![架构](../图表/架构.drawio)')
+    render(<Editor {...props} value="正文" onChange={onChange} onDrawioReference={onDrawioReference} />)
+    const buttons = screen.getAllByRole('button')
+    const noteIndex = buttons.findIndex(button => button.getAttribute('aria-label') === '引用笔记')
+    const drawIndex = buttons.findIndex(button => button.getAttribute('aria-label') === '引用 Draw.io')
+    expect(drawIndex).toBe(noteIndex + 1)
+    fireEvent.click(screen.getByRole('button', { name: '引用 Draw.io' }))
+    await waitFor(() => expect(onChange).toHaveBeenCalled())
+    expect(onDrawioReference).toHaveBeenCalledOnce()
+    expect(String(onChange.mock.calls.at(-1)?.[0])).toContain('![架构](../图表/架构.drawio)')
+  })
 })

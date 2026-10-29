@@ -260,8 +260,8 @@ func (s *Store) move(from, to, rev string, folder bool) (Note, error) {
 		return Note{}, fmt.Errorf("不能移动资源目录")
 	}
 	drawing := !folder && isDrawingName(from)
-	if drawing && !isDrawingName(to) {
-		return Note{}, fmt.Errorf("绘图必须使用 .excalidraw 扩展名")
+	if drawing && !strings.EqualFold(path.Ext(from), path.Ext(to)) {
+		return Note{}, fmt.Errorf("绘图必须保持原扩展名")
 	}
 	if !folder {
 		if drawing {

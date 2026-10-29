@@ -577,6 +577,119 @@ func TestDrawingsCreateSaveMoveExportAndCleanup(t *testing.T) {
 	}
 }
 
+func TestDrawioCreateSaveMoveExportAndCleanup(t *testing.T) {
+	s := testStore(t)
+	h := NewHandler(attachStore(s), false)
+	rr := request(t, h, "POST", "/api/drawings", map[string]any{"path": "图表/流程.drawio"})
+	if rr.Code != 201 {
+		t.Fatalf("create %d %s", rr.Code, rr.Body.String())
+	}
+	var created Drawing
+	if err := json.Unmarshal(rr.Body.Bytes(), &created); err != nil {
+		t.Fatal(err)
+	}
+	if created.Path != "图表/流程.drawio" || !strings.Contains(created.Content, "<mxfile") || !strings.Contains(created.Content, "<mxCell id=\"0\"") || created.Revision == "" {
+		t.Fatalf("created %+v", created)
+	}
+	entry, ok := findTreeEntry(mustTree(t, s), created.Path)
+	if !ok || entry.Type != "drawing" || entry.Name != "流程.drawio" {
+		t.Fatalf("tree entry %+v %v", entry, ok)
+	}
+	for _, body := range []any{
+		map[string]any{"path": "图表/坏.drawio", "content": `{"type":"excalidraw"}`},
+		map[string]any{"path": "图表/坏.drawio", "content": `<svg></svg>`},
+		map[string]any{"path": "图表/流程.drawio"},
+	} {
+		if rr = request(t, h, "POST", "/api/drawings", body); rr.Code < 400 {
+			t.Fatalf("accepted invalid drawing %v: %d %s", body, rr.Code, rr.Body.String())
+		}
+	}
+	updated := `<mxfile host="echo"><diagram id="page-1" name="Page-1"><mxGraphModel><root><mxCell id="0"/><mxCell id="1" parent="0"/><mxCell id="2" value="A" vertex="1" parent="1"><mxGeometry x="10" y="10" width="80" height="40" as="geometry"/></mxCell></root></mxGraphModel></diagram></mxfile>`
+	if rr = request(t, h, "PUT", "/api/drawings", map[string]any{"path": created.Path, "content": updated, "revision": "stale"}); rr.Code != http.StatusConflict {
+		t.Fatalf("conflict %d %s", rr.Code, rr.Body.String())
+	}
+	rr = request(t, h, "PUT", "/api/drawings", map[string]any{"path": created.Path, "content": updated, "revision": created.Revision})
+	if rr.Code != 200 {
+		t.Fatalf("save %d %s", rr.Code, rr.Body.String())
+	}
+	var saved Drawing
+	if err := json.Unmarshal(rr.Body.Bytes(), &saved); err != nil || saved.Content != updated || saved.Revision == created.Revision {
+		t.Fatalf("saved %+v %v", saved, err)
+	}
+	if rr = request(t, h, "POST", "/api/drawings/move", map[string]any{"path": saved.Path, "target": "资料/流程.excalidraw", "revision": saved.Revision}); rr.Code < 400 {
+		t.Fatalf("changed extension %d %s", rr.Code, rr.Body.String())
+	}
+	note := create(t, s, "记录.md", "# 记录\n![流程](图表/流程.drawio)\n")
+	rr = request(t, h, "POST", "/api/drawings/move", map[string]any{"path": saved.Path, "target": "资料/流程.drawio", "revision": saved.Revision})
+	if rr.Code != 200 {
+		t.Fatalf("move %d %s", rr.Code, rr.Body.String())
+	}
+	note, err := s.readNote(note.Path)
+	if err != nil || !strings.Contains(note.Content, "%E6%B5%81%E7%A8%8B.drawio") || strings.Contains(note.Content, "图表/流程.drawio") {
+		t.Fatalf("reference not rewritten: %s %v", note.Content, err)
+	}
+	if _, ok = findTreeEntry(mustTree(t, s), "资料/流程.drawio"); !ok {
+		t.Fatal("moved drawio missing from the tree")
+	}
+	if err = os.MkdirAll(filepath.Join(s.Root(), ".assets"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err = os.WriteFile(filepath.Join(s.Root(), ".assets", "used.drawio"), []byte(updated), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err = os.WriteFile(filepath.Join(s.Root(), ".assets", "orphan.drawio"), []byte(emptyDrawio), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	note, err = s.saveNote(note.Path, note.Content+"\n![已用](.assets/used.drawio)\n", note.Revision, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	unused, err := s.unusedAssets()
+	if err != nil {
+		t.Fatal(err)
+	}
+	foundOrphan := false
+	for _, file := range unused.Files {
+		if file.Path == ".assets/used.drawio" {
+			t.Fatalf("referenced drawio listed as unused: %+v", unused.Files)
+		}
+		if file.Path == ".assets/orphan.drawio" {
+			foundOrphan = true
+		}
+	}
+	if !foundOrphan {
+		t.Fatalf("unreferenced drawio missing from unused: %+v", unused.Files)
+	}
+	snapshot, assets, err := s.snapshot([]string{note.Path})
+	if err != nil {
+		t.Fatal(err)
+	}
+	embedded := snapshot.Notes[0].Assets[".assets/used.drawio"]
+	if len(snapshot.Missing) != 0 || !strings.HasPrefix(embedded, "data:application/vnd.jgraph.mxfile;base64,") {
+		t.Fatalf("snapshot %+v", snapshot)
+	}
+	if _, ok = assets[".assets/used.drawio"]; !ok {
+		t.Fatal("drawio missing from export bundle assets")
+	}
+	standalone := "资料/流程.drawio"
+	rr = request(t, h, "DELETE", "/api/drawings?path="+url.QueryEscape(standalone), nil)
+	if rr.Code != 200 {
+		t.Fatalf("delete %d %s", rr.Code, rr.Body.String())
+	}
+	if _, ok = findTreeEntry(mustTree(t, s), standalone); ok {
+		t.Fatal("deleted drawio remained in the tree")
+	}
+	if len(s.state.Trash) == 0 {
+		t.Fatal("drawio was not recycled")
+	}
+	if err = s.restore(s.state.Trash[len(s.state.Trash)-1].ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.readDrawing(standalone); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestPlanScheduleRemindersAndCustomTasks(t *testing.T) {
 	location, err := time.LoadLocation("Asia/Shanghai")
 	if err != nil {

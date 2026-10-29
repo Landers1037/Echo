@@ -17,6 +17,10 @@ vi.mock('./components/Drawing', () => ({
   DrawingEmbed: () => null,
   DrawingModal: ({ path, onClose }: { path: string; onClose: () => void }) => <div role="dialog" aria-label="绘图"><span>{path}</span><button type="button" onClick={onClose}>关闭绘图</button></div>,
 }))
+vi.mock('./components/Drawio', () => ({
+  DrawioEmbed: () => null,
+  DrawioModal: ({ path, onClose }: { path: string; onClose: () => void }) => <div role="dialog" aria-label="绘图"><span>{path}</span><button type="button" onClick={onClose}>关闭绘图</button></div>,
+}))
 vi.mock('motion/react', async () => {
   const React = await import('react')
   type Props = React.ComponentProps<'div'> & { initial?: unknown; animate?: unknown; exit?: unknown; transition?: unknown }
@@ -283,6 +287,32 @@ describe('App creates items inside a folder', () => {
     fireEvent.click(within(dialog).getByRole('button', { name: '创建绘图' }))
     expect(await screen.findByRole('dialog', { name: '绘图' })).toHaveTextContent('验收/流程.excalidraw')
     expect(server.calls.find(call => call.path === '/api/drawings' && call.method === 'POST')?.body).toEqual({ path: '验收/流程.excalidraw' })
+    expect(await screen.findByRole('button', { name: '流程' })).toBeVisible()
+    expect(screen.getByRole('button', { name: '验收' })).toHaveAttribute('aria-expanded', 'true')
+  })
+
+  it('creates a draw.io diagram from the footer and inside the selected folder', async () => {
+    const server = createServer([], ['验收'])
+    await openApp(server)
+    const draw = screen.getByRole('button', { name: 'Draw.io 绘图' })
+    expect(draw.nextElementSibling).toBe(screen.getByRole('button', { name: '回收站' }))
+    fireEvent.click(draw)
+    const dialog = screen.getByRole('dialog', { name: '新建 Draw.io' })
+    expect(within(dialog).getByLabelText('绘图路径')).toHaveValue('未命名图表.drawio')
+    fireEvent.click(within(dialog).getByRole('button', { name: '创建 Draw.io' }))
+    expect(await screen.findByRole('dialog', { name: '绘图' })).toHaveTextContent('未命名图表.drawio')
+    fireEvent.click(screen.getByRole('button', { name: '关闭绘图' }))
+    fireEvent.click(screen.getByRole('button', { name: '管理文件夹 验收' }))
+    fireEvent.click(within(screen.getByRole('dialog', { name: '文件夹操作' })).getByRole('button', { name: '新建 Draw.io' }))
+    const nested = screen.getByRole('dialog', { name: '新建 Draw.io' })
+    expect(nested).toHaveTextContent('创建位置：验收')
+    fireEvent.change(within(nested).getByLabelText('绘图名称'), { target: { value: '流程' } })
+    fireEvent.click(within(nested).getByRole('button', { name: '创建 Draw.io' }))
+    expect(await screen.findByRole('dialog', { name: '绘图' })).toHaveTextContent('验收/流程.drawio')
+    expect(server.calls.filter(call => call.path === '/api/drawings' && call.method === 'POST').map(call => call.body)).toEqual([
+      { path: '未命名图表.drawio' },
+      { path: '验收/流程.drawio' },
+    ])
     expect(await screen.findByRole('button', { name: '流程' })).toBeVisible()
     expect(screen.getByRole('button', { name: '验收' })).toHaveAttribute('aria-expanded', 'true')
   })

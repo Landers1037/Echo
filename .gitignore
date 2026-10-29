@@ -151,6 +151,7 @@ vite.config.ts.timestamp-*
 # Echo local data and generated binaries
 notes/
 .echo-dev/
+third_party/
 /dist/
 !/internal/web/dist/
 /internal/web/dist/*

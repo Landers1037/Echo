@@ -14,6 +14,7 @@ const { initializeMermaid, renderMermaid } = vi.hoisted(() => ({
 vi.mock('shiki', () => ({ codeToHtml: async (code: string) => `<pre class="shiki"><code><span class="line">${code.replace(/</g, '&lt;')}</span></code></pre>` }))
 vi.mock('mermaid', () => ({ default: { initialize: initializeMermaid, render: (id: string, code: string) => renderMermaid(id, code) } }))
 vi.mock('./Drawing', () => ({ DrawingEmbed: ({ path, onEdit }: { path: string; onEdit?: (path: string) => void }) => <button type="button" onClick={() => onEdit?.(path)}>{path}</button> }))
+vi.mock('./Drawio', () => ({ DrawioEmbed: ({ path, onEdit }: { path: string; onEdit?: (path: string) => void }) => <button type="button" onClick={() => onEdit?.(path)}>{path}</button> }))
 afterEach(cleanup)
 
 describe('Markdown rendering', () => {
@@ -83,6 +84,17 @@ describe('Markdown rendering', () => {
     expect(screen.getByRole('button', { name: 'data:application/vnd.excalidraw+json;base64,abc' })).toBeInTheDocument()
     rerender(<MarkdownView content="![架构](../.assets/missing.excalidraw)" notePath="项目/记录.md" lineNumbers={false} exporting />)
     expect(screen.getByText('[绘图缺失：架构]')).toBeInTheDocument()
+  })
+
+  it('renders draw.io references and embeds them when exporting', () => {
+    const edit = vi.fn()
+    const { rerender } = render(<MarkdownView content="![流程](../图表/流程.drawio)" notePath="项目/记录.md" lineNumbers={false} onEditDrawing={edit} />)
+    fireEvent.click(screen.getByRole('button', { name: '图表/流程.drawio' }))
+    expect(edit).toHaveBeenCalledWith('图表/流程.drawio')
+    rerender(<MarkdownView content="![流程](../图表/流程.drawio)" notePath="项目/记录.md" assets={{ '../图表/流程.drawio': 'data:application/vnd.jgraph.mxfile;base64,abc' }} lineNumbers={false} exporting />)
+    expect(screen.getByRole('button', { name: 'data:application/vnd.jgraph.mxfile;base64,abc' })).toBeInTheDocument()
+    rerender(<MarkdownView content="![流程](../图表/missing.drawio)" notePath="项目/记录.md" lineNumbers={false} exporting />)
+    expect(screen.getByText('[绘图缺失：流程]')).toBeInTheDocument()
   })
 
   it('renders mermaid diagrams in the active theme and uses the light theme while exporting', async () => {

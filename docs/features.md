@@ -12,7 +12,7 @@
 | 分类 | 逻辑分组 + 多标签，写入 frontmatter | `metadata.go`、`files.go` | `App.tsx`（分类对话框） |
 | 搜索与筛选 | 全文搜索、分组和标签筛选、多选批量操作 | `server.go` `/api/notes?q=` | `Sidebar.tsx` |
 | 图片资源 | 上传/粘贴/拖放、资源目录迁移、未引用清理 | `server.go` `upload`、`files.go`、`storage.go` | `Editor.tsx`、`StorageSettings.tsx`、`ImagePreview.tsx` |
-| 绘图 | Excalidraw 独立绘图与笔记内嵌绘图 | `store.go` | `Drawing.tsx` |
+| 绘图 | Excalidraw 与离线 Draw.io：独立文件、指定目录新建、笔记内引用预览 | `store.go` | `Drawing.tsx`、`Drawio.tsx` |
 | 笔记引用 | 插入指向其他笔记的链接，预览中可跳转 | `files.go`（移动时改写） | `NotePicker.tsx`、`noteReference.ts` |
 | 任务看板 | 笔记勾选任务 + 独立自定义任务，三列看板 | `tasks.go`、`custom_tasks.go` | `TasksView.tsx` |
 | 计划与提醒 | 单次/每日/每周的定时提醒 | `plans.go`、`tasks.go` | `PlansView.tsx`、`App.tsx` 提醒中心 |
@@ -34,7 +34,7 @@
 
 ## 3. 目录与文件管理
 
-- **目录树**（`GET /api/tree`）：只显示文件夹、`.md`、`.excalidraw`；隐藏点开头的条目、资源目录和符号链接；文件夹排在前面，同类按名称排序。
+- **目录树**（`GET /api/tree`）：只显示文件夹、`.md`、`.excalidraw`、`.drawio`；隐藏点开头的条目、资源目录和符号链接；文件夹排在前面，同类按名称排序。
 - **新建**：笔记、文件夹、绘图都支持用 `/` 一次创建多层目录。新建笔记的默认内容为 `# 文件名`（前端调用时传入空内容）。文件夹名不能以点开头。目标已存在时报错，不会覆盖。
 - **重命名 / 移动**（`/api/notes/move`、`/api/folders/move`、`/api/drawings/move`）：
   - 必须带 revision（文件夹除外）；不能移动到自身或子目录，不能移动资源目录，也不能移动到资源目录里。
@@ -53,7 +53,7 @@
 ### 4.2 源码编辑器（`Editor.tsx`）
 
 - CodeMirror 6 + Markdown 语言包（代码块中的语言可以高亮），支持查找替换、撤销重做、折叠和自动补全。
-- 工具栏：标题、加粗、斜体、删除线、下划线（`<u>`）、引用、无序/有序/任务列表、链接、**笔记引用**、图片、**绘图**、行内代码、代码块、表格、撤销、重做。
+- 工具栏：标题、加粗、斜体、删除线、下划线（`<u>`）、引用、无序/有序/任务列表、链接、**笔记引用**、**引用 Draw.io**、图片、**绘图**、行内代码、代码块、表格、撤销、重做。
 - 快捷键可在设置中自定义（`shortcuts.ts`）：标题 1–6 级、加粗、斜体、删除线、下划线、行内代码、代码块、引用、有序/无序列表。保留键（保存、搜索、查找、撤销、重做、全选、复制、粘贴、剪切）不能占用，也不允许重复绑定；后端 `validateShortcuts` 会再校验一次。
 - 全局快捷键：`Ctrl/Cmd+S` 保存，`Ctrl/Cmd+K` 聚焦侧栏搜索框。
 - 图片可以通过文件选择、拖放、粘贴上传。上传期间在插入位置保留锚点，完成后替换为相对路径；失败时可以重试。
@@ -63,7 +63,7 @@
 
 - `react-markdown` + GFM（表格、任务列表、删除线），可选 `remark-breaks`（严格换行模式）；frontmatter 不显示；`skipHtml` 忽略原始 HTML，只把 `<u>…</u>` 转成下划线。
 - 代码块使用 shiki 高亮（结果有缓存），可选显示行号；`mermaid` 代码块渲染为图表，渲染失败时退回代码块。
-- 图片通过 `/api/assets?path=` 加载；`.excalidraw` 引用显示为静态图，右下角有编辑按钮；点击图片可以放大预览、复制、下载（`ImagePreview.tsx`）。
+- 图片通过 `/api/assets?path=` 加载；`.excalidraw` 与 `.drawio` 引用显示为静态图，右下角有编辑按钮；点击图片可以放大预览、复制、下载（`ImagePreview.tsx`）。
 - 内部链接：title 为 `echo-ref` 或者指向库内 `.md` 的相对链接，点击后在应用内打开对应笔记。
 - 任务勾选框可以直接点击，会通过 `/api/tasks` 回写源文件。
 - 标题带 `data-heading-line`，供大纲导航定位。
@@ -116,17 +116,29 @@
   2. `POST /api/storage/cleanup {token}`：重新扫描，`token` 不一致就返回 409；删除前逐个确认文件大小和修改时间没有变化，并使用 `os.Root` 限定删除范围。
   3. 前端在检查和清理前都会先保存当前笔记；图片上传期间禁止检查和清理。
 
-## 8. 绘图（Excalidraw）
+## 8. 绘图（Excalidraw 与 Draw.io）
 
-- **独立绘图**：目录树中的 `.excalidraw` 文件，可以新建、重命名、移动、删除到回收站或恢复。不允许在资源目录中创建独立绘图。
+两种绘图共用 `/api/drawings`、目录树里的 `type: "drawing"`，以及重命名、移动、删除和回收站。扩展名决定编辑器和内容校验，移动或重命名时必须保持原来的扩展名。不允许在资源目录中创建独立绘图。
+
+### 8.1 Excalidraw
+
+- **独立绘图**：目录树中的 `.excalidraw` 文件。侧栏「新建绘图」或文件夹操作里的「新建绘图」会创建它。
 - **笔记内嵌绘图**：编辑器中点击绘图按钮会调用 `POST /api/drawings {notePath}`，在资源目录中创建 `<随机ID>.excalidraw`，并在光标处插入 `![绘图](相对路径)`。内嵌绘图会随笔记移动、资源目录迁移和未引用清理一起处理。
 - **编辑**：`DrawingModal` 弹框，可以在编辑和查看之间切换；停止操作约 800ms 后自动保存（`PUT /api/drawings`，带 revision），冲突时提示并且不覆盖；可以导出 SVG/PNG/JPG。关闭弹框后 `drawingVersion` 加一，触发预览刷新。
 - **校验**：内容必须是 `type: "excalidraw"` 的 JSON，不能为空，且不超过 20MB。绘图中插入的图片保存在绘图 JSON 内部。
-- 切换仓库、执行文件操作前，会通过 `registerDrawingFlush` 先保存正在编辑的绘图。
+
+### 8.2 Draw.io
+
+- **离线编辑器**：`scripts/fetch-drawio.mjs` 会下载 Draw.io `v32.6.1` 标签里的静态站点（与 `draw.war` 中的网页是同一套文件，不含用不到的 Java 服务）到 `third_party/drawio/`，并且不提交进仓库。`npm run dev` 和 `npm run build` 都会先执行它，因此第一次需要联网。开发时由 Vite 提供 `/drawio/`；生产构建把这套静态文件打进可执行文件，编辑和预览都不访问外网。
+- **新建**：侧栏底部回收站按钮左侧的 Draw 按钮在笔记库根目录新建 `.drawio`。文件夹操作弹框里的「新建 Draw.io」在该目录下新建。默认内容是一份空的 `<mxfile>`。
+- **引用**：编辑器工具栏「引用笔记」旁边的「引用 Draw.io」打开选择器，只列出笔记目录中的 `.drawio`（资源目录不在目录树里）。选中后插入 `![名称](相对路径.drawio)`。预览用自托管的 `viewer-static.min.js` 渲染成图，右下角可以打开编辑器；导出笔记时按 `application/vnd.jgraph.mxfile` 内联。被引用的 `.drawio` 不会被未引用资源清理删掉。
+- **编辑**：`DrawioModal` 用同源 iframe 加载 `/drawio/index.html` 的 embed 协议。收到 `init` 后加载 XML，并打开 autosave；停止操作约 800ms 后保存，冲突处理与 Excalidraw 相同。可以导出 SVG/PNG。
+- **校验**：`.drawio` 内容必须是根元素为 `mxfile` 的 XML，不能为空，且不超过 20MB。
+- 切换仓库、执行文件操作前，会通过 `registerDrawingFlush` 先保存正在编辑的绘图（两种编辑器共用这一入口）。
 
 ## 9. 笔记引用
 
-- 编辑器工具栏的「笔记引用」按钮打开 `NotePicker`（目录树形式，排除当前笔记），选择后插入 `[标题](相对路径 "echo-ref")`。
+- 编辑器工具栏的「笔记引用」按钮打开 `NotePicker`（目录树形式，排除当前笔记），选择后插入 `[标题](相对路径 "echo-ref")`。旁边的「引用 Draw.io」使用同一个选择器，只显示 `.drawio` 文件。
 - 预览中点击引用会在应用内打开目标笔记。
 - 移动或重命名目标笔记时，后端会自动改写这些相对链接。
 
