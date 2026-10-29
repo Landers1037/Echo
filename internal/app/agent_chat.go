@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"net/http"
 	"strings"
@@ -626,8 +627,10 @@ func (a *Agent) handleChat(w http.ResponseWriter, r *http.Request) error {
 	if req.Mode == "note" {
 		body.Tools = json.RawMessage(noteToolsJSON)
 	}
+	log.Printf("agent: 正在请求模型 %s", cfg.Model)
 	resp, err := a.openStream(ctx, cfg, body)
 	if err != nil {
+		log.Printf("agent: 调用模型失败: %s", err.Error())
 		writeAgentFailure(w, http.StatusBadGateway, err, conversation.ID, title)
 		return nil
 	}
@@ -648,6 +651,12 @@ func (a *Agent) handleChat(w http.ResponseWriter, r *http.Request) error {
 	content, calls, streamErr := readUpstream(ctx, resp.Body, func(event agentEvent) error {
 		return writeAgentEvent(w, flusher, event)
 	})
+	if strings.TrimSpace(content) == "" && len(calls) == 0 && streamErr == nil && ctx.Err() == nil {
+		streamErr = fmt.Errorf("模型没有返回内容。请确认接口支持流式输出，且模型会返回文本")
+		log.Printf("agent: 模型 %s 没有返回可显示的内容", cfg.Model)
+	} else if streamErr != nil && ctx.Err() == nil {
+		log.Printf("agent: 模型响应中断: %s", clipText(strings.ReplaceAll(streamErr.Error(), cfg.APIKey, "****"), 300))
+	}
 	var assistantID string
 	if content != "" || len(calls) > 0 || (streamErr == nil && ctx.Err() == nil) {
 		batch := []AgentMessage{{Role: "assistant", Content: content, ToolCalls: calls}}
@@ -724,18 +733,29 @@ type upstreamChunk struct {
 	} `json:"error"`
 	Choices []struct {
 		Delta struct {
-			Content   string `json:"content"`
-			ToolCalls []struct {
-				Index    int    `json:"index"`
-				ID       string `json:"id"`
-				Function struct {
-					Name      string `json:"name"`
-					Arguments string `json:"arguments"`
-				} `json:"function"`
-			} `json:"tool_calls"`
+			Content          json.RawMessage `json:"content"`
+			Reasoning        json.RawMessage `json:"reasoning"`
+			ReasoningContent json.RawMessage `json:"reasoning_content"`
+			ToolCalls        []upstreamTool  `json:"tool_calls"`
 		} `json:"delta"`
-		FinishReason *string `json:"finish_reason"`
+		Message struct {
+			Content          json.RawMessage `json:"content"`
+			Reasoning        json.RawMessage `json:"reasoning"`
+			ReasoningContent json.RawMessage `json:"reasoning_content"`
+			ToolCalls        []upstreamTool  `json:"tool_calls"`
+		} `json:"message"`
+		Text         json.RawMessage `json:"text"`
+		FinishReason *string         `json:"finish_reason"`
 	} `json:"choices"`
+}
+
+type upstreamTool struct {
+	Index    int    `json:"index"`
+	ID       string `json:"id"`
+	Function struct {
+		Name      string `json:"name"`
+		Arguments string `json:"arguments"`
+	} `json:"function"`
 }
 
 type toolBuf struct {
@@ -799,14 +819,9 @@ func readUpstream(ctx context.Context, body io.Reader, emit func(agentEvent) err
 						}
 					}
 				}
-			} else if !strings.HasPrefix(line, ":") && !strings.HasPrefix(line, "event:") && !strings.HasPrefix(line, "id:") && !strings.HasPrefix(line, "retry:") {
-				var probe struct {
-					Error *struct {
-						Message string `json:"message"`
-					} `json:"error"`
-				}
-				if json.Unmarshal([]byte(line), &probe) == nil && probe.Error != nil && probe.Error.Message != "" {
-					return text.String(), toolCallsFrom(tools, order), errors.New(clipText(probe.Error.Message, 300))
+			} else if !strings.HasPrefix(line, ":") && !strings.HasPrefix(line, "event:") && !strings.HasPrefix(line, "id:") && !strings.HasPrefix(line, "retry:") && strings.HasPrefix(line, "{") {
+				if _, err := applyUpstreamPayload(line, &text, tools, &order, emit); err != nil {
+					return text.String(), toolCallsFrom(tools, order), err
 				}
 			}
 		}
@@ -833,13 +848,26 @@ func applyUpstreamPayload(payload string, text *strings.Builder, tools map[int]*
 	}
 	finished := false
 	for _, choice := range chunk.Choices {
-		if choice.Delta.Content != "" {
-			text.WriteString(choice.Delta.Content)
-			if err := emit(agentEvent{Type: "delta", Text: choice.Delta.Content}); err != nil {
+		visible := rawText(choice.Delta.ReasoningContent) + rawText(choice.Delta.Reasoning) + rawText(choice.Message.ReasoningContent) + rawText(choice.Message.Reasoning)
+		answer := rawText(choice.Delta.Content) + rawText(choice.Message.Content) + rawText(choice.Text)
+		piece := visible
+		if answer != "" {
+			if visible != "" {
+				piece += "\n\n"
+			}
+			piece += answer
+		}
+		if piece != "" {
+			text.WriteString(piece)
+			if err := emit(agentEvent{Type: "delta", Text: piece}); err != nil {
 				return false, err
 			}
 		}
-		for _, call := range choice.Delta.ToolCalls {
+		calls := choice.Delta.ToolCalls
+		if len(calls) == 0 {
+			calls = choice.Message.ToolCalls
+		}
+		for _, call := range calls {
 			buf := tools[call.Index]
 			if buf == nil {
 				buf = &toolBuf{index: call.Index}
@@ -877,6 +905,28 @@ func applyUpstreamPayload(payload string, text *strings.Builder, tools map[int]*
 		}
 	}
 	return finished, nil
+}
+
+func rawText(raw json.RawMessage) string {
+	raw = bytes.TrimSpace(raw)
+	if len(raw) == 0 || bytes.Equal(raw, []byte("null")) {
+		return ""
+	}
+	var text string
+	if err := json.Unmarshal(raw, &text); err == nil {
+		return text
+	}
+	var parts []struct {
+		Text string `json:"text"`
+	}
+	if err := json.Unmarshal(raw, &parts); err == nil {
+		var b strings.Builder
+		for _, part := range parts {
+			b.WriteString(part.Text)
+		}
+		return b.String()
+	}
+	return ""
 }
 
 func toolCallsFrom(tools map[int]*toolBuf, order []int) []AgentToolCall {

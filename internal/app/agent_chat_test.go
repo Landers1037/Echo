@@ -192,6 +192,39 @@ func TestAgentChatStreamsToolCalls(t *testing.T) {
 	}
 }
 
+func TestAgentChatReadsPlainJSONAndReasoning(t *testing.T) {
+	s := testStore(t)
+	t.Cleanup(func() { s.closeAgent() })
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.ReadAll(r.Body)
+		fmt.Fprint(w, `{"choices":[{"message":{"reasoning_content":"先想","content":"再答"}}]}`)
+	}))
+	defer upstream.Close()
+	h := NewHandler(attachStore(s), false)
+	enableAgent(t, h, upstream.URL+"/v1")
+	rr := request(t, h, "POST", "/api/agent/chat", map[string]any{"mode": "chat", "message": "你好"})
+	if rr.Code != 200 || !strings.Contains(rr.Body.String(), "先想") || !strings.Contains(rr.Body.String(), "再答") {
+		t.Fatalf("plain json: %d %s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestAgentChatReportsEmptyModelOutput(t *testing.T) {
+	s := testStore(t)
+	t.Cleanup(func() { s.closeAgent() })
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprintf(w, "data: %s\n\n", `{"choices":[{"delta":{"content":""},"finish_reason":"stop"}]}`)
+		fmt.Fprint(w, "data: [DONE]\n\n")
+	}))
+	defer upstream.Close()
+	h := NewHandler(attachStore(s), false)
+	enableAgent(t, h, upstream.URL+"/v1")
+	rr := request(t, h, "POST", "/api/agent/chat", map[string]any{"mode": "chat", "message": "你好"})
+	if rr.Code != 200 || !strings.Contains(rr.Body.String(), "模型没有返回内容") {
+		t.Fatalf("empty: %d %s", rr.Code, rr.Body.String())
+	}
+}
+
 func TestAgentChatSavesPartialWhenCancelled(t *testing.T) {
 	s := testStore(t)
 	t.Cleanup(func() { s.closeAgent() })

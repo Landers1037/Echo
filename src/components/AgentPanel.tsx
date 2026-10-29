@@ -135,10 +135,13 @@ export function AgentPanel({ open, width, note, getNoteContent, editor, onPendin
         if (acc.content || acc.toolCalls.length) setMessages(list => [...list, localAssistant(run, activeRef.current, acc)])
         setLive(null)
       }
-    } else if (acc.content || acc.toolCalls.length || messageIdRef.current) {
+    } else if (acc.content || acc.toolCalls.length) {
       setMessages(list => [...list, localAssistant(run, activeRef.current, acc)])
       setLive(null)
-    } else setLive(null)
+    } else {
+      setLive(null)
+      setError(current => current || '模型没有返回内容')
+    }
     if (run !== runRef.current) return
     if (sessionRef.current) {
       const result = editorRef.current?.finishAiSession() ?? { failures: [] }
