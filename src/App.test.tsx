@@ -1,6 +1,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import App from './App'
+import { displayedNoteTitle } from './noteTitle'
 import { exportNotes } from './export'
 import type { Note, Settings, TreeEntry } from './types'
 import { keyFromEvent } from './shortcuts'
@@ -134,7 +135,7 @@ function createServer(extraNotes: Note[] = [], initialFolders: string[] = [], in
       nextWriteGate = undefined
       if (gate) await gate.promise
       if (write.revision !== note.revision && !write.force) return response({ error: '笔记已被外部修改', current: note }, 409)
-      note = { ...note, content: write.content, revision: `v${++version}` }
+      note = { ...note, content: write.content, title: displayedNoteTitle(write.content, note.path.replace(/\.md$/i, '')), revision: `v${++version}` }
       return response(note)
     }
     if (url.pathname === '/api/repositories' && method === 'GET') return response({ current: currentRepository, items: repositories, switched: false, canceled: false })
@@ -725,6 +726,49 @@ describe('App sidebar navigation', () => {
 })
 
 describe('App saves and metadata integration', () => {
+  it('edits the visible title in place and saves it as the first heading', async () => {
+    const server = createServer()
+    const editor = await openApp(server)
+    expect(screen.queryByRole('textbox', { name: '笔记标题' })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '编辑标题' }))
+    const input = screen.getByRole('textbox', { name: '笔记标题' })
+    expect(input).toHaveValue('测试笔记')
+    fireEvent.change(input, { target: { value: '  新的标题  ' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+    expect(editor).toHaveValue('# 新的标题\n')
+    expect(screen.getByRole('heading', { name: '新的标题' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '新的标题' })).toBeInTheDocument()
+    expect(screen.queryByRole('textbox', { name: '笔记标题' })).not.toBeInTheDocument()
+    await waitFor(() => expect(server.current()).toMatchObject({ content: '# 新的标题\n', title: '新的标题', path: '测试.md' }))
+    expect(server.writes).toHaveLength(1)
+  })
+
+  it('discards a blank or cancelled title edit without writing', async () => {
+    const server = createServer()
+    const editor = await openApp(server)
+    fireEvent.click(screen.getByRole('button', { name: '编辑标题' }))
+    fireEvent.change(screen.getByRole('textbox', { name: '笔记标题' }), { target: { value: '不要保存' } })
+    fireEvent.keyDown(screen.getByRole('textbox', { name: '笔记标题' }), { key: 'Escape' })
+    expect(screen.getByRole('heading', { name: '测试笔记' })).toBeInTheDocument()
+    expect(editor).toHaveValue('# 初始笔记\n')
+
+    fireEvent.click(screen.getByRole('button', { name: '编辑标题' }))
+    fireEvent.change(screen.getByRole('textbox', { name: '笔记标题' }), { target: { value: '   ' } })
+    fireEvent.blur(screen.getByRole('textbox', { name: '笔记标题' }))
+    expect(screen.getByRole('heading', { name: '测试笔记' })).toBeInTheDocument()
+    expect(server.writes).toHaveLength(0)
+  })
+
+  it('saves the title when the inline editor loses focus', async () => {
+    const server = createServer()
+    const editor = await openApp(server)
+    fireEvent.click(screen.getByRole('button', { name: '编辑标题' }))
+    fireEvent.change(screen.getByRole('textbox', { name: '笔记标题' }), { target: { value: '失焦保存' } })
+    fireEvent.blur(screen.getByRole('textbox', { name: '笔记标题' }))
+    expect(editor).toHaveValue('# 失焦保存\n')
+    await waitFor(() => expect(server.current()).toMatchObject({ content: '# 失焦保存\n', title: '失焦保存' }))
+  })
+
   it('loads a note, keeps a local draft immediately and autosaves after the debounce', async () => {
     const server = createServer()
     const editor = await openApp(server)
