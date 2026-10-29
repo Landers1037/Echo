@@ -673,6 +673,12 @@ func (s *Store) updateSettings(settings Settings) error {
 	if settings.EditorFontSize < 12 || settings.EditorFontSize > 32 {
 		return fmt.Errorf("编辑器字体大小需要在 12–32 px 之间")
 	}
+	if settings.NoteWidth == "" {
+		settings.NoteWidth = "default"
+	}
+	if !validNoteWidth(settings.NoteWidth) {
+		return fmt.Errorf("无效笔记宽度")
+	}
 	if settings.Shortcuts == nil {
 		settings.Shortcuts = map[string]string{}
 	}

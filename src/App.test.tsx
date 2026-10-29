@@ -26,7 +26,7 @@ vi.mock('motion/react', async () => {
   return { MotionConfig: ({ children }: { children: React.ReactNode }) => children, AnimatePresence: ({ children }: { children: React.ReactNode }) => children, motion: { div: Div, button: Button } }
 })
 
-const settings: Settings = { theme: 'light', uiStyle: 'sage', accent: '#72967b', animations: false, editorFontSize: 14, editorLineNumbers: true, previewLineNumbers: false, multiTabs: false, sourceSplitPreview: false, strictLineBreaks: false, assetsDir: '.assets', shortcuts: {} }
+const settings: Settings = { theme: 'light', uiStyle: 'sage', accent: '#72967b', animations: false, editorFontSize: 14, editorLineNumbers: true, previewLineNumbers: false, multiTabs: false, sourceSplitPreview: false, strictLineBreaks: false, noteWidth: 'default', assetsDir: '.assets', shortcuts: {} }
 type Write = { path: string; content: string; revision: string; force?: boolean }
 type Batch = { paths: string[]; tags: string[]; group: string; revisions: Record<string, string> }
 type Call = { method: string; path: string; body?: unknown }
@@ -962,6 +962,23 @@ describe('source split preview', () => {
     await waitFor(() => expect(screen.queryByRole('dialog', { name: '设置' })).not.toBeInTheDocument())
     expect(server.savedSettings().strictLineBreaks).toBe(true)
     expect(screen.getByTestId('preview')).toHaveAttribute('data-strict-breaks', 'true')
+  })
+
+  it('saves a wider preview column from the note width tabs', async () => {
+    const server = createServer()
+    await openApp(server)
+    expect(document.documentElement).toHaveAttribute('data-note-width', 'default')
+    fireEvent.click(screen.getByRole('button', { name: '设置' }))
+    fireEvent.click(screen.getByRole('button', { name: '笔记设置' }))
+    const widths = screen.getByRole('tablist', { name: '笔记宽度' })
+    expect(within(widths).getByRole('tab', { name: '默认' })).toHaveAttribute('aria-selected', 'true')
+    expect(within(widths).getByRole('tab', { name: '中' })).toHaveAttribute('aria-selected', 'false')
+    fireEvent.click(within(widths).getByRole('tab', { name: '大' }))
+    expect(within(widths).getByRole('tab', { name: '大' })).toHaveAttribute('aria-selected', 'true')
+    fireEvent.click(screen.getByRole('button', { name: '保存设置' }))
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: '设置' })).not.toBeInTheDocument())
+    expect(server.savedSettings().noteWidth).toBe('large')
+    expect(document.documentElement).toHaveAttribute('data-note-width', 'large')
   })
 })
 

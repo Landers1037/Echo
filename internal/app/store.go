@@ -29,6 +29,7 @@ type Settings struct {
 	MultiTabs          bool              `json:"multiTabs"`
 	SourceSplitPreview bool              `json:"sourceSplitPreview"`
 	StrictLineBreaks   bool              `json:"strictLineBreaks"`
+	NoteWidth          string            `json:"noteWidth"`
 	AssetsDir          string            `json:"assetsDir"`
 	Shortcuts          map[string]string `json:"shortcuts"`
 }
@@ -104,8 +105,16 @@ func validUIStyle(value string) bool {
 		return false
 	}
 }
+func validNoteWidth(value string) bool {
+	switch value {
+	case "default", "medium", "large":
+		return true
+	default:
+		return false
+	}
+}
 func defaults() Settings {
-	return Settings{Theme: "system", UIStyle: "sage", Accent: "#72967b", Animations: true, EditorFontSize: 14, EditorLineNumbers: true, PreviewLineNumbers: false, MultiTabs: false, SourceSplitPreview: false, StrictLineBreaks: false, AssetsDir: ".assets", Shortcuts: map[string]string{}}
+	return Settings{Theme: "system", UIStyle: "sage", Accent: "#72967b", Animations: true, EditorFontSize: 14, EditorLineNumbers: true, PreviewLineNumbers: false, MultiTabs: false, SourceSplitPreview: false, StrictLineBreaks: false, NoteWidth: "default", AssetsDir: ".assets", Shortcuts: map[string]string{}}
 }
 func newID() string { var b [12]byte; _, _ = rand.Read(b[:]); return hex.EncodeToString(b[:]) }
 func revision(content []byte) string {
@@ -158,6 +167,9 @@ func Open(root string) (*Store, error) {
 	}
 	if !validUIStyle(s.state.Settings.UIStyle) {
 		s.state.Settings.UIStyle = defaults().UIStyle
+	}
+	if !validNoteWidth(s.state.Settings.NoteWidth) {
+		s.state.Settings.NoteWidth = defaults().NoteWidth
 	}
 	if _, err = s.safePath(s.state.Settings.AssetsDir); err != nil {
 		return nil, err

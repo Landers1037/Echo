@@ -28,11 +28,13 @@ import { exportNotes } from './export'
 import { DrawingModal } from './components/Drawing'
 
 const uiStyleIds: Settings['uiStyle'][] = ['sage', 'paper', 'mono', 'soft', 'glass', 'ink']
-const defaults: Settings = { theme: 'system', uiStyle: 'sage', accent: '#72967b', animations: true, editorFontSize: 14, editorLineNumbers: true, previewLineNumbers: false, multiTabs: false, sourceSplitPreview: false, strictLineBreaks: false, assetsDir: '.assets', shortcuts: {} }
+const noteWidthIds: Settings['noteWidth'][] = ['default', 'medium', 'large']
+const defaults: Settings = { theme: 'system', uiStyle: 'sage', accent: '#72967b', animations: true, editorFontSize: 14, editorLineNumbers: true, previewLineNumbers: false, multiTabs: false, sourceSplitPreview: false, strictLineBreaks: false, noteWidth: 'default', assetsDir: '.assets', shortcuts: {} }
 function completeSettings(value?: Partial<Settings> | null): Settings {
   const shortcuts = value?.shortcuts && typeof value.shortcuts === 'object' ? value.shortcuts : {}
   const uiStyle = uiStyleIds.includes(value?.uiStyle as Settings['uiStyle']) ? value!.uiStyle! : defaults.uiStyle
-  return { ...defaults, ...value, shortcuts, uiStyle }
+  const noteWidth = noteWidthIds.includes(value?.noteWidth as Settings['noteWidth']) ? value!.noteWidth! : defaults.noteWidth
+  return { ...defaults, ...value, shortcuts, uiStyle, noteWidth }
 }
 const MAX_TABS = 10
 const tabsKey = 'echo:tabs'
@@ -277,7 +279,7 @@ export default function App() {
     return () => media.removeEventListener('change', change)
   }, [])
   useEffect(() => { document.documentElement.dataset.theme = dark ? 'dark' : 'light'; document.documentElement.dataset.style = appearance.uiStyle || 'sage'; document.documentElement.style.setProperty('--accent', appearance.accent) }, [dark, appearance.accent, appearance.uiStyle])
-  useEffect(() => { document.documentElement.dataset.animations = String(settings.animations); localStorage.setItem('echo:settings', JSON.stringify(settings)) }, [settings])
+  useEffect(() => { document.documentElement.dataset.animations = String(settings.animations); document.documentElement.dataset.noteWidth = settings.noteWidth; localStorage.setItem('echo:settings', JSON.stringify(settings)) }, [settings])
   useEffect(() => { localStorage.setItem(tabsKey, JSON.stringify(tabs)) }, [tabs])
   useEffect(() => { if (!dirty || conflict || conflictRef.current || agentPending) return; const id = setTimeout(() => { void saveActive().catch(() => {}) }, 800); return () => clearTimeout(id) }, [content, dirty, conflict, agentPending, saveActive])
   useEffect(() => {

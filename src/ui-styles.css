@@ -308,3 +308,5 @@
   :root[data-style=glass] :is(.sidebar, .main-panel) { border-radius: 0; border: 0 }
   :root[data-style=glass] .sidebar { background: color-mix(in srgb, var(--bg) 94%, transparent) }
 }
+:root[data-note-width=medium] .markdown-body { max-width: 1200px }
+:root[data-note-width=large] .markdown-body { max-width: 1600px }

@@ -212,6 +212,33 @@ func TestStrictLineBreaksPersistence(t *testing.T) {
 	}
 }
 
+func TestNoteWidthPersistence(t *testing.T) {
+	root := t.TempDir()
+	s, err := Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.state.Settings.NoteWidth != "default" {
+		t.Fatalf("noteWidth should default to default, got %q", s.state.Settings.NoteWidth)
+	}
+	h := NewHandler(attachStore(s), false)
+	rr := request(t, h, "PUT", "/api/settings", map[string]any{"noteWidth": "wide"})
+	if rr.Code != 400 || s.state.Settings.NoteWidth != "default" {
+		t.Fatalf("reject invalid noteWidth: %d %s", rr.Code, rr.Body.String())
+	}
+	rr = request(t, h, "PUT", "/api/settings", map[string]any{"noteWidth": "medium"})
+	if rr.Code != 200 || s.state.Settings.NoteWidth != "medium" {
+		t.Fatalf("save noteWidth: %d %s", rr.Code, rr.Body.String())
+	}
+	reopened, err := Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reopened.state.Settings.NoteWidth != "medium" || reopened.state.Settings.EditorFontSize != 14 {
+		t.Fatalf("noteWidth not persisted: %+v", reopened.state.Settings)
+	}
+}
+
 func TestShortcutPersistenceAndReplacement(t *testing.T) {
 	s := testStore(t)
 	if s.state.Settings.Shortcuts == nil {

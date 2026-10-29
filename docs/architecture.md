@@ -219,6 +219,7 @@ flowchart LR
     "multiTabs": false,
     "sourceSplitPreview": false,
     "strictLineBreaks": false,
+    "noteWidth": "default",       // default | medium | large；预览正文最大宽度。default 跟随界面风格，medium 1200px，large 1600px
     "assetsDir": ".assets",
     "shortcuts": { "bold": "Mod-b" }   // 动作 ID → CodeMirror 按键
   },
