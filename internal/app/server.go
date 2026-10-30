@@ -129,6 +129,12 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
+	if strings.HasPrefix(r.URL.Path, "/api/annotations") {
+		if err := h.annotationRoutes(w, r); err != nil {
+			fail(w, err)
+		}
+		return
+	}
 	s := h.ws.current()
 	s.mu.Lock()
 	defer s.mu.Unlock()

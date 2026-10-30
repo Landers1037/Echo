@@ -8,7 +8,7 @@
 | --- | --- | --- | --- |
 | 笔记库与仓库 | 本地目录即笔记库；可在最近 5 个仓库之间切换 | `repositories.go`、`store.go` | `RepoSwitcher.tsx` |
 | 目录与文件管理 | 目录树、新建/重命名/移动/删除、回收站 | `store.go`、`files.go` | `Sidebar.tsx`、`App.tsx` |
-| 编辑与预览 | CodeMirror 源码编辑、Markdown 预览、自动保存、冲突处理 | `store.go` | `Editor.tsx`、`MarkdownView.tsx`、`App.tsx` |
+| 编辑与预览 | CodeMirror 源码编辑、Markdown 预览、预览标注、自动保存、冲突处理 | `store.go`、`annotations.go` | `Editor.tsx`、`MarkdownView.tsx`、`App.tsx` |
 | 分类 | 逻辑分组 + 多标签，写入 frontmatter | `metadata.go`、`files.go` | `App.tsx`（分类对话框） |
 | 搜索与筛选 | 全文搜索、分组和标签筛选、多选批量操作 | `server.go` `/api/notes?q=` | `Sidebar.tsx` |
 | 图片资源 | 上传/粘贴/拖放、资源目录迁移、未引用清理 | `server.go` `upload`、`files.go`、`storage.go` | `Editor.tsx`、`StorageSettings.tsx`、`ImagePreview.tsx` |
@@ -66,12 +66,14 @@
 - 图片通过 `/api/assets?path=` 加载；`.excalidraw` 与 `.drawio` 引用显示为静态图，右下角有编辑按钮；点击图片可以放大预览、复制、下载（`ImagePreview.tsx`）。
 - 内部链接：title 为 `echo-ref` 或者指向库内 `.md` 的相对链接，点击后在应用内打开对应笔记。
 - 任务勾选框可以直接点击，会通过 `/api/tasks` 回写源文件。
-- 标题带 `data-heading-line`，供大纲导航定位。
+- 标题带 `data-heading-line`，供大纲导航定位。段落、引用、列表项、表格、代码块和标题同时带 `data-source-line`（导出时不加），供预览标注锚定。
+- **预览标注**（`src/components/annotations/`，数据在 `.echo/annotations.db`）：只在预览模式的「导航」按钮左侧显示「标注」。打开后出现工具栏，可自由画线，或选中同一段落中的文字后高亮并写批注。标注记住源码行号和段落文本指纹，内容改动后尽量跟着段落走；对不上的标为失效，可一键清除。笔记操作弹框里的「显示标注 / 隐藏标注」按笔记分别保存。全屏预览只读展示已显示的标注，导出不包含标注。
 
 ### 4.4 视图辅助
 
 - 源码 / 预览 Tab 切换；可选「源码模式分栏预览」（左边编辑，右边实时预览）。
 - 大纲导航（`NoteOutline`）：解析标题，点击后跳转到源码行或预览中的位置。
+- 标注工具栏停在预览区右上角，离开预览模式时自动收起。
 - 全屏预览：使用浏览器 Fullscreen API。
 - 多标签页（设置项 `multiTabs`）：最多 10 个，超出时关闭最早打开的；关闭当前标签页时切换到相邻标签页。
 - 状态栏：最后修改时间、字符数（不含空白）、行数。
@@ -271,6 +273,11 @@
 | GET / POST / PUT / DELETE | `/agent/conversations` | 列表或 `?id=` 详情 / 新建 `{mode, notePath}` / 重命名 `{id, title}` / 删除 `?id=` |
 | POST | `/agent/chat` | SSE 流式对话，事件类型：`meta`、`delta`、`tool_start`、`tool_delta`、`tool_end`、`done`、`error` |
 | PATCH | `/agent/messages/outcome` | `{id, outcome: accepted\|rejected, detail}` |
+| GET | `/annotations?path=` | `{visible, items}`。`items` 为当前笔记的画线和高亮 |
+| POST | `/annotations` | 新建 `{notePath, kind: stroke\|highlight, anchorLine, anchorText, color, data, comment?}`，返回 201 |
+| PUT | `/annotations` | 修改 `{id, comment?, color?, data?}` |
+| DELETE | `/annotations?id=` | 删除一条标注 |
+| PUT | `/annotations/visibility` | `{path, visible}`，按笔记记住显示或隐藏 |
 
 ## 16. 已知差异与待办
 

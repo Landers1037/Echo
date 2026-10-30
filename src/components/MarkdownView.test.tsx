@@ -30,6 +30,7 @@ describe('Markdown rendering', () => {
     expect(container.querySelector('.markdown-body')).toHaveStyle({ fontSize: '20px' })
     rerender(<MarkdownView content={content} notePath="笔记.md" lineNumbers={false} fontSize={20} exporting />)
     expect(container.querySelector('[data-heading-line]')).toBeNull()
+    expect(container.querySelector('[data-source-line]')).toBeNull()
     expect(container.querySelector('h1')).not.toHaveAttribute('tabindex')
     expect(container.querySelector<HTMLElement>('.markdown-body')!.style.fontSize).toBe('')
   })
@@ -347,5 +348,19 @@ describe('Markdown rendering', () => {
     fireEvent.click(screen.getByRole('link'))
     expect(navigate).toHaveBeenCalledWith('文档/介绍.md')
     expect(resolveNotePath('项目/记录.md', '../.assets/图片%20一.png')).toBe('.assets/图片 一.png')
+  })
+
+  it('anchors preview blocks to their source line and can host an annotation layer', () => {
+    const content = '段落一\n\n> 引用\n\n- 列表项\n\n| 名称 |\n| --- |\n| 值 |\n\n```ts\nconst a = 1\n```\n'
+    const { container, rerender } = render(<MarkdownView content={content} notePath="笔记.md" lineNumbers={false} annotations={<i>标记</i>} />)
+    expect(container.querySelector('p')?.getAttribute('data-source-line')).toBe('1')
+    expect(container.querySelector('blockquote')?.getAttribute('data-source-line')).toBe('3')
+    expect(container.querySelector('li')?.getAttribute('data-source-line')).toBe('5')
+    expect(container.querySelector('.markdown-table-wrap')?.getAttribute('data-source-line')).toBe('7')
+    expect(container.querySelector('.code-block')?.getAttribute('data-source-line')).toBe('11')
+    expect(screen.getByText('标记')).toBeInTheDocument()
+    rerender(<MarkdownView content={content} notePath="笔记.md" lineNumbers={false} exporting annotations={<i>标记</i>} />)
+    expect(container.querySelector('[data-source-line]')).toBeNull()
+    expect(screen.queryByText('标记')).not.toBeInTheDocument()
   })
 })

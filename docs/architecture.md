@@ -16,7 +16,7 @@ Echo 是**个人本机使用**的 Markdown 笔记 WebApp：一个 Go 进程同�
 
 | 层 | 技术 |
 | --- | --- |
-| 后端 | Go 1.26（`go.mod`），标准库 `net/http`；`gopkg.in/yaml.v3`（frontmatter）、`github.com/yuin/goldmark`（Markdown AST，用于识别代码块和图片引用）、`modernc.org/sqlite`（纯 Go SQLite，仅用于 Agent 聊天记录） |
+| 后端 | Go 1.26（`go.mod`），标准库 `net/http`；`gopkg.in/yaml.v3`（frontmatter）、`github.com/yuin/goldmark`（Markdown AST，用于识别代码块和图片引用）、`modernc.org/sqlite`（纯 Go SQLite，用于 Agent 聊天记录和预览标注） |
 | 前端 | React 19 + TypeScript 5 + Vite 6；CodeMirror 6（`@uiw/react-codemirror`）编辑器；`react-markdown` + `remark-gfm` / `remark-breaks` / `remark-frontmatter` 预览；`shiki` 代码高亮；`mermaid` 图表；`@excalidraw/excalidraw` 绘图；Draw.io `v32.6.1` 静态站点（不作为 npm 依赖，见 `scripts/fetch-drawio.mjs`）；`motion` 动画；`lucide-react` 图标；`fflate` 生成 ZIP |
 | 测试 | Go `testing`；Vitest + jsdom + Testing Library；`scripts/smoke.mjs` 针对运行中服务的 API 冒烟测试 |
 | 构建脚本 | `scripts/dev.mjs`（开发）、`scripts/build.mjs`（发布）、`scripts/fetch-drawio.mjs`（拉取离线 Draw.io） |
@@ -40,6 +40,7 @@ Echo/
 │   │   ├── exports.go          # 导出快照、Markdown 资源包 ZIP
 │   │   ├── agent_config.go     # Agent 配置（.echo/agent.json）
 │   │   ├── agent_db.go         # Agent 对话与消息（.echo/agent.db，SQLite）
+│   │   ├── annotations.go      # 预览标注（.echo/annotations.db，SQLite）
 │   │   ├── agent_chat.go       # Agent HTTP 路由、上下文构建、调用 OpenAI 兼容接口、流式转发
 │   │   ├── desktop*.go         # 打开系统文件管理器、选择文件夹（按操作系统区分实现）
 │   │   └── *_test.go
@@ -204,7 +205,8 @@ flowchart LR
     ├── trash/<id>              # 被删除的文件或目录（按随机 ID 存放）
     ├── asset-migration.json    # 仅在资源目录迁移期间存在
     ├── agent.json              # Agent 配置（含 API Key）
-    └── agent.db (+ -wal/-shm)  # Agent 对话记录
+    ├── agent.db (+ -wal/-shm)  # Agent 对话记录
+    └── annotations.db (+ -wal/-shm) # 预览标注与每篇笔记的显示开关
 ```
 
 进程外还有一个文件：`os.UserConfigDir()/Echo/repositories.json`（Windows 下为 `%AppData%\Echo\repositories.json`），保存最近打开的仓库。
@@ -293,6 +295,17 @@ messages(id PK, conversation_id FK→conversations ON DELETE CASCADE, seq, role,
 
 切换仓库时会清除草稿、标签页和最后打开的笔记（`clearRepositorySession`）。
 
+### 6.6 标注数据库（`annotations.db`）
+
+预览标注单独放在 `.echo/annotations.db`，按需打开，切换仓库或退出时关闭。`PRAGMA user_version` 当前为 1；文件版本比程序新时拒绝打开。
+
+```sql
+annotations(id PK, note_path, kind, anchor_line, anchor_text, color, data, comment, created_at, updated_at)
+annotation_prefs(note_path PK, visible)
+```
+
+`kind` 为 `stroke`（自由画线）或 `highlight`（选中文字高亮）。`data` 是 JSON：画线保存相对锚点段落的点列和相对内容宽度的粗细，高亮保存段落文本中的起止偏移和原文。`anchor_line` 是 Markdown 源码行号，`anchor_text` 是该段落文本指纹。移动笔记或文件夹时按路径前缀改写 `note_path`。移入回收站时保留标注，恢复后仍能对上原路径。每篇笔记的显示开关存在 `annotation_prefs`，没有记录时视为隐藏。
+
 ## 7. 前端架构
 
 - **状态集中在 `App.tsx`**：笔记列表、目录树、分类、任务、计划、提醒、当前笔记、草稿、对话框等都是 `App` 的 state，没有使用全局状态库。异步回调中需要最新值的变量（`noteRef`、`contentRef`、`dirtyRef` 等）用 ref 镜像。
@@ -305,7 +318,8 @@ messages(id PK, conversation_id FK→conversations ON DELETE CASCADE, seq, role,
 | --- | --- |
 | `Sidebar` | 目录树、分组/标签筛选、搜索、多选、入口按钮；底部 Draw 按钮新建 `.drawio` |
 | `Editor` | CodeMirror 编辑器、工具栏、快捷键、图片上传/粘贴/拖放、插入 Excalidraw、引用笔记、引用 Draw.io、AI 修改会话（只读锁定 + 高亮） |
-| `MarkdownView` | 预览渲染：GFM、shiki、Mermaid、Excalidraw / Draw.io 静态图、内部链接跳转、任务勾选、下划线 |
+| `MarkdownView` | 预览渲染：GFM、shiki、Mermaid、Excalidraw / Draw.io 静态图、内部链接跳转、任务勾选、下划线；块级元素带 `data-source-line` |
+| `AnnotationLayer` / `AnnotationToolbar` | 预览标注：自由画线、选中文字高亮和批注；锚定到段落，读写 `/api/annotations` |
 | `AgentPanel` | Agent 对话、历史记录、流式显示、修改确认 |
 | `TasksView` / `PlansView` | 任务看板 / 计划提醒 |
 | `SettingsPanel` (+ `AgentSettings`、`StorageSettings`) | 设置的各个分页 |

@@ -71,14 +71,17 @@ type diskState struct {
 	CustomTasks []CustomTask   `json:"customTasks,omitempty"`
 }
 type Store struct {
-	mu          sync.Mutex
-	root        string
-	state       diskState
-	broadcast   func(any)
-	fingerprint string
-	agentMu     sync.Mutex
-	agent       *Agent
-	agentClosed bool
+	mu                sync.Mutex
+	root              string
+	state             diskState
+	broadcast         func(any)
+	fingerprint       string
+	agentMu           sync.Mutex
+	agent             *Agent
+	agentClosed       bool
+	annotationsMu     sync.Mutex
+	annotations       *Annotations
+	annotationsClosed bool
 }
 type Drawing struct {
 	Path     string `json:"path"`
@@ -136,7 +139,7 @@ func Open(root string) (*Store, error) {
 		return nil, err
 	}
 	s := &Store{root: absolute, state: diskState{Settings: defaults(), Groups: []string{}, Tags: []string{}, Trash: []TrashEntry{}, Reminders: []Reminder{}, History: []HistoryEntry{}}}
-	for _, name := range []string{".echo", filepath.Join(".echo", "trash"), filepath.Join(".echo", "state.json"), filepath.Join(".echo", "asset-migration.json"), filepath.Join(".echo", "agent.json"), filepath.Join(".echo", "agent.db")} {
+	for _, name := range []string{".echo", filepath.Join(".echo", "trash"), filepath.Join(".echo", "state.json"), filepath.Join(".echo", "asset-migration.json"), filepath.Join(".echo", "agent.json"), filepath.Join(".echo", "agent.db"), filepath.Join(".echo", "annotations.db")} {
 		if info, statErr := os.Lstat(filepath.Join(absolute, name)); statErr == nil && info.Mode()&os.ModeSymlink != 0 {
 			return nil, fmt.Errorf(".echo 配置目录不能包含符号链接")
 		}

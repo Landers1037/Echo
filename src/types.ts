@@ -27,6 +27,21 @@ export type AgentConfigInput = { enabled: boolean; baseURL: string; apiKey: stri
 export type Conversation = { id: string; title: string; mode: AgentMode; notePath: string; createdAt: string; updatedAt: string }
 export type AgentToolCall = { id: string; name: string; arguments: string }
 export type AgentMessage = { id: string; conversationId: string; role: 'user' | 'assistant' | 'tool'; content: string; toolCalls?: AgentToolCall[]; toolCallId?: string; outcome?: '' | 'accepted' | 'rejected'; createdAt: string }
+export type AnnotationStroke = { points: [number, number][]; width: number }
+export type AnnotationHighlight = { start: number; end: number; quote: string }
+export type Annotation = {
+  id: string
+  notePath: string
+  kind: 'stroke' | 'highlight'
+  anchorLine: number
+  anchorText: string
+  color: string
+  data: AnnotationStroke | AnnotationHighlight
+  comment: string
+  createdAt: string
+  updatedAt: string
+}
+export type AnnotationList = { visible: boolean; items: Annotation[] }
 export type AgentEvent =
   | { type: 'meta'; conversationId: string; title: string; userMessageId: string }
   | { type: 'delta'; text: string }

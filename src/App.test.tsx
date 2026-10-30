@@ -96,6 +96,11 @@ function createServer(extraNotes: Note[] = [], initialFolders: string[] = [], in
     calls.push({ method, path: url.pathname, body })
     if (url.pathname === '/api/storage/open' && method === 'POST') return response({ ok: true })
     if (url.pathname === '/api/agent/config') return response({ enabled: false, baseURL: 'https://api.openai.com/v1', hasKey: false, apiKeyHint: '', model: 'gpt-4o-mini', contextTokens: 32000, maxOutputTokens: 4096, temperature: 0.7, systemPrompt: '', timeoutSeconds: 90 })
+    if (url.pathname === '/api/annotations' && method === 'GET') return response({ visible: url.searchParams.get('visible') === '1', items: [] })
+    if (url.pathname === '/api/annotations/visibility' && method === 'PUT') return response({ visible: Boolean((body as { visible?: boolean } | undefined)?.visible) })
+    if (url.pathname === '/api/annotations' && method === 'POST') return response({ id: 'ann-1', ...(body as object), createdAt: '2026-10-30T00:00:00Z', updatedAt: '2026-10-30T00:00:00Z' }, 201)
+    if (url.pathname === '/api/annotations' && method === 'PUT') return response(body)
+    if (url.pathname === '/api/annotations' && method === 'DELETE') return response({ ok: true })
     if (url.pathname === '/api/settings') {
       if (method === 'PUT') {
         if (settingsError) { settingsError = false; return response({ error: '设置写入失败' }, 500) }
@@ -404,6 +409,34 @@ describe('App note navigation', () => {
     fireEvent.click(within(preview).getByRole('button', { name: '退出全屏' }))
     expect(screen.queryByRole('region', { name: '全屏预览' })).not.toBeInTheDocument()
     expect(fullscreen).toHaveFocus()
+  })
+
+  it('opens annotation tools to the left of navigation only while previewing', async () => {
+    const server = createServer()
+    await openApp(server)
+    expect(screen.queryByRole('button', { name: '标注' })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('tab', { name: '预览' }))
+    const annotate = screen.getByRole('button', { name: '标注' })
+    expect(annotate.nextElementSibling).toBe(screen.getByRole('button', { name: '导航' }))
+    expect(screen.queryByRole('toolbar', { name: '标注工具' })).not.toBeInTheDocument()
+    fireEvent.click(annotate)
+    expect(await screen.findByRole('toolbar', { name: '标注工具' })).toBeInTheDocument()
+    await waitFor(() => expect(server.calls.some(call => call.path === '/api/annotations/visibility' && call.method === 'PUT' && (call.body as { visible?: boolean }).visible === true)).toBe(true))
+    fireEvent.click(screen.getByRole('tab', { name: /源码/ }))
+    expect(screen.queryByRole('button', { name: '标注' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('toolbar', { name: '标注工具' })).not.toBeInTheDocument()
+  })
+
+  it('shows and hides annotations from the note menu', async () => {
+    const server = createServer()
+    await openApp(server)
+    fireEvent.click(screen.getByRole('button', { name: '笔记操作' }))
+    const menu = screen.getByRole('dialog', { name: '笔记操作' })
+    fireEvent.click(await within(menu).findByRole('button', { name: '显示标注' }))
+    expect(await within(menu).findByRole('button', { name: '隐藏标注' })).toBeInTheDocument()
+    expect(server.calls.some(call => call.path === '/api/annotations/visibility' && (call.body as { visible?: boolean }).visible === true)).toBe(true)
+    fireEvent.click(within(menu).getByRole('button', { name: '隐藏标注' }))
+    expect(await within(menu).findByRole('button', { name: '显示标注' })).toBeInTheDocument()
   })
 
   it('shows an empty state and switches to the headings of the newly opened note', async () => {

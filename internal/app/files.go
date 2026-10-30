@@ -348,9 +348,22 @@ func (s *Store) move(from, to, rev string, folder bool) (Note, error) {
 	for i := range s.state.History {
 		s.state.History[i].NotePath = remapPrefix(s.state.History[i].NotePath, from, to)
 	}
+	undoAnnotations, err := s.relocateAnnotations(from, to)
+	if err != nil {
+		s.state.Reminders = oldReminders
+		s.state.History = oldHistory
+		s.rollbackNotes(originals)
+		if rollbackErr := rollbackMove(); rollbackErr != nil {
+			return Note{}, fmt.Errorf("%v；%w", err, rollbackErr)
+		}
+		return Note{}, err
+	}
 	if err = s.persist(); err != nil {
 		s.state.Reminders = oldReminders
 		s.state.History = oldHistory
+		if undoErr := undoAnnotations(); undoErr != nil {
+			return Note{}, fmt.Errorf("%v；恢复标注路径失败: %w", err, undoErr)
+		}
 		s.rollbackNotes(originals)
 		if rollbackErr := rollbackMove(); rollbackErr != nil {
 			return Note{}, fmt.Errorf("%v；%w", err, rollbackErr)

@@ -27,6 +27,7 @@ export type MarkdownViewProps = {
   exporting?: boolean
   dark?: boolean
   strictLineBreaks?: boolean
+  annotations?: ReactNode
 }
 
 const TaskLineContext = createContext(-1)
@@ -53,7 +54,7 @@ function highlightedCode(code: string, language: string): Promise<string> {
   return codeCache.get(key)!
 }
 
-function CodeBlock({ code, language, lineNumbers, exporting }: { code: string; language: string; lineNumbers: boolean; exporting: boolean }) {
+function CodeBlock({ code, language, lineNumbers, exporting, sourceLine }: { code: string; language: string; lineNumbers: boolean; exporting: boolean; sourceLine?: number }) {
   const [html, setHtml] = useState('')
   const [copied, setCopied] = useState(false)
   useEffect(() => {
@@ -62,7 +63,7 @@ function CodeBlock({ code, language, lineNumbers, exporting }: { code: string; l
     void highlightedCode(code, language).then(result => { if (alive) setHtml(result) }).catch(() => { /* Plain code remains available if highlighting fails. */ })
     return () => { alive = false }
   }, [code, language])
-  return <div className={`code-block${lineNumbers ? ' show-line-numbers' : ''}`} data-rendering={!html ? 'true' : undefined}>
+  return <div className={`code-block${lineNumbers ? ' show-line-numbers' : ''}`} data-rendering={!html ? 'true' : undefined} data-source-line={sourceLine}>
     <div className="code-header"><span>{language || 'text'}</span>{!exporting && <button className="code-copy" type="button" onClick={() => { void navigator.clipboard.writeText(code).then(() => { setCopied(true); window.setTimeout(() => setCopied(false), 1800) }) }} aria-label="复制代码">{copied ? <Check size={13} /> : <Copy size={13} />}{copied ? '已复制' : '复制'}</button>}</div>
     {html ? <div className="code-highlight" dangerouslySetInnerHTML={{ __html: html }} /> : <pre><code>{code}</code></pre>}
   </div>
@@ -118,8 +119,18 @@ export function remarkUnderline() {
 }
 
 function sourceHeading(tag: 'h1' | 'h2' | 'h3' | 'h4' | 'h5') {
-  return ({ node, children, ...props }: ComponentPropsWithoutRef<'h1'> & ExtraProps) => createElement(tag, { ...props, 'data-heading-line': node?.position?.start.line, tabIndex: -1 }, children)
+  return ({ node, children, ...props }: ComponentPropsWithoutRef<'h1'> & ExtraProps) => createElement(tag, { ...props, 'data-heading-line': node?.position?.start.line, 'data-source-line': node?.position?.start.line, tabIndex: -1 }, children)
 }
+function sourceParagraph({ node, children, ...props }: ComponentPropsWithoutRef<'p'> & ExtraProps) {
+  return <p {...props} data-source-line={node?.position?.start.line}>{children}</p>
+}
+function sourceQuote({ node, children, ...props }: ComponentPropsWithoutRef<'blockquote'> & ExtraProps) {
+  return <blockquote {...props} data-source-line={node?.position?.start.line}>{children}</blockquote>
+}
+function sourceH6({ node, children, ...props }: ComponentPropsWithoutRef<'h6'> & ExtraProps) {
+  return <h6 {...props} data-source-line={node?.position?.start.line}>{children}</h6>
+}
+const previewBlocks = { p: sourceParagraph, blockquote: sourceQuote, h6: sourceH6 }
 const previewHeadings = { h1: sourceHeading('h1'), h2: sourceHeading('h2'), h3: sourceHeading('h3'), h4: sourceHeading('h4'), h5: sourceHeading('h5') }
 
 export function drawingKind(src: string): '' | 'drawio' | 'excalidraw' {
@@ -130,19 +141,24 @@ export function drawingKind(src: string): '' | 'drawio' | 'excalidraw' {
   return ''
 }
 
-export function MarkdownView({ content, notePath, assets, lineNumbers, fontSize, noteTitles, onNavigate, onToggleTask, onEditDrawing, drawingVersion = 0, exporting = false, dark = false, strictLineBreaks = false }: MarkdownViewProps) {
+export function MarkdownView({ content, notePath, assets, lineNumbers, fontSize, noteTitles, onNavigate, onToggleTask, onEditDrawing, drawingVersion = 0, exporting = false, dark = false, strictLineBreaks = false, annotations }: MarkdownViewProps) {
   const [imagePreview, setImagePreview] = useState<{ src: string; alt: string } | null>(null)
   useEffect(() => { setImagePreview(null) }, [notePath, exporting])
   const remarkPlugins = strictLineBreaks ? [remarkGfm, remarkBreaks, remarkFrontmatter, remarkUnderline] : [remarkGfm, remarkFrontmatter, remarkUnderline]
   return <div className="markdown-body" style={!exporting && fontSize !== undefined ? { fontSize } : undefined}><ReactMarkdown remarkPlugins={remarkPlugins} skipHtml components={{
     ...(!exporting ? previewHeadings : {}),
+    ...(!exporting ? previewBlocks : {}),
     pre({ children }) { return <>{children}</> },
     code({ className, children, node }) {
       const code = String(children).replace(/\n$/, '')
       const language = /language-([^\s]+)/.exec(className || '')?.[1] || 'text'
       const block = Boolean(className) || (node?.position?.start.line !== node?.position?.end.line) || String(children).endsWith('\n')
-      if (language === 'mermaid' && block) return <MermaidBlock code={code} dark={!exporting && dark} preview={!exporting} fallback={<CodeBlock code={code} language={language} lineNumbers={lineNumbers} exporting={exporting} />} />
-      return block ? <CodeBlock code={code} language={language} lineNumbers={lineNumbers} exporting={exporting} /> : <code className={className}>{children}</code>
+      const sourceLine = exporting ? undefined : node?.position?.start.line
+      if (language === 'mermaid' && block) {
+        const diagram = <MermaidBlock code={code} dark={!exporting && dark} preview={!exporting} fallback={<CodeBlock code={code} language={language} lineNumbers={lineNumbers} exporting={exporting} sourceLine={sourceLine} />} />
+        return exporting ? diagram : <div data-source-line={sourceLine}>{diagram}</div>
+      }
+      return block ? <CodeBlock code={code} language={language} lineNumbers={lineNumbers} exporting={exporting} sourceLine={sourceLine} /> : <code className={className}>{children}</code>
     },
     img({ src, alt, title }) {
       if (!src) return <span className="missing-image">图片地址为空</span>
@@ -180,11 +196,11 @@ export function MarkdownView({ content, notePath, assets, lineNumbers, fontSize,
     },
     li({ children, className, node }) {
       const line = node?.position?.start.line || -1
-      return <TaskLineContext.Provider value={line}><li className={className}>{children as ReactNode}</li></TaskLineContext.Provider>
+      return <TaskLineContext.Provider value={line}><li className={className} data-source-line={exporting || line < 1 ? undefined : line}>{children as ReactNode}</li></TaskLineContext.Provider>
     },
     input({ type, checked }) { return type === 'checkbox' ? <TaskCheckbox checked={checked} onToggle={onToggleTask} /> : null },
-    table({ children }) { return <div className="markdown-table-wrap"><table>{children}</table></div> },
-  }}>{content}</ReactMarkdown>{imagePreview && <ImagePreview src={imagePreview.src} alt={imagePreview.alt} onClose={() => setImagePreview(null)} />}</div>
+    table({ children, node }) { return <div className="markdown-table-wrap" data-source-line={exporting ? undefined : node?.position?.start.line}><table>{children}</table></div> },
+  }}>{content}</ReactMarkdown>{imagePreview && <ImagePreview src={imagePreview.src} alt={imagePreview.alt} onClose={() => setImagePreview(null)} />}{!exporting && annotations}</div>
 }
 
 function decodeSafe(value: string) { try { return decodeURIComponent(value) } catch { return value } }
