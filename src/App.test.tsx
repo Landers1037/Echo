@@ -76,6 +76,7 @@ function createServer(extraNotes: Note[] = [], initialFolders: string[] = [], in
   let savedSettings = { ...settings, ...initialSettings }
   let settingsError = false
   let cleanupError = false
+  let exportFailure = ''
   let unusedImages = [{ path: '.assets/unused.png', size: 2048 }]
   let version = 1
   let nextWriteGate: ReturnType<typeof deferred> | undefined
@@ -115,6 +116,13 @@ function createServer(extraNotes: Note[] = [], initialFolders: string[] = [], in
       const removedCount = unusedImages.length
       unusedImages = []
       return response({ removedCount, removedBytes: removedCount * 2048, failed: [] })
+    }
+    if (url.pathname === '/api/storage/export') {
+      if (exportFailure) { const message = exportFailure; exportFailure = ''; return response({ error: message }, 400) }
+      const format = url.searchParams.get('format')
+      if (format !== 'zip' && format !== 'tar') return response({ error: '请选择 ZIP 或 TAR' }, 400)
+      const header = format === 'tar' ? 'attachment; filename="Echo Notes.tar"' : `attachment; filename*=UTF-8''${encodeURIComponent('笔记库.zip')}`
+      return new Response(new Uint8Array([1, 2, 3, 4]), { status: 200, headers: { 'Content-Type': format === 'tar' ? 'application/x-tar' : 'application/zip', 'Content-Disposition': header } })
     }
     if (url.pathname === '/api/notes' && method === 'GET') return response(url.searchParams.has('path') ? allNotes().find(item => item.path === url.searchParams.get('path')) : allNotes().map(item => ({ ...item, content: '' })))
     if (url.pathname === '/api/tree') return response(noteTree(allNotes(), folders, drawings))
@@ -187,7 +195,7 @@ function createServer(extraNotes: Note[] = [], initialFolders: string[] = [], in
     }
     throw new Error(`Unexpected request: ${method} ${url.pathname}`)
   })
-  return { fetch, writes, batches, calls, current: () => note, savedSettings: () => savedSettings, failNextCleanup: () => { cleanupError = true }, failNextSettings: () => { settingsError = true }, delayNextWrite: () => { nextWriteGate = deferred(); return nextWriteGate }, conflictNextWrite: (disk: Note) => { nextConflict = disk }, queuePick: (path: string, switched = true) => { nextPick = { canceled: false, switched, path } } }
+  return { fetch, writes, batches, calls, current: () => note, savedSettings: () => savedSettings, failNextCleanup: () => { cleanupError = true }, failNextExport: (message: string) => { exportFailure = message }, failNextSettings: () => { settingsError = true }, delayNextWrite: () => { nextWriteGate = deferred(); return nextWriteGate }, conflictNextWrite: (disk: Note) => { nextConflict = disk }, queuePick: (path: string, switched = true) => { nextPick = { canceled: false, switched, path } } }
 }
 
 beforeEach(() => {
@@ -740,6 +748,8 @@ describe('App settings navigation and storage', () => {
     expect(screen.getByText('4.00 KB')).toBeInTheDocument()
     fireEvent.change(screen.getByLabelText('排除规则'), { target: { value: 'node_modules\n*.log' } })
     expect(screen.getByRole('button', { name: '检查未引用图片' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: '导出笔记库' })).toBeDisabled()
+    expect(screen.getByText('设置尚未保存，请先保存后再导出。')).toBeInTheDocument()
     fireEvent.change(screen.getByLabelText('资源目录'), { target: { value: 'images' } })
     expect(screen.getByRole('button', { name: '检查未引用图片' })).toBeDisabled()
     fireEvent.click(screen.getByRole('button', { name: '笔记设置' }))
@@ -786,6 +796,44 @@ describe('App settings navigation and storage', () => {
     expect(screen.queryByRole('button', { name: '确认清理' })).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: '检查未引用图片' }))
     expect(await screen.findByRole('list', { name: '未引用图片列表' })).toHaveTextContent('.assets/unused.png')
+  })
+
+  it('saves the open note before exporting the repository as zip or tar', async () => {
+    const server = createServer()
+    const downloads: string[] = []
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) { if (this.download) downloads.push(this.download) })
+    const editor = await openApp(server)
+    fireEvent.change(editor, { target: { value: '# 导出前的草稿\n' } })
+    fireEvent.click(screen.getByRole('button', { name: '设置' }))
+    fireEvent.click(screen.getByRole('button', { name: '存储设置' }))
+    expect(screen.getByRole('tab', { name: 'ZIP' })).toHaveAttribute('aria-selected', 'true')
+    fireEvent.click(screen.getByRole('button', { name: '导出笔记库' }))
+    expect(await screen.findByText('已导出 笔记库.zip')).toBeInTheDocument()
+    const saveIndex = server.calls.findIndex(call => call.path === '/api/notes' && call.method === 'PUT')
+    const exportIndex = server.calls.findIndex(call => call.path === '/api/storage/export')
+    expect(saveIndex).toBeGreaterThan(-1)
+    expect(exportIndex).toBeGreaterThan(saveIndex)
+    expect(server.current().content).toContain('# 导出前的草稿')
+    fireEvent.click(screen.getByRole('tab', { name: 'TAR' }))
+    fireEvent.click(screen.getByRole('button', { name: '导出笔记库' }))
+    expect(await screen.findByText('已导出 Echo Notes.tar')).toBeInTheDocument()
+    expect(downloads).toEqual(['笔记库.zip', 'Echo Notes.tar'])
+    expect(server.fetch.mock.calls.map(call => String(call[0])).filter(url => url.startsWith('/api/storage/export'))).toEqual(['/api/storage/export?format=zip', '/api/storage/export?format=tar'])
+    expect(server.calls.filter(call => call.path === '/api/notes' && call.method === 'PUT')).toHaveLength(1)
+  })
+
+  it('shows an export failure without downloading a file', async () => {
+    const server = createServer()
+    const downloads: string[] = []
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) { if (this.download) downloads.push(this.download) })
+    server.failNextExport('笔记库超过 4GB，无法一次导出')
+    await openApp(server)
+    fireEvent.click(screen.getByRole('button', { name: '设置' }))
+    fireEvent.click(screen.getByRole('button', { name: '存储设置' }))
+    fireEvent.click(screen.getByRole('button', { name: '导出笔记库' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('笔记库超过 4GB，无法一次导出')
+    expect(downloads).toEqual([])
+    expect(screen.getByRole('button', { name: '导出笔记库' })).toBeEnabled()
   })
 })
 

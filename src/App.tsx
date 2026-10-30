@@ -470,7 +470,7 @@ export default function App() {
     try { await api('/storage/open', json('POST')); toast('已打开笔记库目录。') }
     finally { setOpeningDirectory(false) }
   }
-  async function prepareStorageAction() { if (uploadsInFlight.current) throw new Error('图片正在上传，请完成后再检查清理。'); await saveActive(); if (uploadsInFlight.current) throw new Error('图片正在上传，请完成后再检查清理。') }
+  async function prepareStorageAction() { if (uploadsInFlight.current) throw new Error('图片正在上传，请完成后再继续。'); await saveActive(); if (uploadsInFlight.current) throw new Error('图片正在上传，请完成后再继续。') }
   async function saveSettings(next: Settings) { await saveActive(); const result = completeSettings(await api<Settings>('/settings', json('PUT', next))); settingsRef.current = result; setSettings(result); await refresh(); if (noteRef.current) await loadNote(noteRef.current.path, false); toast('设置已保存。') }
   async function saveAgent(input: AgentConfigInput) {
     const saved = await saveAgentConfig(input)

@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"path"
+	"strconv"
 	"strings"
 	"time"
 
@@ -438,6 +439,34 @@ func (h *handler) api(s *Store, w http.ResponseWriter, r *http.Request) error {
 			}
 			s.changed()
 			jsonResponse(w, 200, result)
+			return nil
+		}
+	case "/api/storage/export":
+		if method == "GET" {
+			format := strings.ToLower(strings.TrimSpace(query.Get("format")))
+			file, err := os.CreateTemp("", "echo-export-*")
+			if err != nil {
+				return err
+			}
+			defer func() {
+				_ = file.Close()
+				_ = os.Remove(file.Name())
+			}()
+			if err = s.writeRepositoryExport(format, file); err != nil {
+				return err
+			}
+			info, err := file.Stat()
+			if err != nil {
+				return err
+			}
+			if _, err = file.Seek(0, io.SeekStart); err != nil {
+				return err
+			}
+			w.Header().Set("Content-Type", repositoryExportType(format))
+			w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": repositoryExportName(s.root, format)}))
+			w.Header().Set("Content-Length", strconv.FormatInt(info.Size(), 10))
+			w.WriteHeader(http.StatusOK)
+			_, _ = io.Copy(w, file)
 			return nil
 		}
 	case "/api/settings":
