@@ -319,6 +319,8 @@ func (s *Store) move(from, to, rev string, folder bool) (Note, error) {
 	if err = os.Rename(oldFile, newFile); err != nil {
 		return Note{}, err
 	}
+	oldCreated := cloneStringMap(s.state.NoteCreated)
+	s.state.NoteCreated = remapCreated(s.state.NoteCreated, from, to)
 	originals := map[string]string{}
 	changes := map[string]string{}
 	versions := map[string]string{}
@@ -338,6 +340,7 @@ func (s *Store) move(from, to, rev string, folder bool) (Note, error) {
 		return os.Rename(newFile, oldFile)
 	}
 	if _, err = s.writeMany(changes, versions); err != nil {
+		s.state.NoteCreated = oldCreated
 		if rollbackErr := rollbackMove(); rollbackErr != nil {
 			return Note{}, fmt.Errorf("%v；%w", err, rollbackErr)
 		}
@@ -355,6 +358,7 @@ func (s *Store) move(from, to, rev string, folder bool) (Note, error) {
 	if err != nil {
 		s.state.Reminders = oldReminders
 		s.state.History = oldHistory
+		s.state.NoteCreated = oldCreated
 		s.rollbackNotes(originals)
 		if rollbackErr := rollbackMove(); rollbackErr != nil {
 			return Note{}, fmt.Errorf("%v；%w", err, rollbackErr)
@@ -364,6 +368,7 @@ func (s *Store) move(from, to, rev string, folder bool) (Note, error) {
 	if err = s.persist(); err != nil {
 		s.state.Reminders = oldReminders
 		s.state.History = oldHistory
+		s.state.NoteCreated = oldCreated
 		if undoErr := undoAnnotations(); undoErr != nil {
 			return Note{}, fmt.Errorf("%v；恢复标注路径失败: %w", err, undoErr)
 		}

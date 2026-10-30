@@ -1,0 +1,30 @@
+.tasks-view.calendar-view{display:flex;flex-direction:column;min-height:0;overflow:hidden}
+.calendar-view .tasks-heading,.calendar-back{flex-shrink:0}
+.calendar-scroll{flex:1;min-height:0;overflow:auto}
+.calendar-toolbar{display:flex;align-items:center;gap:8px;margin-top:8px}
+.calendar-toolbar .month-caption{font-size:15px}
+.calendar-toolbar .button{margin-left:8px}
+.calendar-weekdays,.calendar-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:8px}
+.calendar-weekdays{margin-top:18px;color:var(--muted);font-size:12px;text-align:center}
+.calendar-grid{margin-top:8px}
+.calendar-day{display:flex;flex-direction:column;align-items:stretch;gap:3px;min-height:108px;padding:8px;border:1px solid var(--border);border-radius:8px;background:var(--surface);text-align:left;color:var(--text)}
+.calendar-day:hover{background:var(--accent-soft)}
+.calendar-day.is-today{border-color:var(--accent)}
+.calendar-day.has-notes{background:color-mix(in srgb,var(--accent) 8%,var(--surface))}
+.calendar-day-number{font-weight:600}
+.calendar-day small,.calendar-day-more{color:var(--muted);font-size:11px}
+.calendar-day-title{overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font-size:12px}
+.calendar-back{margin-bottom:18px}
+.calendar-notes{display:flex;flex-direction:column;gap:10px;margin-top:8px}
+.calendar-note{display:grid;grid-template-columns:minmax(0,1.5fr) repeat(3,minmax(0,1fr));gap:14px;align-items:center;width:100%;padding:14px 16px;border:1px solid var(--border);border-radius:8px;background:var(--surface);text-align:left}
+.calendar-note:hover{border-color:var(--accent);background:var(--accent-soft)}
+.calendar-note strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:14px;font-weight:600}
+.calendar-note-field{display:flex;flex-direction:column;gap:4px;min-width:0;font-size:13px}
+.calendar-note-field small{color:var(--muted);font-size:11px}
+.calendar-note-field span,.calendar-note-field time{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+@media(max-width:760px){
+  .calendar-grid{gap:6px}
+  .calendar-day{min-height:64px;padding:6px}
+  .calendar-day-title,.calendar-day-more{display:none}
+  .calendar-note{grid-template-columns:1fr;gap:8px}
+}

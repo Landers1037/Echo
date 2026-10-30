@@ -1,5 +1,5 @@
 export type Metadata = { tags: string[]; group: string }
-export type NoteSummary = { path: string; title: string; metadata: Metadata; revision: string; modified: string; metadataError?: string }
+export type NoteSummary = { path: string; title: string; metadata: Metadata; revision: string; modified: string; created?: string; words?: number; metadataError?: string }
 export type Note = NoteSummary & { content: string }
 export type TreeEntry = { path: string; name: string; type: 'folder' | 'note' | 'drawing'; children?: TreeEntry[] }
 export type Drawing = { path: string; revision: string; modified: string; content: string; markdownPath?: string }

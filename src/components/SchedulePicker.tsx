@@ -1,5 +1,6 @@
-import { useState } from 'react'
-import type { KeyboardEvent } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import type { KeyboardEvent as ReactKeyboardEvent } from 'react'
+import { createPortal } from 'react-dom'
 import { ChevronLeft, ChevronRight, Minus, Plus } from 'lucide-react'
 
 const weekLabels = ['一', '二', '三', '四', '五', '六', '日']
@@ -33,6 +34,69 @@ function parseClock(value: string) {
   return { hour, minute }
 }
 
+const minYear = 1970
+const maxYear = 2100
+
+function placePicker(node: HTMLElement) {
+  const rect = node.getBoundingClientRect()
+  const width = 280
+  const height = 248
+  const left = Math.min(window.innerWidth - width - 12, Math.max(12, rect.left + rect.width / 2 - width / 2))
+  const below = rect.bottom + 8
+  const top = below + height > window.innerHeight - 12 && rect.top > height + 20 ? rect.top - 8 - height : below
+  return { left, top }
+}
+
+export function MonthYearPicker({ year, month, disabled = false, testId, onChange }: { year: number; month: number; disabled?: boolean; testId?: string; onChange: (year: number, month: number) => void }) {
+  const [open, setOpen] = useState(false)
+  const [origin, setOrigin] = useState(() => Math.min(maxYear - 11, Math.max(minYear, year - 5)))
+  const [box, setBox] = useState({ left: 12, top: 12 })
+  const anchor = useRef<HTMLDivElement>(null)
+  const panel = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    setOrigin(current => year < current || year > current + 11 ? Math.min(maxYear - 11, Math.max(minYear, year - 5)) : current)
+  }, [year])
+  useEffect(() => {
+    if (!open) return
+    const update = () => { if (anchor.current) setBox(placePicker(anchor.current)) }
+    const pointer = (event: MouseEvent) => {
+      const target = event.target as Node
+      if (anchor.current?.contains(target) || panel.current?.contains(target)) return
+      setOpen(false)
+    }
+    const key = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      event.preventDefault()
+      event.stopPropagation()
+      setOpen(false)
+    }
+    update()
+    document.addEventListener('mousedown', pointer)
+    document.addEventListener('keydown', key, true)
+    window.addEventListener('resize', update)
+    document.addEventListener('scroll', update, true)
+    return () => {
+      document.removeEventListener('mousedown', pointer)
+      document.removeEventListener('keydown', key, true)
+      window.removeEventListener('resize', update)
+      document.removeEventListener('scroll', update, true)
+    }
+  }, [open])
+  const years = Array.from({ length: 12 }, (_, index) => origin + index)
+  return <div className="month-year-anchor" ref={anchor}>
+    <button type="button" className="month-caption" data-testid={testId} aria-expanded={open} aria-haspopup="dialog" aria-label={`${year}年${month + 1}月，选择年份和月份`} disabled={disabled} onClick={() => { if (anchor.current) setBox(placePicker(anchor.current)); setOpen(current => !current) }}>{year}年{month + 1}月</button>
+    {open && createPortal(<div className="month-year-picker" ref={panel} role="dialog" aria-label="选择年份和月份" style={{ left: box.left, top: box.top }}>
+      <div className="month-year-bar">
+        <button type="button" className="icon-button" aria-label="更早的年份" disabled={origin <= minYear} onClick={() => setOrigin(value => Math.max(minYear, value - 12))}><ChevronLeft size={16} /></button>
+        <span>{years[0]} – {years[11]}</span>
+        <button type="button" className="icon-button" aria-label="更晚的年份" disabled={origin + 11 >= maxYear} onClick={() => setOrigin(value => Math.min(maxYear - 11, value + 12))}><ChevronRight size={16} /></button>
+      </div>
+      <div className="month-year-grid years">{years.map(item => <button type="button" key={item} aria-label={`${item}年`} aria-pressed={item === year} onClick={() => onChange(item, month)}>{item}</button>)}</div>
+      <div className="month-year-grid months">{Array.from({ length: 12 }, (_, index) => <button type="button" key={index} aria-label={`${year}年${index + 1}月`} aria-pressed={index === month} onClick={() => { onChange(year, index); setOpen(false) }}>{index + 1}月</button>)}</div>
+    </div>, document.body)}
+  </div>
+}
+
 export function DateField({ value, onChange, disabled = false }: { value: string; onChange: (value: string) => void; disabled?: boolean }) {
   const selected = parseISODate(value)
   const [cursor, setCursor] = useState(() => selected || new Date())
@@ -46,7 +110,7 @@ export function DateField({ value, onChange, disabled = false }: { value: string
   return <div className="month-calendar">
     <div className="month-calendar-bar">
       <button type="button" className="icon-button" aria-label="上个月" disabled={disabled} onClick={() => setCursor(new Date(year, month - 1, 1))}><ChevronLeft size={16} /></button>
-      <strong data-testid="calendar-month">{year}年{month + 1}月</strong>
+      <MonthYearPicker year={year} month={month} disabled={disabled} testId="calendar-month" onChange={(nextYear, nextMonth) => setCursor(new Date(nextYear, nextMonth, 1))} />
       <button type="button" className="icon-button" aria-label="下个月" disabled={disabled} onClick={() => setCursor(new Date(year, month + 1, 1))}><ChevronRight size={16} /></button>
     </div>
     {selected && !inView && <button type="button" className="month-jump" disabled={disabled} onClick={() => setCursor(new Date(selected.getFullYear(), selected.getMonth(), 1))}>已选 {selected.getMonth() + 1}月{selected.getDate()}日</button>}
@@ -67,7 +131,7 @@ export function TimeField({ value, onChange, disabled = false }: { value: string
   function commit(nextHour: number, nextMinute: number) {
     onChange(`${pad((nextHour + 24) % 24)}:${pad((nextMinute + 60) % 60)}`)
   }
-  function spin(event: KeyboardEvent<HTMLElement>, current: number, max: number, apply: (next: number) => void) {
+  function spin(event: ReactKeyboardEvent<HTMLElement>, current: number, max: number, apply: (next: number) => void) {
     if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return
     event.preventDefault()
     apply((current + (event.key === 'ArrowUp' ? 1 : max)) % (max + 1))

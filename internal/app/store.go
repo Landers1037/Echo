@@ -41,6 +41,8 @@ type Note struct {
 	Metadata      Metadata `json:"metadata"`
 	Revision      string   `json:"revision"`
 	Modified      string   `json:"modified"`
+	Created       string   `json:"created,omitempty"`
+	Words         int      `json:"words"`
 	Content       string   `json:"content"`
 	MetadataError string   `json:"metadataError,omitempty"`
 }
@@ -54,6 +56,7 @@ type TrashEntry struct {
 	ID        string `json:"id"`
 	Path      string `json:"path"`
 	DeletedAt string `json:"deletedAt"`
+	Created   string `json:"created,omitempty"`
 }
 type HistoryEntry struct {
 	TaskID      string `json:"taskId"`
@@ -62,14 +65,15 @@ type HistoryEntry struct {
 	CompletedAt string `json:"completedAt"`
 }
 type diskState struct {
-	Settings    Settings       `json:"settings"`
-	Groups      []string       `json:"groups"`
-	Tags        []string       `json:"tags"`
-	Trash       []TrashEntry   `json:"trash"`
-	Reminders   []Reminder     `json:"reminders"`
-	History     []HistoryEntry `json:"history"`
-	Plans       []Plan         `json:"plans,omitempty"`
-	CustomTasks []CustomTask   `json:"customTasks,omitempty"`
+	Settings    Settings          `json:"settings"`
+	Groups      []string          `json:"groups"`
+	Tags        []string          `json:"tags"`
+	Trash       []TrashEntry      `json:"trash"`
+	Reminders   []Reminder        `json:"reminders"`
+	History     []HistoryEntry    `json:"history"`
+	Plans       []Plan            `json:"plans,omitempty"`
+	CustomTasks []CustomTask      `json:"customTasks,omitempty"`
+	NoteCreated map[string]string `json:"noteCreated,omitempty"`
 }
 type Store struct {
 	mu                sync.Mutex
@@ -329,23 +333,23 @@ func (s *Store) persist() error {
 	}
 	return atomicWrite(filepath.Join(s.root, ".echo", "state.json"), data, 0600)
 }
-func (s *Store) readNote(name string) (Note, error) {
+func (s *Store) loadNote(name string) (Note, bool, error) {
 	var err error
 	name, err = cleanRelative(name)
 	if err != nil {
-		return Note{}, err
+		return Note{}, false, err
 	}
 	file, err := s.notePath(name)
 	if err != nil {
-		return Note{}, err
+		return Note{}, false, err
 	}
 	data, err := os.ReadFile(file)
 	if err != nil {
-		return Note{}, err
+		return Note{}, false, err
 	}
 	info, err := os.Stat(file)
 	if err != nil {
-		return Note{}, err
+		return Note{}, false, err
 	}
 	meta, metaErr := readMetadata(string(data))
 	title := strings.TrimSuffix(path.Base(strings.ReplaceAll(name, "\\", "/")), path.Ext(name))
@@ -360,10 +364,26 @@ func (s *Store) readNote(name string) (Note, error) {
 	if metaErr != nil {
 		note.MetadataError = metaErr.Error()
 	}
+	created, fresh := s.rememberCreated(note.Path, info, time.Time{})
+	note.Created = created
+	note.Words = wordCount(note.Content)
+	return note, fresh, nil
+}
+func (s *Store) readNote(name string) (Note, error) {
+	note, fresh, err := s.loadNote(name)
+	if err != nil {
+		return Note{}, err
+	}
+	if fresh {
+		if err = s.persist(); err != nil {
+			return Note{}, err
+		}
+	}
 	return note, nil
 }
 func (s *Store) listNotes() ([]Note, error) {
 	notes := []Note{}
+	fresh := false
 	err := filepath.WalkDir(s.root, func(file string, entry fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -386,16 +406,27 @@ func (s *Store) listNotes() ([]Note, error) {
 			return nil
 		}
 		if strings.EqualFold(filepath.Ext(file), ".md") {
-			note, e := s.readNote(rel)
+			note, stamped, e := s.loadNote(rel)
 			if e != nil {
 				return e
+			}
+			if stamped {
+				fresh = true
 			}
 			notes = append(notes, note)
 		}
 		return nil
 	})
+	if err != nil {
+		return nil, err
+	}
 	sort.Slice(notes, func(i, j int) bool { return notes[i].Path < notes[j].Path })
-	return notes, err
+	if fresh {
+		if err = s.persist(); err != nil {
+			return nil, err
+		}
+	}
+	return notes, nil
 }
 func (s *Store) createNote(name, content string) (Note, error) {
 	name, err := cleanRelative(name)
@@ -416,6 +447,13 @@ func (s *Store) createNote(name, content string) (Note, error) {
 		return Note{}, err
 	}
 	if err = exclusiveWrite(file, []byte(content), 0644); err != nil {
+		return Note{}, err
+	}
+	if s.state.NoteCreated == nil {
+		s.state.NoteCreated = map[string]string{}
+	}
+	s.state.NoteCreated[name] = time.Now().UTC().Format(time.RFC3339Nano)
+	if err = s.persist(); err != nil {
 		return Note{}, err
 	}
 	return s.readNote(name)
@@ -606,6 +644,11 @@ func (s *Store) recycle(name string) error {
 		return fmt.Errorf("不能删除资源目录")
 	}
 	entry := TrashEntry{ID: newID(), Path: filepath.ToSlash(name), DeletedAt: time.Now().UTC().Format(time.RFC3339Nano)}
+	if !info.IsDir() && strings.EqualFold(path.Ext(name), ".md") {
+		if clean, cleanErr := cleanRelative(name); cleanErr == nil && s.state.NoteCreated != nil {
+			entry.Created = s.state.NoteCreated[clean]
+		}
+	}
 	to := filepath.Join(s.root, ".echo", "trash", entry.ID)
 	if err = os.Rename(file, to); err != nil {
 		return err
@@ -639,8 +682,28 @@ func (s *Store) restore(id string) error {
 		}
 		old := append([]TrashEntry{}, s.state.Trash...)
 		s.state.Trash = append(s.state.Trash[:i], s.state.Trash[i+1:]...)
+		restoredKey := ""
+		previousCreated := ""
+		hadCreated := false
+		if entry.Created != "" {
+			if clean, cleanErr := cleanRelative(entry.Path); cleanErr == nil {
+				restoredKey = clean
+				if s.state.NoteCreated == nil {
+					s.state.NoteCreated = map[string]string{}
+				}
+				previousCreated, hadCreated = s.state.NoteCreated[restoredKey]
+				s.state.NoteCreated[restoredKey] = entry.Created
+			}
+		}
 		if err = s.persist(); err != nil {
 			s.state.Trash = old
+			if restoredKey != "" {
+				if hadCreated {
+					s.state.NoteCreated[restoredKey] = previousCreated
+				} else {
+					delete(s.state.NoteCreated, restoredKey)
+				}
+			}
 			_ = os.Rename(to, from)
 			return err
 		}

@@ -330,6 +330,16 @@ describe('App creates items inside a folder', () => {
     expect(screen.getByRole('button', { name: '验收' })).toHaveAttribute('aria-expanded', 'true')
   })
 
+  it('opens the calendar from the footer', async () => {
+    await openApp(createServer())
+    const calendar = screen.getByRole('button', { name: '日历视图' })
+    expect(calendar.previousElementSibling).toBe(screen.getByRole('button', { name: '切换仓库' }))
+    await act(async () => { fireEvent.click(calendar) })
+    expect(await screen.findByRole('heading', { name: '日历视图' })).toBeInTheDocument()
+    expect(calendar).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByText('按创建日期查看每天新增的笔记。')).toBeInTheDocument()
+  })
+
   it('locates the open note in the directory tree', async () => {
     const nested: Note = { path: '项目/资料/纪要.md', title: '会议纪要', content: '# 纪要\n', metadata: { tags: ['重点'], group: '工作' }, revision: 'v2', modified: '2026-10-22T12:00:00Z' }
     await openApp(createServer([nested], ['项目/资料', '其他']))
