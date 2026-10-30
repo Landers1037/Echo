@@ -122,7 +122,7 @@ function sourceHeading(tag: 'h1' | 'h2' | 'h3' | 'h4' | 'h5') {
 }
 const previewHeadings = { h1: sourceHeading('h1'), h2: sourceHeading('h2'), h3: sourceHeading('h3'), h4: sourceHeading('h4'), h5: sourceHeading('h5') }
 
-function drawingKind(src: string) {
+export function drawingKind(src: string): '' | 'drawio' | 'excalidraw' {
   const clean = decodeSafe(src).split('#')[0].split('?')[0]
   if (/^(?:[a-z][a-z\d+.-]*:|\/\/)/i.test(clean)) return ''
   if (/\.drawio$/i.test(clean)) return 'drawio'

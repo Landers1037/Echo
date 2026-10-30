@@ -30,6 +30,7 @@
     "react-dom": "^19.0.0",
     "react-markdown": "^10.0.0",
     "remark-breaks": "^4.0.0",
+    "remark-docx": "^0.3.30",
     "remark-frontmatter": "^5.0.0",
     "remark-gfm": "^4.0.0",
     "remark-parse": "11.0.0",

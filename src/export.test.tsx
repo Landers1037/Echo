@@ -1,8 +1,11 @@
+import { unzipSync, strFromU8 } from 'fflate'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { noteToDocx } from './exportDocx'
 import { exportNotes } from './export'
 
 vi.mock('shiki', () => ({ codeToHtml: async (code: string) => `<pre class="shiki"><code>${code}</code></pre>` }))
 vi.mock('mermaid', () => ({ default: { initialize: () => {}, render: async (id: string) => ({ svg: `<svg id="${id}" class="mermaid-export"></svg>` }) } }))
+vi.mock('./exportDocx', () => ({ noteToDocx: vi.fn(async (note: { path: string }) => new Blob([`docx:${note.path}`])) }))
 
 afterEach(() => vi.restoreAllMocks())
 
@@ -58,6 +61,50 @@ describe('note export', () => {
     vi.stubGlobal('fetch', fetcher)
     await expect(exportNotes({ paths: ['记录.md'], format: 'md', lineNumbers: false, beforeExport: async () => { throw new Error('保存冲突') }, onWarning: async () => true })).rejects.toThrow('保存冲突')
     expect(fetcher).not.toHaveBeenCalled()
+    vi.unstubAllGlobals()
+  })
+
+  it('downloads one Word document from the export snapshot', async () => {
+    let exported: Blob | undefined
+    let downloadName = ''
+    vi.stubGlobal('URL', class extends URL { static createObjectURL = (blob: Blob) => { exported = blob; return 'blob:export' }; static revokeObjectURL = vi.fn() })
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) { downloadName = this.download })
+    vi.stubGlobal('fetch', vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      expect(JSON.parse(String(init?.body)).format).toBe('snapshot')
+      return new Response(JSON.stringify({ notes: [{ path: '工作/记录.md', title: '记录', content: '正文', metadata: { tags: [], group: '' }, revision: 'a', modified: '', assets: {} }], missing: [], external: [] }), { headers: { 'Content-Type': 'application/json' } })
+    }))
+    await exportNotes({ paths: ['工作/记录.md'], format: 'docx', lineNumbers: false, beforeExport: async () => {}, onWarning: async () => true })
+    expect(downloadName).toBe('记录.docx')
+    const docx = await new Promise<string>(resolve => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.readAsText(exported!) })
+    expect(docx).toBe('docx:工作/记录.md')
+    vi.unstubAllGlobals()
+  })
+
+  it('packs each note into its own docx inside a zip', async () => {
+    let exported: Blob | undefined
+    let downloadName = ''
+    vi.stubGlobal('URL', class extends URL { static createObjectURL = (blob: Blob) => { exported = blob; return 'blob:export' }; static revokeObjectURL = vi.fn() })
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) { downloadName = this.download })
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ notes: [{ path: '工作/记录.md', title: '记录', content: '正文', metadata: { tags: [], group: '' }, revision: 'a', modified: '', assets: {} }, { path: '其他.md', title: '其他', content: '另一篇', metadata: { tags: [], group: '' }, revision: 'b', modified: '', assets: {} }], missing: [], external: [] }), { headers: { 'Content-Type': 'application/json' } })))
+    await exportNotes({ paths: ['工作/记录.md', '其他.md'], format: 'docx', lineNumbers: false, beforeExport: async () => {}, onWarning: async () => true })
+    expect(downloadName).toBe('Echo-Word.zip')
+    const zipped = await new Promise<ArrayBuffer>(resolve => { const reader = new FileReader(); reader.onload = () => resolve(reader.result as ArrayBuffer); reader.readAsArrayBuffer(exported!) })
+    const files = unzipSync(new Uint8Array(zipped))
+    expect(Object.keys(files).sort()).toEqual(['其他.docx', '工作/记录.docx'].sort())
+    expect(strFromU8(files['工作/记录.docx'])).toBe('docx:工作/记录.md')
+    expect(strFromU8(files['其他.docx'])).toBe('docx:其他.md')
+    vi.unstubAllGlobals()
+  })
+
+  it('asks before exporting a Word document when local images are missing', async () => {
+    vi.mocked(noteToDocx).mockClear()
+    const warning = vi.fn(async () => false)
+    const fetcher = vi.fn(async () => new Response(JSON.stringify({ error: '资源缺失', missing: ['a.png'], external: [] }), { status: 422 }))
+    vi.stubGlobal('fetch', fetcher)
+    await exportNotes({ paths: ['记录.md'], format: 'docx', lineNumbers: false, beforeExport: async () => {}, onWarning: warning })
+    expect(warning).toHaveBeenCalledWith({ missing: ['a.png'], external: [] })
+    expect(fetcher).toHaveBeenCalledOnce()
+    expect(noteToDocx).not.toHaveBeenCalled()
     vi.unstubAllGlobals()
   })
 

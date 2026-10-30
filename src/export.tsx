@@ -3,7 +3,7 @@ import { zipSync, strToU8 } from 'fflate'
 import { MarkdownView } from './components/MarkdownView'
 import type { ExportSnapshot } from './types'
 
-type ExportFormat = 'md' | 'bundle' | 'html' | 'pdf'
+type ExportFormat = 'md' | 'bundle' | 'html' | 'pdf' | 'docx'
 type Warning = { missing: string[]; external: string[] }
 type ExportOptions = {
   paths: string[]
@@ -39,6 +39,16 @@ function relativePath(from: string, target: string) {
   const right = target.split('/')
   while (left.length && right.length && left[0] === right[0]) { left.shift(); right.shift() }
   return [...left.map(() => '..'), ...right].map(part => part === '..' ? part : encodeURIComponent(part)).join('/')
+}
+
+function blobBytes(blob: Blob) {
+  if (typeof blob.arrayBuffer === 'function') return blob.arrayBuffer().then(buffer => new Uint8Array(buffer))
+  return new Promise<Uint8Array>((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(new Uint8Array(reader.result as ArrayBuffer))
+    reader.onerror = () => reject(reader.error ?? new Error('无法读取导出文件'))
+    reader.readAsArrayBuffer(blob)
+  })
 }
 
 function download(blob: Blob, name: string) {
@@ -101,7 +111,7 @@ export async function exportNotes({ paths, format, lineNumbers, strictLineBreaks
   }
   try {
     await beforeExport()
-    const wireFormat = format === 'html' || format === 'pdf' ? 'snapshot' : format
+    const wireFormat = format === 'html' || format === 'pdf' || format === 'docx' ? 'snapshot' : format
     let response = await requestExport(paths, wireFormat)
     let warned = false
     if (response.status === 422) {
@@ -137,6 +147,19 @@ export async function exportNotes({ paths, format, lineNumbers, strictLineBreaks
         files[indexPath] = strToU8(documentHtml('Echo 笔记导出', index))
         const zip = zipSync(files, { level: 6 })
         download(new Blob([new Uint8Array(zip).buffer as ArrayBuffer], { type: 'application/zip' }), 'Echo-HTML.zip')
+      }
+      return
+    }
+    if (format === 'docx') {
+      const { noteToDocx } = await import('./exportDocx')
+      const pages: { note: ExportSnapshot['notes'][number]; blob: Blob }[] = []
+      for (const note of snapshot.notes) pages.push({ note, blob: await noteToDocx(note, { strictLineBreaks }) })
+      if (pages.length === 1) download(pages[0].blob, fileName(pages[0].note.path, '.docx'))
+      else {
+        const files: Record<string, Uint8Array> = {}
+        for (const { note, blob } of pages) files[note.path.replace(/\.md$/i, '.docx')] = await blobBytes(blob)
+        const zip = zipSync(files, { level: 6 })
+        download(new Blob([new Uint8Array(zip).buffer as ArrayBuffer], { type: 'application/zip' }), 'Echo-Word.zip')
       }
       return
     }

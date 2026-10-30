@@ -16,7 +16,7 @@
 | 笔记引用 | 插入指向其他笔记的链接，预览中可跳转 | `files.go`（移动时改写） | `NotePicker.tsx`、`noteReference.ts` |
 | 任务看板 | 笔记勾选任务 + 独立自定义任务，三列看板 | `tasks.go`、`custom_tasks.go` | `TasksView.tsx` |
 | 计划与提醒 | 单次/每日/每周的定时提醒 | `plans.go`、`tasks.go` | `PlansView.tsx`、`App.tsx` 提醒中心 |
-| 导出 | MD / MD 资源包 / HTML / PDF | `exports.go` | `export.tsx` |
+| 导出 | MD / MD 资源包 / HTML / PDF / DOCX | `exports.go` | `export.tsx`、`exportDocx.ts` |
 | 设置 | 外观、笔记、Agent、快捷键、存储 | `store.go`、`files.go` | `SettingsPanel.tsx` 等 |
 | 笔记 Agent | 接入 OpenAI 兼容模型，聊天或直接修改当前笔记 | `agent_*.go` | `AgentPanel.tsx`、`src/agent/*` |
 
@@ -167,7 +167,7 @@
 - 应用关闭期间不会发送系统通知，重新打开后会补发。
 - 资源迁移日志存在时，暂停生成提醒。
 
-## 12. 导出（`src/export.tsx` + `exports.go`）
+## 12. 导出（`src/export.tsx`、`src/exportDocx.ts` + `exports.go`）
 
 | 格式 | 范围 | 实现 |
 | --- | --- | --- |
@@ -175,6 +175,7 @@
 | Markdown 资源包（`bundle`） | 单篇或多篇 | 后端生成 ZIP，保留目录结构，图片和被引用的绘图放在包内 `.assets`，并改写导出副本中的引用 |
 | HTML（`html`） | 单篇导出为 `.html`；多篇导出为 ZIP（含索引页） | 前端从后端获取 `snapshot`（笔记 + base64 资源），用 `MarkdownView` 离屏渲染，内嵌样式、图片、绘图和代码高亮；批量导出时修正所选笔记之间的链接 |
 | PDF（`pdf`） | 单篇或合并多篇 | 打开专用打印页，用户通过浏览器「另存为 PDF」；每篇另起一页 |
+| DOCX（`docx`） | 单篇导出为 `.docx`；多篇每篇一个 `.docx`，打包为 ZIP | 前端用 remark-docx 从 `snapshot` 生成可编辑的 Word 文档。图片、绘图和 Mermaid 嵌入为图片，代码保留高亮。不支持行号，也不支持 `<u>` 以外的内联 HTML。Draw.io 图里的 HTML 文本在转成图片后可能无法显示 |
 
 - 导出范围：当前笔记、所选笔记、当前筛选结果，或从笔记操作菜单导出指定笔记。
 - 导出前先保存；本地图片或绘图缺失时返回 422，并列出缺失和外链图片，用户确认后带 `allowMissing` 重新导出。外链图片不会下载。`.excalidraw` 内联为 `application/vnd.excalidraw+json`，`.drawio` 内联为 `application/vnd.jgraph.mxfile`。
@@ -260,7 +261,7 @@
 | GET / POST / PUT / DELETE | `/plans` | 计划 CRUD（删除用 `?id=`） |
 | GET | `/reminders` | 未确认的提醒（读取时会先执行一次 `checkReminders`） |
 | POST | `/reminders/ack` | `{id}` → `{claimed}` |
-| POST | `/exports` | `{paths, format: md\|bundle\|snapshot, allowMissing?}`；`md`/`bundle` 返回文件下载，`snapshot` 返回 JSON；资源缺失时返回 422 |
+| POST | `/exports` | `{paths, format: md\|bundle\|snapshot, allowMissing?}`；`md`/`bundle` 返回文件下载，`snapshot` 返回 JSON（供 HTML、PDF、DOCX 使用）；资源缺失时返回 422 |
 | GET | `/events` | SSE：`changed` / `reminder` / `switched`，每 20 秒发送一次心跳 |
 | GET / PUT / DELETE | `/repositories` | 仓库列表 / 重命名 `{path, name}` / 移除 `?path=` |
 | POST | `/repositories/switch` | `{path}` |

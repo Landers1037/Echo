@@ -51,7 +51,8 @@ Echo/
 │   ├── api.ts / types.ts       # fetch 封装、与后端 JSON 对齐的类型
 │   ├── agent/                  # Agent 前端：SSE 客户端、流式 JSON 解析、编辑器修改会话
 │   ├── components/             # 视图组件
-│   ├── export.tsx              # HTML / PDF / ZIP 导出（在浏览器端渲染）
+│   ├── export.tsx              # HTML / PDF / DOCX / ZIP 导出（在浏览器端渲染）
+│   ├── exportDocx.ts           # 用 remark-docx 把单篇笔记编译为 Word 文档
 │   ├── shortcuts.ts            # 编辑器快捷键定义与冲突检测
 │   ├── noteTitle.ts / noteOutline.ts / noteReference.ts  # 纯函数工具
 │   └── *.css

@@ -32,7 +32,7 @@
 | 多笔记库（仓库）切换 | `internal/app/repositories.go` |
 | Agent 配置 / 对话存储 / 模型调用 | `internal/app/agent_config.go`、`agent_db.go`、`agent_chat.go` |
 | 存储占用与未引用资源清理 | `internal/app/storage.go` |
-| 导出快照与 ZIP | `internal/app/exports.go`、`src/export.tsx` |
+| 导出快照与 ZIP | `internal/app/exports.go`、`src/export.tsx`、`src/exportDocx.ts` |
 | Excalidraw 与 Draw.io 绘图 | `internal/app/store.go`（`validateDrawing`）、`src/components/Drawing.tsx`、`src/components/Drawio.tsx`、`scripts/fetch-drawio.mjs` |
 | 前端全局状态、保存、冲突、对话框 | `src/App.tsx` |
 | 编辑器、快捷工具栏、AI 实时修改 | `src/components/Editor.tsx`、`src/agent/editorSession.ts` |

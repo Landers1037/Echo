@@ -437,6 +437,15 @@ describe('App single-note export', () => {
     expect(server.current().content).toBe('# 导出前的草稿\n')
   })
 
+  it('exports the active note as a Word document', async () => {
+    await openApp(createServer())
+    fireEvent.click(screen.getByRole('button', { name: '导出' }))
+    fireEvent.click(screen.getByRole('button', { name: /Word 文档/ }))
+    fireEvent.click(screen.getByRole('button', { name: '开始导出' }))
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: '导出笔记' })).not.toBeInTheDocument())
+    expect(exportNotes).toHaveBeenCalledWith(expect.objectContaining({ paths: ['测试.md'], format: 'docx' }))
+  })
+
   it.each(['导出', '导出所选'])('pins a different note despite bulk selections, then restores the %s entry', async entry => {
     const other: Note = { path: '归档/另一篇.md', title: '另一篇笔记', content: '# 另一篇\n', metadata: { tags: [], group: '' }, revision: 'other-v1', modified: '2026-10-22T12:00:00Z' }
     const server = createServer([other])
