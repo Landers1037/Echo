@@ -56,8 +56,8 @@ describe('calendar view', () => {
     const year = new Date().getFullYear() - 2
     render(<CalendarView notes={[]} onOpen={() => {}} />)
     fireEvent.click(screen.getByRole('button', { name: /选择年份和月份/ }))
-    fireEvent.click(screen.getByRole('button', { name: `${year}年`, exact: true }))
-    fireEvent.click(screen.getByRole('button', { name: `${year}年3月`, exact: true }))
+    fireEvent.click(screen.getByRole('button', { name: new RegExp(`^${year}年$`) }))
+    fireEvent.click(screen.getByRole('button', { name: new RegExp(`^${year}年3月$`) }))
     expect(screen.getByTestId('note-calendar-month')).toHaveTextContent(`${year}年3月`)
     expect(screen.getByRole('button', { name: `${year}年3月1日` })).toBeInTheDocument()
     expect(screen.queryByRole('dialog', { name: '选择年份和月份' })).not.toBeInTheDocument()
