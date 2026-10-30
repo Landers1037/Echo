@@ -25,6 +25,8 @@ describe('note export', () => {
     expect(createObjectURL).toHaveBeenCalledOnce()
     const html = await new Promise<string>(resolve => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.readAsText(exported!) })
     expect(html).toContain('data:image/png;base64,abc')
+    expect(html).toContain('class="export-path"')
+    expect(html).toContain('工作/记录.md')
     expect(html).toContain('#工作')
     expect(html).toContain('项目')
     expect(html).not.toContain('<script')
@@ -53,6 +55,35 @@ describe('note export', () => {
     await exportNotes({ paths: ['记录.md'], format: 'html', lineNumbers: false, strictLineBreaks: true, beforeExport: async () => {}, onWarning: async () => true })
     const html = await new Promise<string>(resolve => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.readAsText(exported!) })
     expect(html).toMatch(/乙[\s\S]*<br\s*\/?>[\s\S]*丙/)
+    vi.unstubAllGlobals()
+  })
+
+  it('omits the markdown path from the PDF print document', async () => {
+    const writes: string[] = []
+    const printWindow = {
+      closed: false,
+      focus: vi.fn(),
+      print: vi.fn(),
+      close: vi.fn(),
+      document: {
+        open: vi.fn(),
+        write: vi.fn((html: string) => { writes.push(html) }),
+        close: vi.fn(),
+        createElement: document.createElement.bind(document),
+        body: document.createElement('body'),
+        fonts: { ready: Promise.resolve() },
+        images: [],
+      },
+    }
+    vi.spyOn(window, 'open').mockReturnValue(printWindow as unknown as Window)
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ notes: [{ path: '1/222.md', title: '在 Echo，留住每一个想法', content: '正文', metadata: { tags: [], group: '' }, revision: 'a', modified: '', assets: {} }], missing: [], external: [] }), { headers: { 'Content-Type': 'application/json' } })))
+    await exportNotes({ paths: ['1/222.md'], format: 'pdf', lineNumbers: false, beforeExport: async () => {}, onWarning: async () => true })
+    const html = writes.at(-1) || ''
+    expect(html).toContain('在 Echo，留住每一个想法')
+    expect(html).not.toContain('class="export-path"')
+    expect(html).toContain('@bottom-left{content:""}')
+    expect(html).toContain('counter(page)')
+    expect(html).not.toContain('>1/222.md<')
     vi.unstubAllGlobals()
   })
 
