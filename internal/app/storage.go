@@ -76,7 +76,14 @@ func withinStorageDir(name, directory string) bool {
 
 // logicalRoot preserves the original paths of recycled notes, so their relative
 // image references still protect resources that will be needed after restore.
-func walkStorageNotes(root, logicalRoot string, visit func(string, string, fs.FileInfo) error) error {
+func walkStorageNotes(root, logicalRoot string, excluded func(string, bool) bool, visit func(string, string, fs.FileInfo) error) error {
+	info, err := os.Lstat(root)
+	if err != nil {
+		return err
+	}
+	if logicalRoot != "" && excluded != nil && excluded(logicalRoot, info.IsDir()) {
+		return nil
+	}
 	return filepath.WalkDir(root, func(file string, entry fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -84,17 +91,23 @@ func walkStorageNotes(root, logicalRoot string, visit func(string, string, fs.Fi
 		if entry.Type()&os.ModeSymlink != 0 {
 			return nil
 		}
-		if entry.IsDir() {
-			if file != root && strings.EqualFold(entry.Name(), ".echo") {
-				return filepath.SkipDir
-			}
-			return nil
-		}
 		rel, err := filepath.Rel(root, file)
 		if err != nil {
 			return err
 		}
 		name := path.Join(logicalRoot, filepath.ToSlash(rel))
+		if name == "." {
+			name = logicalRoot
+		}
+		if entry.IsDir() {
+			if file != root && (strings.EqualFold(entry.Name(), ".echo") || (excluded != nil && name != "" && excluded(name, true))) {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if excluded != nil && name != "" && excluded(name, false) {
+			return nil
+		}
 		if !strings.EqualFold(path.Ext(name), ".md") || !entry.Type().IsRegular() {
 			return nil
 		}
@@ -145,7 +158,7 @@ func (s *Store) storageUsage() (StorageUsage, error) {
 		return usage, fmt.Errorf("配置数据文件不是普通文件")
 	}
 	usage.DatabaseBytes = info.Size()
-	err = walkStorageNotes(s.root, "", func(name, _ string, info fs.FileInfo) error {
+	err = walkStorageNotes(s.root, "", s.pathExcluded, func(name, _ string, info fs.FileInfo) error {
 		if !withinStorageDir(name, usage.AssetsDir) {
 			usage.NoteCount++
 			usage.NoteBytes += info.Size()
@@ -235,7 +248,7 @@ func (s *Store) unusedAssets() (UnusedAssets, error) {
 		}
 		return nil
 	}
-	if err := walkStorageNotes(s.root, "", visit); err != nil {
+	if err := walkStorageNotes(s.root, "", s.pathExcluded, visit); err != nil {
 		return result, err
 	}
 	for _, entry := range s.state.Trash {
@@ -243,7 +256,7 @@ func (s *Store) unusedAssets() (UnusedAssets, error) {
 			return result, fmt.Errorf("回收站记录无效，无法安全检查图片引用")
 		}
 		root := filepath.Join(s.root, ".echo", "trash", entry.ID)
-		if err := walkStorageNotes(root, entry.Path, visit); err != nil && !os.IsNotExist(err) {
+		if err := walkStorageNotes(root, entry.Path, s.pathExcluded, visit); err != nil && !os.IsNotExist(err) {
 			return result, err
 		}
 	}

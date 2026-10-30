@@ -30,7 +30,7 @@ vi.mock('motion/react', async () => {
   return { MotionConfig: ({ children }: { children: React.ReactNode }) => children, AnimatePresence: ({ children }: { children: React.ReactNode }) => children, motion: { div: Div, button: Button } }
 })
 
-const settings: Settings = { theme: 'light', uiStyle: 'sage', accent: '#72967b', animations: false, editorFontSize: 14, editorLineNumbers: true, previewLineNumbers: false, multiTabs: false, sourceSplitPreview: false, strictLineBreaks: false, noteWidth: 'default', assetsDir: '.assets', shortcuts: {} }
+const settings: Settings = { theme: 'light', uiStyle: 'sage', accent: '#72967b', animations: false, editorFontSize: 14, editorLineNumbers: true, previewLineNumbers: false, multiTabs: false, sourceSplitPreview: false, strictLineBreaks: false, noteWidth: 'default', assetsDir: '.assets', scanExcludes: [], shortcuts: {} }
 type Write = { path: string; content: string; revision: string; force?: boolean }
 type Batch = { paths: string[]; tags: string[]; group: string; revisions: Record<string, string> }
 type Call = { method: string; path: string; body?: unknown }
@@ -710,13 +710,15 @@ describe('App settings navigation and storage', () => {
     fireEvent.click(screen.getByRole('button', { name: '存储设置' }))
     expect(await screen.findByText('2.00 KB')).toBeInTheDocument()
     expect(screen.getByText('4.00 KB')).toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText('排除规则'), { target: { value: 'node_modules\n*.log' } })
+    expect(screen.getByRole('button', { name: '检查未引用图片' })).toBeDisabled()
     fireEvent.change(screen.getByLabelText('资源目录'), { target: { value: 'images' } })
     expect(screen.getByRole('button', { name: '检查未引用图片' })).toBeDisabled()
     fireEvent.click(screen.getByRole('button', { name: '笔记设置' }))
     expect(screen.getByRole('switch', { name: '源码编辑器行号' })).toHaveAttribute('aria-checked', 'false')
     fireEvent.click(screen.getByRole('button', { name: '保存设置' }))
     await waitFor(() => expect(screen.queryByRole('dialog', { name: '设置' })).not.toBeInTheDocument())
-    expect(server.savedSettings()).toMatchObject({ accent: '#5885b5', editorLineNumbers: false, assetsDir: 'images' })
+    expect(server.savedSettings()).toMatchObject({ accent: '#5885b5', editorLineNumbers: false, assetsDir: 'images', scanExcludes: ['node_modules', '*.log'] })
   })
 
   it('saves pending note references before scanning and only cleans after explicit confirmation', async () => {

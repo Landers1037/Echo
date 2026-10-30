@@ -6,7 +6,10 @@ import type { AssetCleanup, StorageUsage, UnusedAssets } from '../types'
 type Props = {
   assetsDir: string
   draftAssetsDir: string
+  scanExcludes: string[]
+  draftScanExcludes: string[]
   onDirectoryChange: (value: string) => void
+  onExcludesChange: (value: string[]) => void
   beforeAction: () => Promise<void>
   onBusyChange: (busy: boolean) => void
 }
@@ -19,7 +22,7 @@ function bytesLabel(bytes: number) {
   return `${value.toFixed(value >= 10 ? 1 : 2)} ${units[index]}`
 }
 
-export function StorageSettings({ assetsDir, draftAssetsDir, onDirectoryChange, beforeAction, onBusyChange }: Props) {
+export function StorageSettings({ assetsDir, draftAssetsDir, scanExcludes, draftScanExcludes, onDirectoryChange, onExcludesChange, beforeAction, onBusyChange }: Props) {
   const [usage, setUsage] = useState<StorageUsage | null>(null)
   const [usageError, setUsageError] = useState('')
   const [loading, setLoading] = useState(true)
@@ -29,6 +32,8 @@ export function StorageSettings({ assetsDir, draftAssetsDir, onDirectoryChange, 
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const changedDirectory = draftAssetsDir !== assetsDir
+  const changedExcludes = draftScanExcludes.join('\n') !== scanExcludes.join('\n')
+  const pendingSave = changedDirectory || changedExcludes
 
   useEffect(() => {
     let canceled = false
@@ -75,13 +80,14 @@ export function StorageSettings({ assetsDir, draftAssetsDir, onDirectoryChange, 
     {usageError && <p className="form-error" role="alert">{usageError}</p>}
     {usage && <div className="storage-root"><span>笔记库根目录</span><code>{usage.root}</code></div>}
     <section className="settings-section"><h4>图片资源目录</h4><label className="field-label" htmlFor="assets-dir">资源目录</label><input id="assets-dir" value={draftAssetsDir} onChange={event => onDirectoryChange(event.target.value)} required placeholder=".assets" /><p className="field-help">相对于笔记库的目录。保存更改后会迁移已有图片，并更新笔记引用。</p></section>
-    <section className="settings-section storage-cleanup"><h4>清理未引用图片</h4><p className="field-help">检查整个笔记库的图片引用，保留回收站笔记仍在使用的图片。</p>
-      {changedDirectory && <p className="field-help">资源目录尚未保存，请先保存设置后再检查。</p>}
-      <button type="button" className="button" disabled={working || changedDirectory} onClick={() => void scan()}>{working ? <LoaderCircle size={14} className="spin" /> : <Search size={14} />}检查未引用图片</button>
+    <section className="settings-section"><h4>扫描排除</h4><label className="field-label" htmlFor="scan-excludes">排除规则</label><textarea id="scan-excludes" className="scan-excludes" value={draftScanExcludes.join('\n')} onChange={event => onExcludesChange(event.target.value.split('\n'))} placeholder={'node_modules\ndist\n*.log'} spellCheck={false} /><p className="field-help">一行一条，写法与 .gitignore 类似。node_modules 会跳过任意层级的同名目录；/build 只跳过笔记库根下的 build；*.log 跳过匹配的文件。目录被排除后不再进入其子目录。保存后，目录树、搜索、任务和存储扫描都会跳过这些路径。</p></section>
+    <section className="settings-section storage-cleanup"><h4>清理未引用图片</h4><p className="field-help">检查整个笔记库的图片引用，保留回收站笔记仍在使用的图片。扫描排除中的笔记不会被检查，只被这些笔记引用的图片会被视为未引用。</p>
+      {pendingSave && <p className="field-help">{changedDirectory && changedExcludes ? '资源目录和排除规则尚未保存，请先保存设置后再检查。' : changedDirectory ? '资源目录尚未保存，请先保存设置后再检查。' : '排除规则尚未保存，请先保存设置后再检查。'}</p>}
+      <button type="button" className="button" disabled={working || pendingSave} onClick={() => void scan()}>{working ? <LoaderCircle size={14} className="spin" /> : <Search size={14} />}检查未引用图片</button>
       {unused && <div className="unused-assets">
         <p>{unused.files.length ? `发现 ${unused.files.length} 张未引用图片，共 ${bytesLabel(unused.bytes)}` : '没有未引用的图片。'}</p>
         {unused.files.length > 0 && <><ul aria-label="未引用图片列表">{unused.files.map(file => <li key={file.path}><span title={file.path}>{file.path}</span><small>{bytesLabel(file.size)}</small></li>)}</ul>
-          {confirming ? <div className="cleanup-confirm"><p>将永久删除以上 {unused.files.length} 张图片，此操作无法撤销。</p><div><button type="button" className="button" onClick={() => setConfirming(false)} disabled={working}>取消清理</button><button type="button" className="button danger" onClick={() => void cleanup()} disabled={working || changedDirectory}><Trash2 size={14} />确认清理</button></div></div> : <button type="button" className="button danger" disabled={working || changedDirectory} onClick={() => setConfirming(true)}><Trash2 size={14} />清理 {unused.files.length} 张图片</button>}
+          {confirming ? <div className="cleanup-confirm"><p>将永久删除以上 {unused.files.length} 张图片，此操作无法撤销。</p><div><button type="button" className="button" onClick={() => setConfirming(false)} disabled={working}>取消清理</button><button type="button" className="button danger" onClick={() => void cleanup()} disabled={working || pendingSave}><Trash2 size={14} />确认清理</button></div></div> : <button type="button" className="button danger" disabled={working || pendingSave} onClick={() => setConfirming(true)}><Trash2 size={14} />清理 {unused.files.length} 张图片</button>}
         </>}
       </div>}
       {notice && <p className="storage-notice" role="status">{notice}</p>}

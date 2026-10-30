@@ -70,7 +70,7 @@ export function SettingsPanel({ settings, systemDark, agent, onPreview, onSave, 
           </>}
           {section === 'agent' && (agentDraft ? <AgentSettings draft={agentDraft} apiKey={agentKey} disabled={locked} onChange={patch => setAgentDraft(current => current ? { ...current, ...patch } : current)} onKeyChange={setAgentKey} /> : <p className="field-help">暂时无法读取 Agent 设置，其他设置仍可保存。</p>)}
           {section === 'shortcuts' && <ShortcutSettings shortcuts={draft.shortcuts ?? {}} disabled={locked} onChange={shortcuts => patch({ shortcuts })} />}
-          {section === 'storage' && <StorageSettings assetsDir={settings.assetsDir} draftAssetsDir={draft.assetsDir} onDirectoryChange={assetsDir => patch({ assetsDir })} beforeAction={beforeStorageAction} onBusyChange={setStorageBusy} />}
+          {section === 'storage' && <StorageSettings assetsDir={settings.assetsDir} draftAssetsDir={draft.assetsDir} scanExcludes={settings.scanExcludes ?? []} draftScanExcludes={draft.scanExcludes ?? []} onDirectoryChange={assetsDir => patch({ assetsDir })} onExcludesChange={scanExcludes => patch({ scanExcludes })} beforeAction={beforeStorageAction} onBusyChange={setStorageBusy} />}
         </fieldset></div>
       </div>
       <div className="settings-save-bar">{error && <p className="form-error" role="alert">{error}</p>}<div className="modal-actions"><button type="button" className="button" onClick={onClose} disabled={locked}>取消</button><button type="submit" className="button primary" disabled={locked}>{busy ? '正在保存…' : '保存设置'}</button></div></div>

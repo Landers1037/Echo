@@ -33,12 +33,13 @@ import { DrawioModal } from './components/Drawio'
 
 const uiStyleIds: Settings['uiStyle'][] = ['sage', 'paper', 'mono', 'soft', 'glass', 'ink']
 const noteWidthIds: Settings['noteWidth'][] = ['default', 'medium', 'large']
-const defaults: Settings = { theme: 'system', uiStyle: 'sage', accent: '#72967b', animations: true, editorFontSize: 14, editorLineNumbers: true, previewLineNumbers: false, multiTabs: false, sourceSplitPreview: false, strictLineBreaks: false, noteWidth: 'default', assetsDir: '.assets', shortcuts: {} }
+const defaults: Settings = { theme: 'system', uiStyle: 'sage', accent: '#72967b', animations: true, editorFontSize: 14, editorLineNumbers: true, previewLineNumbers: false, multiTabs: false, sourceSplitPreview: false, strictLineBreaks: false, noteWidth: 'default', assetsDir: '.assets', scanExcludes: [], shortcuts: {} }
 function completeSettings(value?: Partial<Settings> | null): Settings {
   const shortcuts = value?.shortcuts && typeof value.shortcuts === 'object' ? value.shortcuts : {}
   const uiStyle = uiStyleIds.includes(value?.uiStyle as Settings['uiStyle']) ? value!.uiStyle! : defaults.uiStyle
   const noteWidth = noteWidthIds.includes(value?.noteWidth as Settings['noteWidth']) ? value!.noteWidth! : defaults.noteWidth
-  return { ...defaults, ...value, shortcuts, uiStyle, noteWidth }
+  const scanExcludes = Array.isArray(value?.scanExcludes) ? value.scanExcludes.filter((item): item is string => typeof item === 'string') : []
+  return { ...defaults, ...value, shortcuts, uiStyle, noteWidth, scanExcludes }
 }
 const MAX_TABS = 10
 const tabsKey = 'echo:tabs'

@@ -32,6 +32,7 @@ type Settings struct {
 	StrictLineBreaks   bool              `json:"strictLineBreaks"`
 	NoteWidth          string            `json:"noteWidth"`
 	AssetsDir          string            `json:"assetsDir"`
+	ScanExcludes       []string          `json:"scanExcludes"`
 	Shortcuts          map[string]string `json:"shortcuts"`
 }
 type Note struct {
@@ -118,7 +119,7 @@ func validNoteWidth(value string) bool {
 	}
 }
 func defaults() Settings {
-	return Settings{Theme: "system", UIStyle: "sage", Accent: "#72967b", Animations: true, EditorFontSize: 14, EditorLineNumbers: true, PreviewLineNumbers: false, MultiTabs: false, SourceSplitPreview: false, StrictLineBreaks: false, NoteWidth: "default", AssetsDir: ".assets", Shortcuts: map[string]string{}}
+	return Settings{Theme: "system", UIStyle: "sage", Accent: "#72967b", Animations: true, EditorFontSize: 14, EditorLineNumbers: true, PreviewLineNumbers: false, MultiTabs: false, SourceSplitPreview: false, StrictLineBreaks: false, NoteWidth: "default", AssetsDir: ".assets", ScanExcludes: []string{}, Shortcuts: map[string]string{}}
 }
 func newID() string { var b [12]byte; _, _ = rand.Read(b[:]); return hex.EncodeToString(b[:]) }
 func revision(content []byte) string {
@@ -162,6 +163,9 @@ func Open(root string) (*Store, error) {
 	}
 	if s.state.Settings.Shortcuts == nil {
 		s.state.Settings.Shortcuts = map[string]string{}
+	}
+	if s.state.Settings.ScanExcludes, err = normalizeScanExcludes(s.state.Settings.ScanExcludes); err != nil {
+		return nil, fmt.Errorf("扫描排除规则无效: %w", err)
 	}
 	if err = s.recoverMigration(); err != nil {
 		return nil, err
@@ -373,9 +377,12 @@ func (s *Store) listNotes() ([]Note, error) {
 			return nil
 		}
 		if entry.IsDir() {
-			if strings.HasPrefix(entry.Name(), ".") || rel == s.state.Settings.AssetsDir {
+			if strings.HasPrefix(entry.Name(), ".") || rel == s.state.Settings.AssetsDir || s.pathExcluded(rel, true) {
 				return filepath.SkipDir
 			}
+			return nil
+		}
+		if s.pathExcluded(rel, false) {
 			return nil
 		}
 		if strings.EqualFold(filepath.Ext(file), ".md") {
@@ -393,6 +400,9 @@ func (s *Store) listNotes() ([]Note, error) {
 func (s *Store) createNote(name, content string) (Note, error) {
 	name, err := cleanRelative(name)
 	if err != nil {
+		return Note{}, err
+	}
+	if err = s.ensureScanned(name, false); err != nil {
 		return Note{}, err
 	}
 	file, err := s.notePath(name)
@@ -499,6 +509,9 @@ func (s *Store) createDrawing(name, content string) (Drawing, error) {
 	if err = validateDrawing(name, content); err != nil {
 		return Drawing{}, err
 	}
+	if err = s.ensureScanned(name, false); err != nil {
+		return Drawing{}, err
+	}
 	file, err := s.drawingPath(name)
 	if err != nil {
 		return Drawing{}, err
@@ -552,7 +565,7 @@ func (s *Store) tree() ([]TreeEntry, error) {
 		result := []TreeEntry{}
 		for _, entry := range entries {
 			p := path.Join(dir, entry.Name())
-			if strings.HasPrefix(entry.Name(), ".") || entry.Type()&os.ModeSymlink != 0 || p == s.state.Settings.AssetsDir {
+			if strings.HasPrefix(entry.Name(), ".") || entry.Type()&os.ModeSymlink != 0 || p == s.state.Settings.AssetsDir || s.pathExcluded(p, entry.IsDir()) {
 				continue
 			}
 			if entry.IsDir() {

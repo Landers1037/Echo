@@ -316,11 +316,18 @@ func (h *handler) api(s *Store, w http.ResponseWriter, r *http.Request) error {
 			if err := decode(r, &request); err != nil {
 				return err
 			}
-			file, err := s.safePath(request.Path)
+			name, err := cleanRelative(request.Path)
 			if err != nil {
 				return err
 			}
-			if strings.HasPrefix(path.Base(request.Path), ".") {
+			if err = s.ensureScanned(name, true); err != nil {
+				return err
+			}
+			file, err := s.safePath(name)
+			if err != nil {
+				return err
+			}
+			if strings.HasPrefix(path.Base(name), ".") {
 				return fmt.Errorf("文件夹名称不能以点开头")
 			}
 			if _, err = os.Stat(file); !os.IsNotExist(err) {

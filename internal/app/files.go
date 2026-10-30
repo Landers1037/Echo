@@ -259,6 +259,9 @@ func (s *Store) move(from, to, rev string, folder bool) (Note, error) {
 	if from == s.state.Settings.AssetsDir || to == s.state.Settings.AssetsDir || strings.HasPrefix(s.state.Settings.AssetsDir, from+"/") || strings.HasPrefix(to, s.state.Settings.AssetsDir+"/") {
 		return Note{}, fmt.Errorf("不能移动资源目录")
 	}
+	if err = s.ensureScanned(to, folder); err != nil {
+		return Note{}, err
+	}
 	drawing := !folder && isDrawingName(from)
 	if drawing && !strings.EqualFold(path.Ext(from), path.Ext(to)) {
 		return Note{}, fmt.Errorf("绘图必须保持原扩展名")
@@ -698,6 +701,11 @@ func (s *Store) updateSettings(settings Settings) error {
 	if err := validateShortcuts(settings.Shortcuts); err != nil {
 		return err
 	}
+	excludes, err := normalizeScanExcludes(settings.ScanExcludes)
+	if err != nil {
+		return err
+	}
+	settings.ScanExcludes = excludes
 	dir, err := cleanRelative(settings.AssetsDir)
 	if err != nil {
 		return err

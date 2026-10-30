@@ -179,7 +179,7 @@ flowchart LR
 - `.excalidraw` 内容必须是 `type: "excalidraw"` 的 JSON；`.drawio` 内容必须是根元素为 `mxfile` 的 XML。两者都不能为空，且不超过 20MB。
 - Draw.io 编辑器是同源 iframe（`/drawio/index.html`）。父页面只接受来自该 iframe、且 `origin` 为本页的 `postMessage`。预览在加载 `viewer-static.min.js` 之前把形状、样式和 mxGraph 路径指到 `/drawio`，避免请求 `viewer.diagrams.net`。下载的站点会删掉 `WEB-INF` 和 `META-INF`，不提供 Draw.io 的 Java 服务。
 - 打开笔记库时如果 `.echo` 及其关键文件是符号链接，拒绝打开。
-- 目录树和笔记列表跳过点开头的目录、资源目录和符号链接。
+- 目录树和笔记列表跳过点开头的目录、资源目录、符号链接，以及 `scanExcludes` 匹配的路径。规则是 .gitignore 的常用子集：无斜杠的名字匹配任意层级，前导 `/` 只匹配笔记库根，末尾 `/` 只匹配目录，`*` 和 `?` 匹配一层，`**` 匹配多层。匹配到目录后不再进入该目录。存储占用和未引用图片检查使用同一套规则，回收站按删除前的原始路径判断。不支持 `!` 否定，也不能排除整个笔记库。新建、移动和新建文件夹的目标如果落在排除路径内会被拒绝；按路径直接打开已有笔记仍然可以。
 - `/api/assets` 只返回 `image/*` 并排除 SVG（防 XSS）；上传按文件内容嗅探类型，只接受 PNG/JPEG/GIF/WebP，大小不超过 20MB，以随机 ID 命名。
 - 前端预览不执行原始 HTML（只对 `<u>` 做白名单处理）。
 
@@ -228,6 +228,7 @@ flowchart LR
     "strictLineBreaks": false,
     "noteWidth": "default",       // default | medium | large；预览正文最大宽度。default 跟随界面风格，medium 1200px，large 1600px
     "assetsDir": ".assets",
+    "scanExcludes": ["node_modules"], // 扫描排除。空列表表示不额外排除
     "shortcuts": { "bold": "Mod-b" }   // 动作 ID → CodeMirror 按键
   },
   "groups": [], "tags": [],             // 显式创建的分类（实际列表 = 这里 ∪ 笔记 frontmatter 中出现的）
