@@ -53,6 +53,34 @@ func repositoriesPath() (string, error) {
 	return filepath.Join(dir, "Echo", "repositories.json"), nil
 }
 
+// LastRepository returns the most recently opened notebook. When no history
+// exists, it falls back to a notes directory next to the executable.
+func LastRepository() string {
+	fallback := defaultNotesDir()
+	file, err := repositoriesPath()
+	if err != nil {
+		return fallback
+	}
+	history, err := loadRepositories(file)
+	if err != nil {
+		return fallback
+	}
+	for _, item := range history {
+		if strings.TrimSpace(item.Path) != "" {
+			return item.Path
+		}
+	}
+	return fallback
+}
+
+func defaultNotesDir() string {
+	exe, err := os.Executable()
+	if err != nil {
+		return "notes"
+	}
+	return filepath.Join(filepath.Dir(exe), "notes")
+}
+
 func loadRepositories(file string) ([]Repository, error) {
 	data, err := os.ReadFile(file)
 	if os.IsNotExist(err) {

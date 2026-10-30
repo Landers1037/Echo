@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "node scripts/dev.mjs",
     "build": "node scripts/build.mjs",
+    "build:windows": "node scripts/build.mjs --windows-gui",
     "test": "go test ./... && vitest run",
     "test:web": "vitest run",
     "typecheck": "tsc --noEmit"

@@ -158,6 +158,35 @@ func TestRepositoryRenamePersists(t *testing.T) {
 	}
 }
 
+func TestLastRepositoryUsesNewestHistory(t *testing.T) {
+	useRepositoryConfig(t)
+	fallback := t.TempDir()
+	recent := t.TempDir()
+	ws, err := OpenWorkspace(fallback, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = ws.Switch(recent); err != nil {
+		t.Fatal(err)
+	}
+	if !sameRepository(LastRepository(), recent) {
+		t.Fatalf("last repository %s, want %s", LastRepository(), recent)
+	}
+}
+
+func TestLastRepositoryFallsBackWithoutHistory(t *testing.T) {
+	useRepositoryConfig(t)
+	got := LastRepository()
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := filepath.Join(filepath.Dir(exe), "notes")
+	if got != want {
+		t.Fatalf("got %s, want %s", got, want)
+	}
+}
+
 func TestOpenWorkspacePrefersHistoryUnlessExplicit(t *testing.T) {
 	useRepositoryConfig(t)
 	fallback := t.TempDir()

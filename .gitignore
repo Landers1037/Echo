@@ -149,6 +149,7 @@ vite.config.ts.timestamp-*
 .turbo
 
 # Echo local data and generated binaries
+/cmd/echo/*.syso
 notes/
 .echo-dev/
 third_party/
