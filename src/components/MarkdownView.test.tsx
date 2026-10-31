@@ -156,6 +156,16 @@ describe('Markdown rendering', () => {
     await waitFor(() => expect(container.querySelector('[data-rendering]')).toBeNull())
   })
 
+  it('keeps highlighted code mounted across unrelated parent rerenders', async () => {
+    const content = '```ts\nconst n = 1\n```'
+    const { container, rerender } = render(<MarkdownView content={content} notePath="笔记.md" lineNumbers={false} noteTitles={{ 'a.md': '甲' }} />)
+    await waitFor(() => expect(container.querySelector('.code-highlight')).toBeInTheDocument())
+    const highlight = container.querySelector('.code-highlight')
+    rerender(<MarkdownView content={content} notePath="笔记.md" lineNumbers={false} noteTitles={{ 'a.md': '甲', 'b.md': '乙' }} />)
+    expect(container.querySelector('.code-highlight')).toBe(highlight)
+    expect(container.querySelector('[data-rendering]')).toBeNull()
+  })
+
   it('turns a single newline into a line break only in strict mode, including emphasis and code blocks', () => {
     const content = '飒飒撒**重点**\n111\n\n```\n丙\n丁\n```'
     const { container, rerender } = render(<MarkdownView content={content} notePath="笔记.md" lineNumbers={false} />)
