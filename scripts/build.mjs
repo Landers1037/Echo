@@ -48,12 +48,12 @@ try {
     ])
     const executable = join(root, 'dist', 'echo-gui.exe')
     console.log('[echo] Embedding frontend and building Windows GUI…')
-    await run('go', ['build', '-trimpath', '-tags', 'gui', '-ldflags', '-H windowsgui', '-o', executable, './cmd/echo'], { GOOS: 'windows' })
+    await run('go', ['build', '-trimpath', '-tags', 'gui', '-ldflags', '-w -s -H windowsgui', '-o', executable, './cmd/echo'], { GOOS: 'windows' })
     console.log(`[echo] Built ${executable}`)
   } else {
     const executable = join(root, 'dist', process.platform === 'win32' ? 'echo.exe' : 'echo')
     console.log('[echo] Embedding frontend and building executable…')
-    await run('go', ['build', '-trimpath', '-o', executable, './cmd/echo'])
+    await run('go', ['build', '-trimpath', '-ldflags', '-w -s', '-o', executable, './cmd/echo'])
     console.log(`[echo] Built ${executable}`)
   }
 } catch (error) {
