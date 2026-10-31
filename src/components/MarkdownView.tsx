@@ -11,6 +11,7 @@ import { NOTE_REF_TITLE } from '../noteReference'
 import { DrawingEmbed } from './Drawing'
 import { DrawioEmbed } from './Drawio'
 import { ImagePreview, PreviewableImage } from './ImagePreview'
+import { LinkCard } from './LinkCard'
 import { MermaidBlock } from './Mermaid'
 
 export type MarkdownViewProps = {
@@ -27,6 +28,7 @@ export type MarkdownViewProps = {
   exporting?: boolean
   dark?: boolean
   strictLineBreaks?: boolean
+  autoParseLinks?: boolean
   annotations?: ReactNode
 }
 
@@ -141,7 +143,7 @@ export function drawingKind(src: string): '' | 'drawio' | 'excalidraw' {
   return ''
 }
 
-export function MarkdownView({ content, notePath, assets, lineNumbers, fontSize, noteTitles, onNavigate, onToggleTask, onEditDrawing, drawingVersion = 0, exporting = false, dark = false, strictLineBreaks = false, annotations }: MarkdownViewProps) {
+export function MarkdownView({ content, notePath, assets, lineNumbers, fontSize, noteTitles, onNavigate, onToggleTask, onEditDrawing, drawingVersion = 0, exporting = false, dark = false, strictLineBreaks = false, autoParseLinks = false, annotations }: MarkdownViewProps) {
   const [imagePreview, setImagePreview] = useState<{ src: string; alt: string } | null>(null)
   useEffect(() => { setImagePreview(null) }, [notePath, exporting])
   const remarkPlugins = strictLineBreaks ? [remarkGfm, remarkBreaks, remarkFrontmatter, remarkUnderline] : [remarkGfm, remarkFrontmatter, remarkUnderline]
@@ -177,7 +179,7 @@ export function MarkdownView({ content, notePath, assets, lineNumbers, fontSize,
       if (exporting) return <img src={image} alt={alt || ''} title={title} loading="eager" onError={event => { event.currentTarget.classList.add('image-error') }} />
       return <PreviewableImage src={image} alt={alt || ''} title={title} onOpen={() => setImagePreview({ src: image, alt: alt || '' })} />
     },
-    a({ href, children, title }) {
+    a({ href, children, title, node }) {
       const internal = Boolean(href && !/^(?:[a-z][a-z\d+.-]*:|\/\/|#)/i.test(href) && /\.md(?:[?#]|$)/i.test(href))
       const target = internal && href ? resolveNotePath(notePath, href) : ''
       if (internal && title === NOTE_REF_TITLE) {
@@ -192,6 +194,7 @@ export function MarkdownView({ content, notePath, assets, lineNumbers, fontSize,
           {exporting ? <span className="note-ref-title">{label}</span> : <button type="button" className="note-ref-title" onClick={open}>{label}</button>}
         </span>
       }
+      if (!exporting && autoParseLinks && href && previewableHref(href) && !wrapsImage(node)) return <LinkCard url={href} label={plainText(node)} />
       return <a href={href} title={title} data-note-link={internal ? target : undefined} onClick={internal && onNavigate ? event => { event.preventDefault(); onNavigate(target) } : undefined} target={!internal && href && /^(https?:|\/\/)/i.test(href) ? '_blank' : undefined} rel="noreferrer">{children}</a>
     },
     li({ children, className, node }) {
@@ -204,3 +207,16 @@ export function MarkdownView({ content, notePath, assets, lineNumbers, fontSize,
 }
 
 function decodeSafe(value: string) { try { return decodeURIComponent(value) } catch { return value } }
+
+function previewableHref(href: string) {
+  return /^(?:https?:)?\/\//i.test(href)
+}
+
+function wrapsImage(node: ExtraProps['node']) {
+  return node?.children?.some(child => child.type === 'element' && child.tagName === 'img') ?? false
+}
+
+function plainText(node: ExtraProps['node']): string {
+  if (!node?.children) return ''
+  return node.children.map(child => child.type === 'text' ? child.value : child.type === 'element' ? plainText(child) : '').join('')
+}

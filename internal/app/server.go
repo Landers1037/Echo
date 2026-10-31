@@ -136,6 +136,12 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
+	if r.URL.Path == "/api/link-previews" || r.URL.Path == "/api/link-previews/image" {
+		if err := h.linkPreviews(w, r); err != nil {
+			fail(w, err)
+		}
+		return
+	}
 	s := h.ws.current()
 	s.mu.Lock()
 	defer s.mu.Unlock()

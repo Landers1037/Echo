@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { imageDownloadName } from './ImagePreview'
+import { clearLinkPreviews } from './LinkCard'
 import { MarkdownView, resolveNotePath } from './MarkdownView'
 
 const { initializeMermaid, renderMermaid } = vi.hoisted(() => ({
@@ -15,7 +16,7 @@ vi.mock('shiki', () => ({ codeToHtml: async (code: string) => `<pre class="shiki
 vi.mock('mermaid', () => ({ default: { initialize: initializeMermaid, render: (id: string, code: string) => renderMermaid(id, code) } }))
 vi.mock('./Drawing', () => ({ DrawingEmbed: ({ path, onEdit }: { path: string; onEdit?: (path: string) => void }) => <button type="button" onClick={() => onEdit?.(path)}>{path}</button> }))
 vi.mock('./Drawio', () => ({ DrawioEmbed: ({ path, onEdit }: { path: string; onEdit?: (path: string) => void }) => <button type="button" onClick={() => onEdit?.(path)}>{path}</button> }))
-afterEach(cleanup)
+afterEach(() => { cleanup(); clearLinkPreviews(); vi.unstubAllGlobals(); vi.restoreAllMocks() })
 
 describe('Markdown rendering', () => {
   it('marks each navigable heading with its source line and keeps exports free of navigation attributes', () => {
@@ -362,5 +363,95 @@ describe('Markdown rendering', () => {
     rerender(<MarkdownView content={content} notePath="笔记.md" lineNumbers={false} exporting annotations={<i>标记</i>} />)
     expect(container.querySelector('[data-source-line]')).toBeNull()
     expect(screen.queryByText('标记')).not.toBeInTheDocument()
+  })
+
+  it('keeps the text link until automatic link cards are enabled', () => {
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    render(<MarkdownView content="[卧室](https://renj.io)." notePath="笔记.md" lineNumbers={false} />)
+    expect(screen.getByRole('link', { name: '卧室' })).toHaveAttribute('href', 'https://renj.io')
+    expect(document.querySelector('.link-card')).toBeNull()
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('renders a cached thumbnail card and refreshes only when asked', async () => {
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      const refreshed = init?.method === 'POST'
+      return new Response(JSON.stringify({ url: 'https://renj.io/', title: refreshed ? '新标题' : '页面标题', site: 'renj.io', hasImage: true, image: '/api/link-previews/image?id=abc' }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const { rerender } = render(<MarkdownView content="[卧室](https://renj.io)." notePath="笔记.md" lineNumbers={false} autoParseLinks />)
+    const card = await screen.findByRole('link', { name: /卧室/ })
+    expect(card).toHaveAttribute('href', 'https://renj.io')
+    expect(card).toHaveAttribute('target', '_blank')
+    expect(card.querySelector('img')).toHaveAttribute('src', '/api/link-previews/image?id=abc&v=1')
+    expect(card).toHaveTextContent('renj.io')
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    rerender(<MarkdownView content="[卧室](https://renj.io)." notePath="笔记.md" lineNumbers={false} autoParseLinks />)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    fireEvent.click(screen.getByRole('button', { name: '刷新链接' }))
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2))
+    expect(screen.getByRole('link', { name: /卧室/ }).querySelector('img')).toHaveAttribute('src', '/api/link-previews/image?id=abc&v=2')
+    const post = fetchMock.mock.calls.find(call => (call[1] as RequestInit | undefined)?.method === 'POST')
+    expect(post?.[0]).toBe('/api/link-previews')
+    expect((post?.[1] as RequestInit).body).toBe(JSON.stringify({ url: 'https://renj.io' }))
+    fireEvent.error(screen.getByRole('link', { name: /卧室/ }).querySelector('img')!)
+    expect(screen.getByRole('link', { name: /卧室/ })).toHaveTextContent('https://renj.io')
+    expect(document.querySelector('.link-card.has-image')).toBeNull()
+  })
+
+  it('shows a small card with title and address when a page has no thumbnail', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ url: 'https://renj.io/', title: '页面标题', site: 'renj.io', hasImage: false }), { status: 200, headers: { 'Content-Type': 'application/json' } })))
+    const { container } = render(<MarkdownView content="[卧室](https://renj.io)." notePath="笔记.md" lineNumbers={false} autoParseLinks />)
+    const card = await screen.findByRole('link', { name: /卧室/ })
+    expect(card).toHaveAttribute('href', 'https://renj.io')
+    expect(card).toHaveTextContent('https://renj.io')
+    expect(container.querySelector('.link-card.compact.has-title')).toBeInTheDocument()
+    expect(container.querySelector('img')).toBeNull()
+    expect(screen.queryByText('页面标题')).not.toBeInTheDocument()
+  })
+
+  it('uses the page title when the link text is the address', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ url: 'https://example.com/page', title: '页面标题', site: 'example.com', hasImage: true, image: '/api/link-previews/image?id=page' }), { status: 200, headers: { 'Content-Type': 'application/json' } })))
+    render(<MarkdownView content="https://example.com/page" notePath="笔记.md" lineNumbers={false} autoParseLinks />)
+    const card = await screen.findByRole('link', { name: /页面标题/ })
+    expect(card).toHaveAttribute('href', 'https://example.com/page')
+    expect(card).toHaveTextContent('example.com')
+  })
+
+  it('shares one cached preview between repeated links', async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ url: 'https://renj.io/', title: '页面', site: 'renj.io', hasImage: true, image: '/api/link-previews/image?id=abc' }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
+    vi.stubGlobal('fetch', fetchMock)
+    render(<MarkdownView content={'[甲](https://renj.io)\n\n[乙](https://renj.io)'} notePath="笔记.md" lineNumbers={false} autoParseLinks />)
+    expect(await screen.findByRole('link', { name: /甲/ })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /乙/ })).toBeInTheDocument()
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
+    fireEvent.click(screen.getAllByRole('button', { name: '刷新链接' })[0])
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2))
+    expect(screen.getByRole('link', { name: /甲/ }).querySelector('img')).toHaveAttribute('src', expect.stringContaining('v=2'))
+    expect(screen.getByRole('link', { name: /乙/ }).querySelector('img')).toHaveAttribute('src', expect.stringContaining('v=2'))
+  })
+
+  it('keeps the markdown title when preview lookup fails and uses ordinary links while exporting', async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ error: '无法访问链接' }), { status: 500, headers: { 'Content-Type': 'application/json' } }))
+    vi.stubGlobal('fetch', fetchMock)
+    const { rerender } = render(<MarkdownView content="[卧室](https://renj.io)" notePath="笔记.md" lineNumbers={false} autoParseLinks />)
+    const card = await screen.findByRole('link', { name: /卧室/ })
+    expect(card).toHaveTextContent('https://renj.io')
+    expect(document.querySelector('.link-card.compact.has-title')).toBeInTheDocument()
+    rerender(<MarkdownView content="[卧室](https://renj.io)" notePath="笔记.md" lineNumbers={false} autoParseLinks exporting />)
+    expect(screen.getByRole('link', { name: '卧室' })).toHaveAttribute('href', 'https://renj.io')
+    expect(document.querySelector('.link-card')).toBeNull()
+  })
+
+  it('does not turn unsafe, local, or image links into cards', () => {
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    render(<MarkdownView content={'[危险链接](javascript:alert(1))\n\n[另一篇](介绍.md)\n\n[![照片](../.assets/a.png)](https://example.com/page)'} notePath="笔记.md" lineNumbers={false} autoParseLinks />)
+    expect(screen.getByText('危险链接')).not.toHaveAttribute('href', 'javascript:alert(1)')
+    expect(decodeURIComponent(screen.getByRole('link', { name: '另一篇' }).getAttribute('href') || '')).toBe('介绍.md')
+    expect(screen.getByRole('button', { name: '预览图片：照片' })).toHaveAttribute('src', '/api/assets?path=.assets%2Fa.png')
+    expect(document.querySelector('.link-card')).toBeNull()
+    expect(fetchMock).not.toHaveBeenCalled()
   })
 })

@@ -9,7 +9,7 @@ import { keyFromEvent } from './shortcuts'
 vi.mock('./components/Editor', () => ({
   Editor: ({ value, onChange, fontSize }: { value: string; onChange: (value: string) => void; fontSize: number }) => <textarea className="cm-editor" aria-label="笔记源码" style={{ fontSize }} value={value} onChange={event => onChange(event.target.value)} />,
 }))
-vi.mock('./components/MarkdownView', () => ({ MarkdownView: ({ content, fontSize, strictLineBreaks }: { content: string; fontSize?: number; strictLineBreaks?: boolean }) => <article data-testid="preview" data-strict-breaks={strictLineBreaks ? 'true' : 'false'} style={{ fontSize }}>{content}</article> }))
+vi.mock('./components/MarkdownView', () => ({ MarkdownView: ({ content, fontSize, strictLineBreaks, autoParseLinks }: { content: string; fontSize?: number; strictLineBreaks?: boolean; autoParseLinks?: boolean }) => <article data-testid="preview" data-strict-breaks={strictLineBreaks ? 'true' : 'false'} data-auto-links={autoParseLinks ? 'true' : 'false'} style={{ fontSize }}>{content}</article> }))
 vi.mock('./components/TasksView', () => ({ TasksView: () => <div data-testid="tasks-view" /> }))
 vi.mock('./components/PlansView', () => ({ PlansView: () => <div data-testid="plans-view" />, planScheduleLabel: () => '' }))
 vi.mock('./export', () => ({ exportNotes: vi.fn(async () => {}) }))
@@ -30,7 +30,7 @@ vi.mock('motion/react', async () => {
   return { MotionConfig: ({ children }: { children: React.ReactNode }) => children, AnimatePresence: ({ children }: { children: React.ReactNode }) => children, motion: { div: Div, button: Button } }
 })
 
-const settings: Settings = { theme: 'light', uiStyle: 'sage', accent: '#72967b', animations: false, editorFontSize: 14, editorLineNumbers: true, previewLineNumbers: false, multiTabs: false, sourceSplitPreview: false, strictLineBreaks: false, noteWidth: 'default', assetsDir: '.assets', scanExcludes: [], shortcuts: {} }
+const settings: Settings = { theme: 'light', uiStyle: 'sage', accent: '#72967b', animations: false, editorFontSize: 14, editorLineNumbers: true, previewLineNumbers: false, multiTabs: false, sourceSplitPreview: false, strictLineBreaks: false, autoParseLinks: false, noteWidth: 'default', assetsDir: '.assets', scanExcludes: [], shortcuts: {} }
 type Write = { path: string; content: string; revision: string; force?: boolean }
 type Batch = { paths: string[]; tags: string[]; group: string; revisions: Record<string, string> }
 type Call = { method: string; path: string; body?: unknown }
@@ -1122,6 +1122,21 @@ describe('source split preview', () => {
     await waitFor(() => expect(screen.queryByRole('dialog', { name: '设置' })).not.toBeInTheDocument())
     expect(server.savedSettings().strictLineBreaks).toBe(true)
     expect(screen.getByTestId('preview')).toHaveAttribute('data-strict-breaks', 'true')
+  })
+
+  it('saves automatic link cards from note settings', async () => {
+    const server = createServer()
+    await openApp(server)
+    fireEvent.click(screen.getByRole('button', { name: '设置' }))
+    fireEvent.click(screen.getByRole('button', { name: '笔记设置' }))
+    const toggle = screen.getByRole('switch', { name: '自动解析链接' })
+    expect(toggle).toHaveAttribute('aria-checked', 'false')
+    expect(screen.getByText('开启后，预览里的网页链接改为卡片，并在本地保存页面缩略图。再次打开直接使用缓存，只有点击刷新链接才会重新解析；抓取不到缩略图时，卡片只显示链接地址。')).toBeInTheDocument()
+    fireEvent.click(toggle)
+    fireEvent.click(screen.getByRole('button', { name: '保存设置' }))
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: '设置' })).not.toBeInTheDocument())
+    expect(server.savedSettings().autoParseLinks).toBe(true)
+    expect(screen.getByTestId('preview')).toHaveAttribute('data-auto-links', 'true')
   })
 
   it('saves a wider preview column from the note width tabs', async () => {

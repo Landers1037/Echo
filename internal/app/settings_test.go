@@ -239,6 +239,33 @@ func TestNoteWidthPersistence(t *testing.T) {
 	}
 }
 
+func TestAutoParseLinksPersistence(t *testing.T) {
+	root := t.TempDir()
+	s, err := Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.state.Settings.AutoParseLinks {
+		t.Fatal("autoParseLinks should default to false")
+	}
+	h := NewHandler(attachStore(s), false)
+	rr := request(t, h, "PUT", "/api/settings", map[string]any{"autoParseLinks": true})
+	if rr.Code != 200 || !s.state.Settings.AutoParseLinks {
+		t.Fatalf("save autoParseLinks: %d %s", rr.Code, rr.Body.String())
+	}
+	rr = request(t, h, "PUT", "/api/settings", map[string]any{"editorLineNumbers": false})
+	if rr.Code != 200 || s.state.Settings.EditorLineNumbers || !s.state.Settings.AutoParseLinks {
+		t.Fatalf("partial update lost autoParseLinks: %d %+v", rr.Code, s.state.Settings)
+	}
+	reopened, err := Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reopened.state.Settings.AutoParseLinks || reopened.state.Settings.EditorFontSize != 14 {
+		t.Fatalf("autoParseLinks not persisted: %+v", reopened.state.Settings)
+	}
+}
+
 func TestShortcutPersistenceAndReplacement(t *testing.T) {
 	s := testStore(t)
 	if s.state.Settings.Shortcuts == nil {

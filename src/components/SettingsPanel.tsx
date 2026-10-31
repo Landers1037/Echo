@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Monitor, Moon, Sun, Palette, Sparkles, NotebookPen, HardDrive, Keyboard, Bot } from 'lucide-react'
+import { Monitor, Moon, Sun, Palette, Sparkles, NotebookPen, HardDrive, Keyboard, Bot, Link2 } from 'lucide-react'
 import { Modal, Switch } from './UI'
 import { StorageSettings } from './StorageSettings'
 import { AgentSettings } from './AgentSettings'
@@ -66,6 +66,7 @@ export function SettingsPanel({ settings, systemDark, agent, onPreview, onSave, 
               <div className="editor-font-preview" aria-label="编辑器字体预览" style={{ fontSize: draft.editorFontSize }}><span># 记录每一个想法</span><span>让文字以舒适的大小呈现。</span></div>
             </section>
             <section className="settings-section"><h4>编辑与预览</h4><div className="setting-row"><div><strong>笔记宽度</strong><p>控制预览正文的最大宽度。默认沿用当前界面风格，中为 1200 像素，大为 1600 像素。</p></div><div className="note-width-tabs" role="tablist" aria-label="笔记宽度">{noteWidths.map(item => <button type="button" key={item.id} role="tab" aria-selected={draft.noteWidth === item.id} onClick={() => patch({ noteWidth: item.id })}>{item.label}</button>)}</div></div><div className="setting-row"><span>源码编辑器行号</span><Switch label="源码编辑器行号" checked={draft.editorLineNumbers} onChange={editorLineNumbers => patch({ editorLineNumbers })} /></div><div className="setting-row"><span>预览代码块行号</span><Switch label="预览代码块行号" checked={draft.previewLineNumbers} onChange={previewLineNumbers => patch({ previewLineNumbers })} /></div><div className="setting-row"><div><strong>源码模式分栏预览</strong><p>源码模式左侧编辑，右侧实时显示 Markdown。预览标签仍为整页预览。</p></div><Switch label="源码模式分栏预览" checked={draft.sourceSplitPreview} onChange={sourceSplitPreview => patch({ sourceSplitPreview })} /></div><div className="setting-row"><div><strong>严格换行模式</strong><p>开启后，预览里的一次换行就会换行。关闭时仍按 Markdown 默认规则，单次换行保持在同一段中。</p></div><Switch label="严格换行模式" checked={draft.strictLineBreaks} onChange={strictLineBreaks => patch({ strictLineBreaks })} /></div></section>
+            <section className="settings-section"><h4><Link2 size={15} />链接设置</h4><div className="setting-row"><div><strong>自动解析链接</strong><p>开启后，预览里的网页链接改为卡片，并在本地保存页面缩略图。再次打开直接使用缓存，只有点击刷新链接才会重新解析；抓取不到缩略图时，卡片只显示链接地址。</p></div><Switch label="自动解析链接" checked={draft.autoParseLinks} onChange={autoParseLinks => patch({ autoParseLinks })} /></div></section>
             <section className="settings-section"><h4>标签页</h4><div className="setting-row"><div><strong>多笔记 Tab</strong><p>同时打开多篇笔记，最多 10 个，超出时自动关闭最早打开的。</p></div><Switch label="多笔记 Tab" checked={draft.multiTabs} onChange={multiTabs => patch({ multiTabs })} /></div></section>
           </>}
           {section === 'agent' && (agentDraft ? <AgentSettings draft={agentDraft} apiKey={agentKey} disabled={locked} onChange={patch => setAgentDraft(current => current ? { ...current, ...patch } : current)} onKeyChange={setAgentKey} /> : <p className="field-help">暂时无法读取 Agent 设置，其他设置仍可保存。</p>)}

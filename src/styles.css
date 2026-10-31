@@ -39,3 +39,24 @@
 .month-year-grid.years{margin-bottom:10px}
 .month-year-grid button{padding:7px 0;font-size:12px}
 .month-year-grid button[aria-pressed=true],.month-year-grid button[aria-pressed=true]:hover{background:var(--accent);color:#fff}
+.markdown-body .link-card{display:inline-flex;align-items:stretch;max-width:100%;margin:8px 0;border:1px solid var(--border);border-radius:8px;background:var(--bg);overflow:hidden;vertical-align:middle;color:var(--text);line-height:1.45;transition:border-color .15s}
+.markdown-body .link-card:hover{border-color:color-mix(in srgb,var(--accent) 55%,var(--border))}
+.markdown-body .link-card.has-image{display:flex;width:min(100%,460px)}
+.markdown-body .link-card-open{display:flex;align-items:stretch;flex:1;min-width:0;color:var(--text);text-decoration:none}
+.markdown-body .link-card-open:hover{background:transparent;color:var(--text)}
+.markdown-body .link-card-thumb{width:148px;height:104px;object-fit:cover;flex-shrink:0;background:var(--panel)}
+.markdown-body .link-card-copy{display:flex;flex-direction:column;justify-content:center;gap:4px;min-width:0;padding:10px 8px 10px 12px}
+.markdown-body .link-card-title{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;font-weight:600;overflow-wrap:anywhere}
+.markdown-body .link-card-site,.markdown-body .link-card-address{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);font-size:.86em}
+.markdown-body .link-card-refresh{align-self:flex-start;width:28px;height:28px;margin:6px 6px 0 0;padding:0;display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;color:var(--muted)}
+.markdown-body .link-card-refresh:hover{color:var(--text)}
+.markdown-body .link-card-refresh:focus-visible{outline-offset:0}
+.markdown-body .link-card.compact{align-items:center;width:auto;max-width:min(100%,420px);margin:2px 0}
+.markdown-body .link-card.compact .link-card-open{align-items:center;gap:8px;padding:7px 2px 7px 12px}
+.markdown-body .link-card.compact .link-card-copy{padding:0;gap:2px;flex:1;min-width:0}
+.markdown-body .link-card.compact .link-card-title{display:block;-webkit-line-clamp:unset;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600;font-size:.95em}
+.markdown-body .link-card.compact .link-card-address{max-width:320px}
+.markdown-body .link-card.compact:not(.has-title) .link-card-address{color:var(--text)}
+.markdown-body .link-card-icon{color:var(--muted);flex-shrink:0}
+.markdown-body .link-card.compact .link-card-refresh{align-self:center;margin:4px}
+@media(max-width:560px){.markdown-body .link-card.has-image{position:relative;flex-direction:column}.markdown-body .link-card-thumb{width:100%;height:148px}.markdown-body .link-card.has-image .link-card-refresh{position:absolute;top:8px;right:8px;margin:0;background:color-mix(in srgb,var(--bg) 88%,transparent)}}

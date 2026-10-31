@@ -30,6 +30,7 @@ type Settings struct {
 	MultiTabs          bool              `json:"multiTabs"`
 	SourceSplitPreview bool              `json:"sourceSplitPreview"`
 	StrictLineBreaks   bool              `json:"strictLineBreaks"`
+	AutoParseLinks     bool              `json:"autoParseLinks"`
 	NoteWidth          string            `json:"noteWidth"`
 	AssetsDir          string            `json:"assetsDir"`
 	ScanExcludes       []string          `json:"scanExcludes"`
@@ -87,6 +88,8 @@ type Store struct {
 	annotationsMu     sync.Mutex
 	annotations       *Annotations
 	annotationsClosed bool
+	linkMu            sync.Mutex
+	linkFlight        map[string]*linkCall
 }
 type Drawing struct {
 	Path     string `json:"path"`
@@ -123,7 +126,7 @@ func validNoteWidth(value string) bool {
 	}
 }
 func defaults() Settings {
-	return Settings{Theme: "system", UIStyle: "sage", Accent: "#72967b", Animations: true, EditorFontSize: 14, EditorLineNumbers: true, PreviewLineNumbers: false, MultiTabs: false, SourceSplitPreview: false, StrictLineBreaks: false, NoteWidth: "default", AssetsDir: ".assets", ScanExcludes: []string{}, Shortcuts: map[string]string{}}
+	return Settings{Theme: "system", UIStyle: "sage", Accent: "#72967b", Animations: true, EditorFontSize: 14, EditorLineNumbers: true, PreviewLineNumbers: false, MultiTabs: false, SourceSplitPreview: false, StrictLineBreaks: false, AutoParseLinks: false, NoteWidth: "default", AssetsDir: ".assets", ScanExcludes: []string{}, Shortcuts: map[string]string{}}
 }
 func newID() string { var b [12]byte; _, _ = rand.Read(b[:]); return hex.EncodeToString(b[:]) }
 func revision(content []byte) string {
@@ -144,7 +147,7 @@ func Open(root string) (*Store, error) {
 		return nil, err
 	}
 	s := &Store{root: absolute, state: diskState{Settings: defaults(), Groups: []string{}, Tags: []string{}, Trash: []TrashEntry{}, Reminders: []Reminder{}, History: []HistoryEntry{}}}
-	for _, name := range []string{".echo", filepath.Join(".echo", "trash"), filepath.Join(".echo", "state.json"), filepath.Join(".echo", "asset-migration.json"), filepath.Join(".echo", "agent.json"), filepath.Join(".echo", "agent.db"), filepath.Join(".echo", "annotations.db")} {
+	for _, name := range []string{".echo", filepath.Join(".echo", "trash"), filepath.Join(".echo", "state.json"), filepath.Join(".echo", "asset-migration.json"), filepath.Join(".echo", "agent.json"), filepath.Join(".echo", "agent.db"), filepath.Join(".echo", "annotations.db"), filepath.Join(".echo", "link-cache")} {
 		if info, statErr := os.Lstat(filepath.Join(absolute, name)); statErr == nil && info.Mode()&os.ModeSymlink != 0 {
 			return nil, fmt.Errorf(".echo 配置目录不能包含符号链接")
 		}
