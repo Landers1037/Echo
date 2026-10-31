@@ -60,3 +60,5 @@
 .markdown-body .link-card-icon{color:var(--muted);flex-shrink:0}
 .markdown-body .link-card.compact .link-card-refresh{align-self:center;margin:4px}
 @media(max-width:560px){.markdown-body .link-card.has-image{position:relative;flex-direction:column}.markdown-body .link-card-thumb{width:100%;height:148px}.markdown-body .link-card.has-image .link-card-refresh{position:absolute;top:8px;right:8px;margin:0;background:color-mix(in srgb,var(--bg) 88%,transparent)}}
+.note-title-actions{display:flex;align-items:center;gap:8px;flex-shrink:0}
+.note-title-actions .note-version-select{min-width:148px;max-width:220px}

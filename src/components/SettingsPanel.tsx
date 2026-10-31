@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
-import { Monitor, Moon, Sun, Palette, Sparkles, NotebookPen, HardDrive, Keyboard, Bot, Link2, Cable } from 'lucide-react'
+import { Monitor, Moon, Sun, Palette, Sparkles, NotebookPen, HardDrive, Keyboard, Bot, Link2, Cable, GitBranch } from 'lucide-react'
 import { setApiBase } from '../api'
 import { Modal, Switch } from './UI'
 import { StorageSettings } from './StorageSettings'
+import { VersionRepoSettings } from './VersionRepoSettings'
 import { AgentSettings } from './AgentSettings'
 import { ConnectionSettings, connectionChanged, connectionOrigin, loadConnectionDraft, type ConnectionDraft } from './ConnectionSettings'
 import type { AgentConfig, AgentConfigInput, NoteWidth, Settings, SettingsPreview, UIStyle } from '../types'
@@ -19,7 +20,7 @@ const uiStyles: { id: UIStyle; label: string; desc: string; accent: string; dark
   { id: 'ink', label: '水墨东方', desc: '宣纸墨色，朱砂点睛', accent: '#b23a2b', darkAccent: '#d4584a' },
 ]
 const noteWidths: { id: NoteWidth; label: string }[] = [{ id: 'default', label: '默认' }, { id: 'medium', label: '中' }, { id: 'large', label: '大' }]
-const sections = [{ id: 'appearance', label: '外观设置', icon: Palette }, { id: 'notes', label: '笔记设置', icon: NotebookPen }, { id: 'agent', label: 'Agent 设置', icon: Bot }, { id: 'connection', label: '对接配置', icon: Cable }, { id: 'shortcuts', label: '快捷键设置', icon: Keyboard }, { id: 'storage', label: '存储设置', icon: HardDrive }] as const
+const sections = [{ id: 'appearance', label: '外观设置', icon: Palette }, { id: 'notes', label: '笔记设置', icon: NotebookPen }, { id: 'agent', label: 'Agent 设置', icon: Bot }, { id: 'connection', label: '对接配置', icon: Cable }, { id: 'shortcuts', label: '快捷键设置', icon: Keyboard }, { id: 'repository', label: '仓库设置', icon: GitBranch }, { id: 'storage', label: '存储设置', icon: HardDrive }] as const
 
 export function SettingsPanel({ settings, systemDark, agent, onPreview, onSave, onSaveAgent, onClose, beforeStorageAction }: { settings: Settings; systemDark: boolean; agent: AgentConfig | null; onPreview: (appearance: SettingsPreview | null) => void; onSave: (settings: Settings) => Promise<void>; onSaveAgent: (config: AgentConfigInput) => Promise<void>; onClose: () => void; beforeStorageAction: () => Promise<void> }) {
   const [draft, setDraft] = useState(settings)
@@ -88,6 +89,7 @@ export function SettingsPanel({ settings, systemDark, agent, onPreview, onSave, 
           {section === 'agent' && (agentDraft ? <AgentSettings draft={agentDraft} apiKey={agentKey} disabled={locked} onChange={patch => setAgentDraft(current => current ? { ...current, ...patch } : current)} onKeyChange={setAgentKey} /> : <p className="field-help">暂时无法读取 Agent 设置，其他设置仍可保存。</p>)}
           {section === 'connection' && <ConnectionSettings draft={connectionDraft} disabled={locked} onChange={setConnectionDraft} />}
           {section === 'shortcuts' && <ShortcutSettings shortcuts={draft.shortcuts ?? {}} disabled={locked} onChange={shortcuts => patch({ shortcuts })} />}
+          {section === 'repository' && <VersionRepoSettings enabled={draft.versionRepoEnabled} autoDaily={draft.autoVersionDaily} disabled={locked} onEnabledChange={versionRepoEnabled => patch({ versionRepoEnabled })} onAutoDailyChange={autoVersionDaily => patch({ autoVersionDaily })} beforeAction={beforeStorageAction} onBusyChange={setStorageBusy} />}
           {section === 'storage' && <StorageSettings assetsDir={settings.assetsDir} draftAssetsDir={draft.assetsDir} scanExcludes={settings.scanExcludes ?? []} draftScanExcludes={draft.scanExcludes ?? []} onDirectoryChange={assetsDir => patch({ assetsDir })} onExcludesChange={scanExcludes => patch({ scanExcludes })} beforeAction={beforeStorageAction} onBusyChange={setStorageBusy} />}
         </fieldset></div>
       </div>

@@ -91,7 +91,7 @@ func echoArchiveBase(name string) (bool, string) {
 
 func skipEchoArchiveName(base string) bool {
 	switch base {
-	case "agent.db-wal", "agent.db-shm", "agent.db-journal", "annotations.db-wal", "annotations.db-shm", "annotations.db-journal":
+	case "agent.db-wal", "agent.db-shm", "agent.db-journal", "annotations.db-wal", "annotations.db-shm", "annotations.db-journal", "versions.db-wal", "versions.db-shm", "versions.db-journal":
 		return true
 	default:
 		return false
@@ -108,6 +108,8 @@ func repositoryDBKind(name string) string {
 		return "agent"
 	case ".echo/annotations.db":
 		return "annotations"
+	case ".echo/versions.db":
+		return "versions"
 	default:
 		return ""
 	}
@@ -210,6 +212,12 @@ func (s *Store) exportDatabase(kind string) ([]byte, error) {
 		return agent.exportDatabase()
 	case "annotations":
 		service, err := s.annotationService()
+		if err != nil {
+			return nil, err
+		}
+		return service.exportDatabase()
+	case "versions":
+		service, err := s.versionService()
 		if err != nil {
 			return nil, err
 		}

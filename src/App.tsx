@@ -2,9 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { MotionConfig, AnimatePresence, motion } from 'motion/react'
-import { PanelLeft, ChevronRight, Download, Bell, Sun, Moon, Check, Cloud, LoaderCircle, FileText, Plus, FolderOpen, FolderPlus, Tag, MoreHorizontal, Pencil, ArrowRightLeft, Trash2, X, AlertTriangle, RotateCcw, Copy, CheckCheck, BookOpen, ListTree, Maximize2, PenTool, Bot, Workflow, Highlighter, Eye, EyeOff } from 'lucide-react'
+import { PanelLeft, ChevronRight, Download, Bell, Sun, Moon, Check, Cloud, LoaderCircle, FileText, Plus, FolderOpen, FolderPlus, Tag, MoreHorizontal, Pencil, ArrowRightLeft, Trash2, X, AlertTriangle, RotateCcw, Copy, CheckCheck, BookOpen, ListTree, Maximize2, PenTool, Bot, Workflow, Highlighter, Eye, EyeOff, History } from 'lucide-react'
 import { api, apiURL, ApiError, json, query } from './api'
-import type { Note, NoteSummary, TreeEntry, Settings, SettingsPreview, Task, Reminder, TrashEntry, Drawing, Plan, PlanDraft, CustomTask, CustomTaskDraft, AgentConfig, AgentConfigInput, AnnotationList } from './types'
+import type { Note, NoteSummary, TreeEntry, Settings, SettingsPreview, Task, Reminder, TrashEntry, Drawing, Plan, PlanDraft, CustomTask, CustomTaskDraft, AgentConfig, AgentConfigInput, AnnotationList, NoteVersion, VersionRepoStatus } from './types'
 import { Sidebar } from './components/Sidebar'
 import { RepoSwitcher } from './components/RepoSwitcher'
 import { Logo } from './components/Logo'
@@ -23,6 +23,7 @@ import { AnnotationLayer } from './components/annotations/AnnotationLayer'
 import { AnnotationToolbar } from './components/annotations/AnnotationToolbar'
 import { useAnnotations } from './components/annotations/useAnnotations'
 import { NoteTitle } from './components/NoteTitle'
+import { NoteVersionSelect } from './components/NoteVersionSelect'
 import { applyNoteTitle } from './noteTitle'
 import { NoteTabs } from './components/NoteTabs'
 import { TasksView } from './components/TasksView'
@@ -34,13 +35,13 @@ import { DrawioModal } from './components/Drawio'
 
 const uiStyleIds: Settings['uiStyle'][] = ['sage', 'paper', 'mono', 'soft', 'glass', 'ink']
 const noteWidthIds: Settings['noteWidth'][] = ['default', 'medium', 'large']
-const defaults: Settings = { theme: 'system', uiStyle: 'sage', accent: '#72967b', animations: true, editorFontSize: 14, editorLineNumbers: true, previewLineNumbers: false, multiTabs: false, sourceSplitPreview: false, strictLineBreaks: false, autoParseLinks: false, noteWidth: 'default', assetsDir: '.assets', scanExcludes: [], shortcuts: {} }
+const defaults: Settings = { theme: 'system', uiStyle: 'sage', accent: '#72967b', animations: true, editorFontSize: 14, editorLineNumbers: true, previewLineNumbers: false, multiTabs: false, sourceSplitPreview: false, strictLineBreaks: false, autoParseLinks: false, noteWidth: 'default', assetsDir: '.assets', scanExcludes: [], shortcuts: {}, versionRepoEnabled: false, autoVersionDaily: true }
 function completeSettings(value?: Partial<Settings> | null): Settings {
   const shortcuts = value?.shortcuts && typeof value.shortcuts === 'object' ? value.shortcuts : {}
   const uiStyle = uiStyleIds.includes(value?.uiStyle as Settings['uiStyle']) ? value!.uiStyle! : defaults.uiStyle
   const noteWidth = noteWidthIds.includes(value?.noteWidth as Settings['noteWidth']) ? value!.noteWidth! : defaults.noteWidth
   const scanExcludes = Array.isArray(value?.scanExcludes) ? value.scanExcludes.filter((item): item is string => typeof item === 'string') : []
-  return { ...defaults, ...value, shortcuts, uiStyle, noteWidth, scanExcludes, autoParseLinks: value?.autoParseLinks === true }
+  return { ...defaults, ...value, shortcuts, uiStyle, noteWidth, scanExcludes, autoParseLinks: value?.autoParseLinks === true, versionRepoEnabled: value?.versionRepoEnabled === true, autoVersionDaily: value?.autoVersionDaily !== false }
 }
 const MAX_TABS = 10
 const tabsKey = 'echo:tabs'
@@ -114,9 +115,12 @@ export default function App() {
   const [group, setGroup] = useState<string | null>(null)
   const [filterTags, setFilterTags] = useState<string[]>([])
   const [selected, setSelected] = useState<string[]>([])
-  const [dialog, setDialog] = useState<'settings' | 'categories' | 'classification' | 'export' | 'trash' | 'reminders' | 'repositories' | null>(null)
+  const [dialog, setDialog] = useState<'settings' | 'categories' | 'classification' | 'export' | 'trash' | 'reminders' | 'repositories' | 'note-versions' | null>(null)
   const [manage, setManage] = useState<{ path: string; type: 'folder' | 'note' | 'drawing' } | null>(null)
   const [manageVisible, setManageVisible] = useState<boolean | null>(null)
+  const [versionRepoReady, setVersionRepoReady] = useState(false)
+  const [noteVersions, setNoteVersions] = useState<NoteVersion[]>([])
+  const [activeVersionId, setActiveVersionId] = useState('')
   const [drawing, setDrawing] = useState<{ path: string; editing: boolean } | null>(null)
   const [notePicker, setNotePicker] = useState<{ resolve: (value: string | null) => void } | null>(null)
   const [drawioPicker, setDrawioPicker] = useState<{ resolve: (value: string | null) => void } | null>(null)
@@ -164,6 +168,9 @@ export default function App() {
   const leaveRepository = () => {
     if (leavingRepository.current) return
     leavingRepository.current = true
+    setVersionRepoReady(false)
+    setNoteVersions([])
+    setActiveVersionId('')
     clearRepositorySession()
     location.reload()
   }
@@ -247,6 +254,12 @@ export default function App() {
         const loadedSettings = completeSettings(loaded)
         settingsRef.current = loadedSettings
         setSettings(loadedSettings)
+        if (loadedSettings.versionRepoEnabled) {
+          try {
+            const status = await api<VersionRepoStatus>('/version-repo/status')
+            if (mounted.current) setVersionRepoReady(status.initialized)
+          } catch { if (mounted.current) setVersionRepoReady(false) }
+        }
         const list = await refresh()
         if (!mounted.current) return
         if (loadedSettings.multiTabs) {
@@ -276,6 +289,16 @@ export default function App() {
     const poll = window.setInterval(focus, 30000)
     return () => { mounted.current = false; events.close(); clearTimeout(timer); clearInterval(poll); window.removeEventListener('focus', focus) }
   }, [refresh, loadNote])
+  useEffect(() => {
+    if (!note?.path || !versionRepoReady || !settings.versionRepoEnabled) { setNoteVersions([]); setActiveVersionId(''); return }
+    let canceled = false
+    void api<NoteVersion[]>(`/note-versions?path=${query(note.path)}`).then(items => {
+      if (canceled) return
+      setNoteVersions(items)
+      setActiveVersionId(current => items.some(item => item.id === current) ? current : (items[0]?.id || ''))
+    }).catch(() => { if (!canceled) { setNoteVersions([]); setActiveVersionId('') } })
+    return () => { canceled = true }
+  }, [note?.path, note?.revision, versionRepoReady, settings.versionRepoEnabled])
   useEffect(() => {
     const media = matchMedia('(prefers-color-scheme: dark)'); const change = () => setSystemDark(media.matches); media.addEventListener('change', change)
     return () => media.removeEventListener('change', change)
@@ -472,7 +495,67 @@ export default function App() {
     finally { setOpeningDirectory(false) }
   }
   async function prepareStorageAction() { if (uploadsInFlight.current) throw new Error('图片正在上传，请完成后再继续。'); await saveActive(); if (uploadsInFlight.current) throw new Error('图片正在上传，请完成后再继续。') }
-  async function saveSettings(next: Settings) { await saveActive(); const result = completeSettings(await api<Settings>('/settings', json('PUT', next))); settingsRef.current = result; setSettings(result); await refresh(); if (noteRef.current) await loadNote(noteRef.current.path, false); toast('设置已保存。') }
+  async function saveSettings(next: Settings) { await saveActive(); const result = completeSettings(await api<Settings>('/settings', json('PUT', next))); settingsRef.current = result; setSettings(result); await refreshVersionRepo(); await refresh(); if (noteRef.current) await loadNote(noteRef.current.path, false); toast('设置已保存。') }
+  const refreshVersionRepo = useCallback(async () => {
+    if (!settingsRef.current.versionRepoEnabled) { setVersionRepoReady(false); setNoteVersions([]); setActiveVersionId(''); return }
+    try {
+      const status = await api<VersionRepoStatus>('/version-repo/status')
+      setVersionRepoReady(status.initialized)
+      if (!status.initialized) { setNoteVersions([]); setActiveVersionId('') }
+    } catch { setVersionRepoReady(false); setNoteVersions([]); setActiveVersionId('') }
+  }, [])
+  const refreshNoteVersions = useCallback(async (path: string) => {
+    if (!settingsRef.current.versionRepoEnabled || !versionRepoReady) { setNoteVersions([]); setActiveVersionId(''); return }
+    try {
+      const items = await api<NoteVersion[]>(`/note-versions?path=${query(path)}`)
+      setNoteVersions(items)
+      setActiveVersionId(items[0]?.id || '')
+    } catch { setNoteVersions([]); setActiveVersionId('') }
+  }, [versionRepoReady])
+  async function commitNoteVersion(path: string) {
+    await saveActive()
+    const target = path === noteRef.current?.path ? noteRef.current.path : path
+    if (target === noteRef.current?.path && dirtyRef.current) await saveActive()
+    const created = await api<NoteVersion>('/note-versions', json('POST', { path: target }))
+    await refreshNoteVersions(target)
+    setActiveVersionId(created.id)
+    toast(`已提交版本 ${created.label}`)
+  }
+  async function restoreNoteVersion(versionId: string) {
+    const current = noteRef.current
+    if (!current) return
+    const target = noteVersions.find(item => item.id === versionId)
+    if (!target || target.id === activeVersionId) return
+    if (await ask({ title: '恢复历史版本', description: `将用 ${target.label} 覆盖当前笔记内容。未保存的修改会先尝试保存。`, confirm: '恢复此版本' }) === null) return
+    await saveActive()
+    const latest = noteRef.current
+    if (!latest) return
+    const restored = await api<Note>('/note-versions/restore', json('POST', { versionId: target.id, revision: latest.revision }))
+    acceptNote(restored)
+    setActiveVersionId(target.id)
+    await refresh()
+    toast(`已恢复到 ${target.label}`)
+  }
+  async function renameNoteVersion(versionId: string) {
+    const target = noteVersions.find(item => item.id === versionId)
+    if (!target) return
+    const name = await ask({ title: '修改版本名称', label: '版本名称', value: target.label, confirm: '保存' })
+    if (!name?.trim() || name.trim() === target.label) return
+    const updated = await api<NoteVersion>('/note-versions', json('PUT', { id: versionId, label: name.trim() }))
+    const path = noteRef.current?.path
+    if (path) await refreshNoteVersions(path)
+    if (activeVersionId === versionId) setActiveVersionId(updated.id)
+    toast(`版本名称已改为 ${updated.label}`)
+  }
+  async function deleteNoteVersion(versionId: string) {
+    const target = noteVersions.find(item => item.id === versionId)
+    if (!target) return
+    if (await ask({ title: '确认删除版本', description: `删除 ${target.label} 后无法恢复该快照。`, confirm: '删除', danger: true }) === null) return
+    await api(`/note-versions?id=${query(versionId)}`, json('DELETE'))
+    const path = noteRef.current?.path
+    if (path) await refreshNoteVersions(path)
+    toast('已删除历史版本。')
+  }
   async function saveAgent(input: AgentConfigInput) {
     const saved = await saveAgentConfig(input)
     setAgentConfig(saved)
@@ -518,7 +601,7 @@ export default function App() {
       <main className="main-panel"><header className="topbar"><div className="topbar-left"><button className="icon-button" aria-label={sidebarOpen ? '折叠目录' : '展开目录'} title={sidebarOpen ? '折叠目录' : '展开目录'} aria-expanded={sidebarOpen} aria-controls="note-sidebar" onClick={() => setSidebarOpen(open => !open)}><PanelLeft size={18} /></button><div className="breadcrumb"><span>我的空间</span><ChevronRight size={13} /><span>{view === 'note' ? note?.path || '全部笔记' : view === 'plans' ? '计划与提醒' : view === 'calendar' ? '日历视图' : '任务看板'}</span></div></div><div className="topbar-actions">{view === 'note' && note && <button className={`save-status ${dirty ? 'unsaved' : 'saved'}`} title={saveError || 'Ctrl+S 保存'} onClick={() => run(saveActive)}>{saving ? <LoaderCircle size={13} className="spin" /> : saveError ? <AlertTriangle size={13} /> : dirty ? <Cloud size={14} /> : <CheckCheck size={14} />}<span>{saving ? '保存中' : saveError ? '保存失败' : dirty ? '待保存' : '已保存'}</span></button>}{agentConfig?.enabled && <button className="icon-button" aria-label={agentOpen ? '关闭 Agent' : '打开 Agent'} title="笔记 Agent" aria-expanded={agentOpen} onClick={toggleAgent}><Bot size={17} /></button>}<button className="icon-button" aria-label={dark ? '切换明亮模式' : '切换暗黑模式'} onClick={() => run(() => saveSettings({ ...settings, theme: dark ? 'light' : 'dark' }))}>{dark ? <Sun size={17} /> : <Moon size={17} />}</button><button className="icon-button notification-button" aria-label="提醒中心" onClick={() => setDialog('reminders')}><Bell size={17} />{reminders.length > 0 && <i />}</button><span className="topbar-divider" /><button className="button export-button" onClick={() => { setExportNotePath(null); setExportScope(selected.length ? 'selected' : note ? 'current' : 'filtered'); setDialog('export') }}><Download size={15} /><span>导出</span></button></div></header>
       {settings.multiTabs && view === 'note' && tabs.length > 0 && <NoteTabs tabs={tabs} active={note?.path || ''} dirty={dirty} onSelect={path => { if (path !== noteRef.current?.path) run(() => loadNote(path)) }} onClose={path => run(() => closeTab(path))} />}
       {selectedCount > 0 && <div className="selection-bar"><span>已选择 {selectedCount} 篇笔记</span><button onClick={() => openClassification(true)}>批量设置分类</button><button onClick={() => { setExportNotePath(null); setExportScope('selected'); setDialog('export') }}>导出所选</button><button className="icon-button" aria-label="取消选择" onClick={() => setSelected([])}><X size={14} /></button></div>}
-      {view === 'note' ? note ? <div className="note-workspace"><section className="note-heading"><div className="note-title-row"><NoteTitle key={note.path} title={note.title || note.path.replace(/\.md$/i, '')} onSave={saveNoteTitle} /><button className="icon-button" aria-label="笔记操作" onClick={() => setManage({ path: note.path, type: 'note' })}><MoreHorizontal size={19} /></button></div><div className="note-meta"><button className="meta-button" onClick={() => openClassification()}><FolderOpen size={13} />{note.metadata.group || '未分组'}<ChevronRight size={11} /></button><span className="meta-divider" />{note.metadata.tags.map(tag => <button className="tag" key={tag} onClick={() => setFilterTags(filterTags.includes(tag) ? filterTags.filter(t => t !== tag) : [...filterTags, tag])}># {tag}</button>)}<button className="tag-add" onClick={() => openClassification()}><Plus size={12} />{note.metadata.tags.length ? '编辑标签' : '添加标签'}</button></div>{note.metadataError && <p className="form-error">文件头格式有误：{note.metadataError}。请在源码中修复后修改分类。</p>}</section>
+      {view === 'note' ? note ? <div className="note-workspace"><section className="note-heading"><div className="note-title-row"><NoteTitle key={note.path} title={note.title || note.path.replace(/\.md$/i, '')} onSave={saveNoteTitle} /><div className="note-title-actions">{settings.versionRepoEnabled && versionRepoReady && <NoteVersionSelect versions={noteVersions} currentId={activeVersionId} onSelect={id => run(() => restoreNoteVersion(id))} />}<button className="icon-button" aria-label="笔记操作" onClick={() => setManage({ path: note.path, type: 'note' })}><MoreHorizontal size={19} /></button></div></div><div className="note-meta"><button className="meta-button" onClick={() => openClassification()}><FolderOpen size={13} />{note.metadata.group || '未分组'}<ChevronRight size={11} /></button><span className="meta-divider" />{note.metadata.tags.map(tag => <button className="tag" key={tag} onClick={() => setFilterTags(filterTags.includes(tag) ? filterTags.filter(t => t !== tag) : [...filterTags, tag])}># {tag}</button>)}<button className="tag-add" onClick={() => openClassification()}><Plus size={12} />{note.metadata.tags.length ? '编辑标签' : '添加标签'}</button></div>{note.metadataError && <p className="form-error">文件头格式有误：{note.metadataError}。请在源码中修复后修改分类。</p>}</section>
         <div className="mode-bar"><div className="mode-tabs" role="tablist" aria-label="编辑模式"><button role="tab" aria-selected={mode === 'source'} className={mode === 'source' ? 'active' : ''} onClick={() => setMode('source')}><span>〈/〉</span>源码</button><button role="tab" aria-selected={mode === 'preview'} className={mode === 'preview' ? 'active' : ''} onClick={() => setMode('preview')}><BookOpen size={13} />预览</button></div><button ref={fullscreenButton} type="button" className="outline-toggle" aria-label="全屏预览" onClick={() => setFullscreenPreview(true)}><Maximize2 size={15} />全屏</button>{mode === 'preview' && <button type="button" className="outline-toggle" aria-label="标注" aria-expanded={annotations.toolOpen} onClick={() => { void annotations.toggleTool().catch(() => {}) }}><Highlighter size={15} />标注</button>}<button ref={outlineButton} type="button" className="outline-toggle" aria-label="导航" aria-expanded={outlineOpen} aria-controls="note-outline" onClick={() => setOutlineOpen(open => !open)}><ListTree size={15} />导航</button></div>
         <div className="note-body">
           {outlineOpen && <NoteOutline key={note.path} content={content} onNavigate={navigateHeading} onClose={closeOutline} />}
@@ -534,7 +617,8 @@ export default function App() {
     </div>
     <AnimatePresence>{dialog === 'settings' && <SettingsPanel settings={settings} systemDark={systemDark} agent={agentConfig} onPreview={setAppearancePreview} onSave={saveSettings} onSaveAgent={saveAgent} beforeStorageAction={prepareStorageAction} onClose={() => { setAppearancePreview(null); setDialog(null) }} />}
     {dialog === 'repositories' && <RepoSwitcher onClose={() => setDialog(null)} onPrepare={prepareRepositorySwitch} onSwitched={() => leaveRepositoryRef.current()} />}
-    {manage && <Modal title={manage.type === 'note' ? '笔记操作' : manage.type === 'drawing' ? '绘图操作' : '文件夹操作'} onClose={() => setManage(null)}><p className="field-help">{manage.path}</p><div className="dialog-stack">{manage.type === 'folder' && <><button className="button" onClick={() => { const parent = manage.path; setManage(null); run(() => newFolder(parent)) }}><FolderPlus size={16} />新建目录</button><button className="button" onClick={() => { const parent = manage.path; setManage(null); run(() => createNote(parent)) }}><FileText size={16} />新建笔记</button><button className="button" onClick={() => { const parent = manage.path; setManage(null); run(() => createDrawing(parent)) }}><PenTool size={16} />新建绘图</button><button className="button" onClick={() => { const parent = manage.path; setManage(null); run(() => createDrawio(parent)) }}><Workflow size={16} />新建 Draw.io</button></>}<button className="button" onClick={() => run(() => manageAction('rename'))}><Pencil size={16} />重命名</button><button className="button" onClick={() => run(() => manageAction('move'))}><ArrowRightLeft size={16} />移动位置</button>{manage.type === 'note' && <><button className="button" onClick={() => run(async () => { const path = manage.path; setManage(null); await loadNote(path); openClassification() })}><Tag size={16} />标签与分组</button><button className="button" onClick={() => { setExportNotePath(manage.path); setExportScope('current'); setManage(null); setDialog('export') }}><Download size={16} />导出该笔记</button>{manageVisible != null && <button className="button" onClick={() => { const next = !manageVisible; void annotations.setNoteVisible(manage.path, next).then(() => setManageVisible(next)).catch(() => {}) }}>{manageVisible ? <EyeOff size={16} /> : <Eye size={16} />}{manageVisible ? '隐藏标注' : '显示标注'}</button>}</>}<button className="button danger" onClick={() => run(() => manageAction('delete'))}><Trash2 size={16} />移至回收站</button></div></Modal>}
+    {manage && <Modal title={manage.type === 'note' ? '笔记操作' : manage.type === 'drawing' ? '绘图操作' : '文件夹操作'} onClose={() => setManage(null)}><p className="field-help">{manage.path}</p><div className="dialog-stack">{manage.type === 'folder' && <><button className="button" onClick={() => { const parent = manage.path; setManage(null); run(() => newFolder(parent)) }}><FolderPlus size={16} />新建目录</button><button className="button" onClick={() => { const parent = manage.path; setManage(null); run(() => createNote(parent)) }}><FileText size={16} />新建笔记</button><button className="button" onClick={() => { const parent = manage.path; setManage(null); run(() => createDrawing(parent)) }}><PenTool size={16} />新建绘图</button><button className="button" onClick={() => { const parent = manage.path; setManage(null); run(() => createDrawio(parent)) }}><Workflow size={16} />新建 Draw.io</button></>}<button className="button" onClick={() => run(() => manageAction('rename'))}><Pencil size={16} />重命名</button><button className="button" onClick={() => run(() => manageAction('move'))}><ArrowRightLeft size={16} />移动位置</button>{manage.type === 'note' && <><button className="button" onClick={() => run(async () => { const path = manage.path; setManage(null); await loadNote(path); openClassification() })}><Tag size={16} />标签与分组</button><button className="button" onClick={() => { setExportNotePath(manage.path); setExportScope('current'); setManage(null); setDialog('export') }}><Download size={16} />导出该笔记</button>{settings.versionRepoEnabled && versionRepoReady && <><button className="button" onClick={() => { const path = manage.path; setManage(null); run(() => commitNoteVersion(path)) }}><History size={16} />提交版本</button><button className="button" onClick={() => { setManage(null); setDialog('note-versions') }}><History size={16} />管理历史版本…</button></>}{manageVisible != null && <button className="button" onClick={() => { const next = !manageVisible; void annotations.setNoteVisible(manage.path, next).then(() => setManageVisible(next)).catch(() => {}) }}>{manageVisible ? <EyeOff size={16} /> : <Eye size={16} />}{manageVisible ? '隐藏标注' : '显示标注'}</button>}</>}<button className="button danger" onClick={() => run(() => manageAction('delete'))}><Trash2 size={16} />移至回收站</button></div></Modal>}
+    {dialog === 'note-versions' && <Modal title="管理历史版本" onClose={() => setDialog(null)}><p className="field-help">可修改版本名称，或删除不再需要的快照。删除后无法恢复该版本内容。</p><div className="category-list">{noteVersions.map(item => <div className="category-row" key={item.id}><div><strong>{item.label}</strong><small>{item.source === 'auto' ? '自动' : '手动'} · {new Date(item.createdAt).toLocaleString('zh-CN')}</small></div><div><button className="icon-button" aria-label={`重命名 ${item.label}`} onClick={() => run(() => renameNoteVersion(item.id))}><Pencil size={14} /></button><button className="button danger" onClick={() => run(() => deleteNoteVersion(item.id))}><Trash2 size={14} />删除</button></div></div>)}{!noteVersions.length && <div className="tasks-empty"><History size={24} /><p>还没有历史版本</p></div>}</div></Modal>}
     {dialog === 'classification' && <Modal title={classBatch ? `设置 ${selectedCount} 篇笔记的分类` : '标签与分组'} onClose={() => setDialog(null)}><form onSubmit={e => { e.preventDefault(); run(applyClassification) }}><label className="field-label" htmlFor="note-group">分组</label><div className="inline-field"><Select id="note-group" value={classGroup} onChange={setClassGroup} options={[{ value: '', label: '未分组' }, ...groups.map(value => ({ value, label: value }))]} /><button type="button" className="button" onClick={() => run(async () => { const name = await ask({ title: '新增分组', label: '分组名称', confirm: '创建' }); if (!name?.trim()) return; await api('/groups', json('POST', { name: name.trim() })); await refresh(); setClassGroup(name.trim()) })}><Plus size={15} />新增</button></div><label className="field-label" htmlFor="note-tags">标签</label><input id="note-tags" value={classTags} onChange={e => setClassTags(e.target.value)} placeholder="用逗号分隔，例如：灵感, 工作" /><div className="tag-suggestions">{tags.map(t => <button type="button" className="tag" key={t} onClick={() => setClassTags(v => [...new Set([...v.split(/[,，]/).map(s => s.trim()).filter(Boolean), t])].join(', '))}># {t}</button>)}</div><p className="field-help">{classBatch ? '将替换所选笔记的标签和分组。' : '分组不会移动文件，一篇笔记可设置多个标签。'}</p><div className="modal-actions"><button type="button" className="button" onClick={() => setDialog(null)}>取消</button><button className="button primary" type="submit">保存分类</button></div></form></Modal>}
     {dialog === 'categories' && <Modal title="管理分类" onClose={() => setDialog(null)}><div className="category-tabs"><button className={categoryTab === 'groups' ? 'active' : ''} onClick={() => setCategoryTab('groups')}>分组</button><button className={categoryTab === 'tags' ? 'active' : ''} onClick={() => setCategoryTab('tags')}>标签</button><button className="button" onClick={() => run(() => categoryAction(categoryTab))}><Plus size={14} />新增</button></div><div className="category-list">{(categoryTab === 'groups' ? groups : tags).map(name => <div className="category-row" key={name}><span>{categoryTab === 'groups' ? <FolderOpen size={15} /> : <Tag size={15} />}{name}</span><div><button className="icon-button" aria-label={`重命名 ${name}`} onClick={() => run(() => categoryAction(categoryTab, name))}><Pencil size={14} /></button><button className="icon-button danger" aria-label={`删除 ${name}`} onClick={() => run(() => categoryAction(categoryTab, name, true))}><Trash2 size={14} /></button></div></div>)}{!(categoryTab === 'groups' ? groups : tags).length && <p className="field-help">还没有分类，点击新增开始整理。</p>}</div></Modal>}
     {dialog === 'export' && <Modal title="导出笔记" onClose={() => { if (!busy) setDialog(null) }}><label className="field-label" htmlFor={exportNotePath ? undefined : 'export-scope'}>{exportNotePath ? '导出笔记' : '导出范围'}</label>{exportNotePath ? <p className="field-help">{exportNotePath}</p> : <Select id="export-scope" value={exportScope} onChange={value => setExportScope(value as typeof exportScope)} options={[{ value: 'current', label: '当前笔记', disabled: !note }, { value: 'selected', label: '所选笔记（' + selected.length + ' 篇）', disabled: !selected.length }, { value: 'filtered', label: '当前分组 / 标签 / 搜索结果（' + filtered.length + ' 篇）' }]} />}<label className="field-label">导出格式</label><div className="export-options">{([['md', 'Markdown', '原始 .md 文件，不含图片资源'], ['bundle', 'Markdown 资源包', '保留目录和元数据，包含本地图片'], ['html', 'HTML 网页', '独立网页，内嵌本地图片与高亮样式'], ['pdf', 'PDF 文档', '专用打印排版，浏览器另存为 PDF'], ['docx', 'Word 文档', '可编辑的 .docx，多篇打包为 ZIP']] as const).map(([value, label, help]) => <button key={value} className={`export-format ${exportFormat === value ? 'selected' : ''}`} onClick={() => setExportFormat(value)} disabled={value === 'md' && exportPaths.length !== 1}><FileText size={19} /><span><strong>{label}</strong><small>{help}</small></span>{exportFormat === value && <Check size={16} />}</button>)}</div><p className="field-help">将导出 {exportPaths.length} 篇笔记。导出前自动保存；外链图片需要联网显示。</p><div className="modal-actions"><button className="button" disabled={busy} onClick={() => setDialog(null)}>取消</button><button className="button primary" disabled={busy || !exportPaths.length || (exportFormat === 'md' && exportPaths.length !== 1)} onClick={() => run(doExport)}>{busy ? <LoaderCircle className="spin" size={15} /> : <Download size={15} />}{busy ? '准备导出…' : '开始导出'}</button></div></Modal>}

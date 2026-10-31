@@ -30,7 +30,7 @@ vi.mock('motion/react', async () => {
   return { MotionConfig: ({ children }: { children: React.ReactNode }) => children, AnimatePresence: ({ children }: { children: React.ReactNode }) => children, motion: { div: Div, button: Button } }
 })
 
-const settings: Settings = { theme: 'light', uiStyle: 'sage', accent: '#72967b', animations: false, editorFontSize: 14, editorLineNumbers: true, previewLineNumbers: false, multiTabs: false, sourceSplitPreview: false, strictLineBreaks: false, autoParseLinks: false, noteWidth: 'default', assetsDir: '.assets', scanExcludes: [], shortcuts: {} }
+const settings: Settings = { theme: 'light', uiStyle: 'sage', accent: '#72967b', animations: false, editorFontSize: 14, editorLineNumbers: true, previewLineNumbers: false, multiTabs: false, sourceSplitPreview: false, strictLineBreaks: false, autoParseLinks: false, noteWidth: 'default', assetsDir: '.assets', scanExcludes: [], shortcuts: {}, versionRepoEnabled: false, autoVersionDaily: true }
 type Write = { path: string; content: string; revision: string; force?: boolean }
 type Batch = { paths: string[]; tags: string[]; group: string; revisions: Record<string, string> }
 type Call = { method: string; path: string; body?: unknown }
@@ -78,6 +78,10 @@ function createServer(extraNotes: Note[] = [], initialFolders: string[] = [], in
   let cleanupError = false
   let exportFailure = ''
   let unusedImages = [{ path: '.assets/unused.png', size: 2048 }]
+  let versionRepoInitialized = Boolean(initialSettings.versionRepoEnabled)
+  let noteVersions: { id: string; path: string; objectHash: string; createdAt: string; source: 'auto' | 'manual'; label: string }[] = versionRepoInitialized
+    ? [{ id: 'ver-1', path: '测试.md', objectHash: 'hash-1', createdAt: '2026-10-31T03:00:00.000000000Z', source: 'manual', label: '2026-10-31-v1' }]
+    : []
   let version = 1
   let nextWriteGate: ReturnType<typeof deferred> | undefined
   let nextConflict: Note | undefined
@@ -102,6 +106,38 @@ function createServer(extraNotes: Note[] = [], initialFolders: string[] = [], in
     if (url.pathname === '/api/annotations' && method === 'POST') return response({ id: 'ann-1', ...(body as object), createdAt: '2026-10-30T00:00:00Z', updatedAt: '2026-10-30T00:00:00Z' }, 201)
     if (url.pathname === '/api/annotations' && method === 'PUT') return response(body)
     if (url.pathname === '/api/annotations' && method === 'DELETE') return response({ ok: true })
+    if (url.pathname === '/api/version-repo/status') return response({ initialized: versionRepoInitialized, enabled: Boolean(savedSettings.versionRepoEnabled), autoDaily: savedSettings.autoVersionDaily !== false, versionCount: noteVersions.length, objectCount: noteVersions.length ? 1 : 0, objectBytes: noteVersions.length * 12, dirtyNotes: 0, lastCreatedAt: noteVersions[0]?.createdAt })
+    if (url.pathname === '/api/version-repo/init' && method === 'POST') {
+      versionRepoInitialized = true
+      return response({ initialized: true, enabled: Boolean(savedSettings.versionRepoEnabled), autoDaily: savedSettings.autoVersionDaily !== false, versionCount: noteVersions.length, objectCount: noteVersions.length ? 1 : 0, objectBytes: noteVersions.length * 12, dirtyNotes: 0 })
+    }
+    if (url.pathname === '/api/note-versions' && method === 'GET') return response(noteVersions.filter(item => item.path === url.searchParams.get('path')))
+    if (url.pathname === '/api/note-versions' && method === 'POST') {
+      const path = (body as { path: string }).path
+      const created = { id: `ver-${noteVersions.length + 1}`, path, objectHash: `hash-${noteVersions.length + 1}`, createdAt: '2026-10-31T04:00:00.000000000Z', source: 'manual' as const, label: `2026-10-31-v${noteVersions.filter(item => item.path === path).length + 1}` }
+      noteVersions.unshift(created)
+      return response(created, 201)
+    }
+    if (url.pathname === '/api/note-versions' && method === 'PUT') {
+      const request = body as { id: string; label: string }
+      const target = noteVersions.find(item => item.id === request.id)
+      if (!target) return response({ error: '版本不存在' }, 404)
+      target.label = request.label.trim()
+      return response(target)
+    }
+    if (url.pathname === '/api/note-versions' && method === 'DELETE') {
+      const id = url.searchParams.get('id')
+      noteVersions = noteVersions.filter(item => item.id !== id)
+      return response({ ok: true })
+    }
+    if (url.pathname === '/api/note-versions/restore' && method === 'POST') {
+      const request = body as { versionId: string; revision: string }
+      const target = noteVersions.find(item => item.id === request.versionId)
+      if (!target) return response({ error: '版本不存在' }, 404)
+      if (request.revision !== note.revision) return response({ error: '笔记已被外部修改', current: note }, 409)
+      note = { ...note, content: `# restored ${target.label}\n`, revision: `v${++version}` }
+      return response(note)
+    }
     if (url.pathname === '/api/settings') {
       if (method === 'PUT') {
         if (settingsError) { settingsError = false; return response({ error: '设置写入失败' }, 500) }
@@ -1325,5 +1361,30 @@ describe('repository switcher', () => {
     await waitFor(() => expect(reload).toHaveBeenCalled())
     expect(localStorage.getItem('echo:draft:测试.md')).toBeNull()
     expect(server.calls.some(call => call.method === 'PUT' && call.path === '/api/notes')).toBe(false)
+  })
+
+})
+
+describe('note version snapshots', () => {
+  it('shows version switcher and supports commit, rename, plus delete', async () => {
+    const server = createServer([], [], { versionRepoEnabled: true, autoVersionDaily: true })
+    await openApp(server)
+    expect(await screen.findByRole('combobox', { name: '笔记版本' })).toHaveTextContent('2026-10-31-v1')
+    fireEvent.click(screen.getByRole('button', { name: '笔记操作' }))
+    fireEvent.click(within(screen.getByRole('dialog', { name: '笔记操作' })).getByRole('button', { name: '提交版本' }))
+    await waitFor(() => expect(server.calls.some(call => call.path === '/api/note-versions' && call.method === 'POST')).toBe(true))
+    await waitFor(() => expect(screen.getByRole('combobox', { name: '笔记版本' })).toHaveTextContent('2026-10-31-v2'))
+    fireEvent.click(screen.getByRole('button', { name: '笔记操作' }))
+    fireEvent.click(within(screen.getByRole('dialog', { name: '笔记操作' })).getByRole('button', { name: '管理历史版本…' }))
+    const versions = await screen.findByRole('dialog', { name: '管理历史版本' })
+    fireEvent.click(within(versions).getByRole('button', { name: '重命名 2026-10-31-v2' }))
+    const rename = await screen.findByRole('dialog', { name: '修改版本名称' })
+    fireEvent.change(within(rename).getByLabelText('版本名称'), { target: { value: '发布前定稿' } })
+    fireEvent.click(within(rename).getByRole('button', { name: '保存' }))
+    await waitFor(() => expect(server.calls.some(call => call.path === '/api/note-versions' && call.method === 'PUT')).toBe(true))
+    await waitFor(() => expect(within(screen.getByRole('dialog', { name: '管理历史版本' })).getByText('发布前定稿')).toBeInTheDocument())
+    fireEvent.click(within(screen.getByRole('dialog', { name: '管理历史版本' })).getAllByRole('button', { name: '删除' })[0])
+    fireEvent.click(within(await screen.findByRole('dialog', { name: '确认删除版本' })).getByRole('button', { name: '删除' }))
+    await waitFor(() => expect(server.calls.some(call => call.path === '/api/note-versions' && call.method === 'DELETE')).toBe(true))
   })
 })

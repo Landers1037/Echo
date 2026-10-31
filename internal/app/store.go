@@ -20,21 +20,23 @@ import (
 )
 
 type Settings struct {
-	Theme              string            `json:"theme"`
-	UIStyle            string            `json:"uiStyle"`
-	Accent             string            `json:"accent"`
-	Animations         bool              `json:"animations"`
-	EditorFontSize     int               `json:"editorFontSize"`
-	EditorLineNumbers  bool              `json:"editorLineNumbers"`
-	PreviewLineNumbers bool              `json:"previewLineNumbers"`
-	MultiTabs          bool              `json:"multiTabs"`
-	SourceSplitPreview bool              `json:"sourceSplitPreview"`
-	StrictLineBreaks   bool              `json:"strictLineBreaks"`
-	AutoParseLinks     bool              `json:"autoParseLinks"`
-	NoteWidth          string            `json:"noteWidth"`
-	AssetsDir          string            `json:"assetsDir"`
-	ScanExcludes       []string          `json:"scanExcludes"`
-	Shortcuts          map[string]string `json:"shortcuts"`
+	Theme               string            `json:"theme"`
+	UIStyle             string            `json:"uiStyle"`
+	Accent              string            `json:"accent"`
+	Animations          bool              `json:"animations"`
+	EditorFontSize      int               `json:"editorFontSize"`
+	EditorLineNumbers   bool              `json:"editorLineNumbers"`
+	PreviewLineNumbers  bool              `json:"previewLineNumbers"`
+	MultiTabs           bool              `json:"multiTabs"`
+	SourceSplitPreview  bool              `json:"sourceSplitPreview"`
+	StrictLineBreaks    bool              `json:"strictLineBreaks"`
+	AutoParseLinks      bool              `json:"autoParseLinks"`
+	NoteWidth           string            `json:"noteWidth"`
+	AssetsDir           string            `json:"assetsDir"`
+	ScanExcludes        []string          `json:"scanExcludes"`
+	Shortcuts           map[string]string `json:"shortcuts"`
+	VersionRepoEnabled  bool              `json:"versionRepoEnabled"`
+	AutoVersionDaily    bool              `json:"autoVersionDaily"`
 }
 type Note struct {
 	Path          string   `json:"path"`
@@ -88,6 +90,9 @@ type Store struct {
 	annotationsMu     sync.Mutex
 	annotations       *Annotations
 	annotationsClosed bool
+	versionsMu        sync.Mutex
+	versions          *NoteVersions
+	versionsClosed    bool
 	linkMu            sync.Mutex
 	linkFlight        map[string]*linkCall
 }
@@ -126,7 +131,7 @@ func validNoteWidth(value string) bool {
 	}
 }
 func defaults() Settings {
-	return Settings{Theme: "system", UIStyle: "sage", Accent: "#72967b", Animations: true, EditorFontSize: 14, EditorLineNumbers: true, PreviewLineNumbers: false, MultiTabs: false, SourceSplitPreview: false, StrictLineBreaks: false, AutoParseLinks: false, NoteWidth: "default", AssetsDir: ".assets", ScanExcludes: []string{}, Shortcuts: map[string]string{}}
+	return Settings{Theme: "system", UIStyle: "sage", Accent: "#72967b", Animations: true, EditorFontSize: 14, EditorLineNumbers: true, PreviewLineNumbers: false, MultiTabs: false, SourceSplitPreview: false, StrictLineBreaks: false, AutoParseLinks: false, NoteWidth: "default", AssetsDir: ".assets", ScanExcludes: []string{}, Shortcuts: map[string]string{}, VersionRepoEnabled: false, AutoVersionDaily: true}
 }
 func newID() string { var b [12]byte; _, _ = rand.Read(b[:]); return hex.EncodeToString(b[:]) }
 func revision(content []byte) string {
@@ -147,7 +152,7 @@ func Open(root string) (*Store, error) {
 		return nil, err
 	}
 	s := &Store{root: absolute, state: diskState{Settings: defaults(), Groups: []string{}, Tags: []string{}, Trash: []TrashEntry{}, Reminders: []Reminder{}, History: []HistoryEntry{}}}
-	for _, name := range []string{".echo", filepath.Join(".echo", "trash"), filepath.Join(".echo", "state.json"), filepath.Join(".echo", "asset-migration.json"), filepath.Join(".echo", "agent.json"), filepath.Join(".echo", "agent.db"), filepath.Join(".echo", "annotations.db"), filepath.Join(".echo", "link-cache")} {
+	for _, name := range []string{".echo", filepath.Join(".echo", "trash"), filepath.Join(".echo", "state.json"), filepath.Join(".echo", "asset-migration.json"), filepath.Join(".echo", "agent.json"), filepath.Join(".echo", "agent.db"), filepath.Join(".echo", "annotations.db"), filepath.Join(".echo", "versions.db"), filepath.Join(".echo", "version-objects"), filepath.Join(".echo", "link-cache")} {
 		if info, statErr := os.Lstat(filepath.Join(absolute, name)); statErr == nil && info.Mode()&os.ModeSymlink != 0 {
 			return nil, fmt.Errorf(".echo 配置目录不能包含符号链接")
 		}
@@ -742,6 +747,9 @@ func (s *Store) makeFingerprint() string {
 func (s *Store) Run(ctx context.Context) {
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
+	versionTicker := time.NewTicker(time.Hour)
+	defer versionTicker.Stop()
+	s.runDailyVersions(time.Now())
 	for {
 		select {
 		case <-ctx.Done():
@@ -755,6 +763,8 @@ func (s *Store) Run(ctx context.Context) {
 			}
 			s.checkReminders(time.Now())
 			s.mu.Unlock()
+		case <-versionTicker.C:
+			s.runDailyVersions(time.Now())
 		}
 	}
 }

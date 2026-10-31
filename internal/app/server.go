@@ -175,6 +175,12 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
+	if strings.HasPrefix(r.URL.Path, "/api/version-repo") || strings.HasPrefix(r.URL.Path, "/api/note-versions") {
+		if err := h.versionRoutes(w, r); err != nil {
+			fail(w, err)
+		}
+		return
+	}
 	if r.URL.Path == "/api/link-previews" || r.URL.Path == "/api/link-previews/image" {
 		if err := h.linkPreviews(w, r); err != nil {
 			fail(w, err)

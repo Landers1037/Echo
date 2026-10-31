@@ -174,6 +174,7 @@ func (w *Workspace) Run(ctx context.Context) {
 	}
 	store.closeAgent()
 	store.closeAnnotations()
+	store.closeVersions()
 }
 
 func (w *Workspace) List() RepositoryList {
@@ -239,6 +240,7 @@ func (w *Workspace) Switch(raw string) (RepositoryList, error) {
 	}
 	old.closeAgent()
 	old.closeAnnotations()
+	old.closeVersions()
 	w.broadcast(map[string]any{"type": "switched"})
 	return list, saveErr
 }
