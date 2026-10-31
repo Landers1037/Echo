@@ -125,6 +125,58 @@ func TestPathAndOriginGuards(t *testing.T) {
 	if rr.Code != 403 {
 		t.Fatal("non-local host accepted")
 	}
+	req = httptest.NewRequest("GET", "http://127.0.0.1:9090/api/settings", nil)
+	req.Header.Set("Origin", "http://127.0.0.1:8080")
+	rr = httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	if rr.Code == 403 {
+		t.Fatalf("loopback cross-port origin rejected: %s", rr.Body.String())
+	}
+	if rr.Header().Get("Access-Control-Allow-Origin") != "http://127.0.0.1:8080" {
+		t.Fatalf("missing CORS for loopback cross-port: %v", rr.Header())
+	}
+}
+
+func TestRemoteOriginGuards(t *testing.T) {
+	s := testStore(t)
+	local := NewHandler(attachStore(s), false)
+	req := httptest.NewRequest("GET", "http://192.168.1.8:9000/api/settings", nil)
+	rr := httptest.NewRecorder()
+	local.ServeHTTP(rr, req)
+	if rr.Code != 403 {
+		t.Fatal("non-loopback host accepted without remote mode")
+	}
+
+	remote := NewHandlerEx(attachStore(s), false, true)
+	req = httptest.NewRequest("GET", "http://192.168.1.8:9000/api/settings", nil)
+	req.Header.Set("Origin", "http://192.168.1.10:8080")
+	rr = httptest.NewRecorder()
+	remote.ServeHTTP(rr, req)
+	if rr.Code == 403 {
+		t.Fatalf("LAN origin rejected in remote mode: %s", rr.Body.String())
+	}
+	if rr.Header().Get("Access-Control-Allow-Origin") != "http://192.168.1.10:8080" {
+		t.Fatalf("missing CORS for LAN origin: %v", rr.Header())
+	}
+
+	req = httptest.NewRequest("POST", "http://192.168.1.8:9000/api/settings", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Origin", "http://192.168.1.10:8080")
+	req.Header.Set("Sec-Fetch-Site", "cross-site")
+	rr = httptest.NewRecorder()
+	remote.ServeHTTP(rr, req)
+	if rr.Code == 403 && strings.Contains(rr.Body.String(), "跨站") {
+		t.Fatalf("trusted cross-site write blocked: %s", rr.Body.String())
+	}
+
+	req = httptest.NewRequest("POST", "http://192.168.1.8:9000/api/settings", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Origin", "https://evil.example")
+	rr = httptest.NewRecorder()
+	remote.ServeHTTP(rr, req)
+	if rr.Code != 403 {
+		t.Fatalf("public origin accepted in remote mode: %d", rr.Code)
+	}
 }
 func TestMoveRewritesOwnAndIncomingLinks(t *testing.T) {
 	s := testStore(t)

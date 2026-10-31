@@ -3,7 +3,7 @@ import type { ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { MotionConfig, AnimatePresence, motion } from 'motion/react'
 import { PanelLeft, ChevronRight, Download, Bell, Sun, Moon, Check, Cloud, LoaderCircle, FileText, Plus, FolderOpen, FolderPlus, Tag, MoreHorizontal, Pencil, ArrowRightLeft, Trash2, X, AlertTriangle, RotateCcw, Copy, CheckCheck, BookOpen, ListTree, Maximize2, PenTool, Bot, Workflow, Highlighter, Eye, EyeOff } from 'lucide-react'
-import { api, ApiError, json, query } from './api'
+import { api, apiURL, ApiError, json, query } from './api'
 import type { Note, NoteSummary, TreeEntry, Settings, SettingsPreview, Task, Reminder, TrashEntry, Drawing, Plan, PlanDraft, CustomTask, CustomTaskDraft, AgentConfig, AgentConfigInput, AnnotationList } from './types'
 import { Sidebar } from './components/Sidebar'
 import { RepoSwitcher } from './components/RepoSwitcher'
@@ -259,7 +259,7 @@ export default function App() {
         if (path) await loadNote(path, false)
       } catch (e) { setFatal((e as Error).message) } finally { setLoading(false) }
     })()
-    const events = new EventSource('/api/events')
+    const events = new EventSource(apiURL('/api/events'))
     let timer: number | undefined
     const changed = () => { clearTimeout(timer); timer = window.setTimeout(() => refreshCurrent.current(), 250) }
     // 切换完成后再保存会把旧笔记写进新仓库，因此这里只退出并重新加载。发起切换的窗口会先保存。

@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
-import { Monitor, Moon, Sun, Palette, Sparkles, NotebookPen, HardDrive, Keyboard, Bot, Link2 } from 'lucide-react'
+import { Monitor, Moon, Sun, Palette, Sparkles, NotebookPen, HardDrive, Keyboard, Bot, Link2, Cable } from 'lucide-react'
+import { setApiBase } from '../api'
 import { Modal, Switch } from './UI'
 import { StorageSettings } from './StorageSettings'
 import { AgentSettings } from './AgentSettings'
+import { ConnectionSettings, connectionChanged, connectionOrigin, loadConnectionDraft, type ConnectionDraft } from './ConnectionSettings'
 import type { AgentConfig, AgentConfigInput, NoteWidth, Settings, SettingsPreview, UIStyle } from '../types'
 import { canonicalShortcut, findConflict, formatShortcut, isBindableShortcut, keyFromEvent, resolveShortcuts, shortcutActions, shortcutGroups, withShortcut } from '../shortcuts'
 import './SettingsPanel.css'
@@ -17,12 +19,13 @@ const uiStyles: { id: UIStyle; label: string; desc: string; accent: string; dark
   { id: 'ink', label: '水墨东方', desc: '宣纸墨色，朱砂点睛', accent: '#b23a2b', darkAccent: '#d4584a' },
 ]
 const noteWidths: { id: NoteWidth; label: string }[] = [{ id: 'default', label: '默认' }, { id: 'medium', label: '中' }, { id: 'large', label: '大' }]
-const sections = [{ id: 'appearance', label: '外观设置', icon: Palette }, { id: 'notes', label: '笔记设置', icon: NotebookPen }, { id: 'agent', label: 'Agent 设置', icon: Bot }, { id: 'shortcuts', label: '快捷键设置', icon: Keyboard }, { id: 'storage', label: '存储设置', icon: HardDrive }] as const
+const sections = [{ id: 'appearance', label: '外观设置', icon: Palette }, { id: 'notes', label: '笔记设置', icon: NotebookPen }, { id: 'agent', label: 'Agent 设置', icon: Bot }, { id: 'connection', label: '对接配置', icon: Cable }, { id: 'shortcuts', label: '快捷键设置', icon: Keyboard }, { id: 'storage', label: '存储设置', icon: HardDrive }] as const
 
 export function SettingsPanel({ settings, systemDark, agent, onPreview, onSave, onSaveAgent, onClose, beforeStorageAction }: { settings: Settings; systemDark: boolean; agent: AgentConfig | null; onPreview: (appearance: SettingsPreview | null) => void; onSave: (settings: Settings) => Promise<void>; onSaveAgent: (config: AgentConfigInput) => Promise<void>; onClose: () => void; beforeStorageAction: () => Promise<void> }) {
   const [draft, setDraft] = useState(settings)
   const [agentDraft, setAgentDraft] = useState(agent)
   const [agentKey, setAgentKey] = useState('')
+  const [connectionDraft, setConnectionDraft] = useState<ConnectionDraft>(() => loadConnectionDraft())
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [section, setSection] = useState<typeof sections[number]['id']>('appearance')
@@ -45,7 +48,20 @@ export function SettingsPanel({ settings, systemDark, agent, onPreview, onSave, 
   useEffect(() => { setAgentDraft(agent); setAgentKey('') }, [agent])
   const agentChanged = Boolean(agent && agentDraft && (agentKey.trim() || agentDraft.enabled !== agent.enabled || agentDraft.baseURL !== agent.baseURL || agentDraft.model !== agent.model || agentDraft.contextTokens !== agent.contextTokens || agentDraft.maxOutputTokens !== agent.maxOutputTokens || agentDraft.temperature !== agent.temperature || agentDraft.systemPrompt !== agent.systemPrompt || agentDraft.timeoutSeconds !== agent.timeoutSeconds))
   return <Modal title="设置" onClose={() => { if (!locked) onClose() }} wide className="settings-modal">
-    <form className="settings-form" onSubmit={async e => { e.preventDefault(); if (locked) return; setBusy(true); setError(''); try { await onSave(draft); if (agentChanged && agentDraft) await onSaveAgent({ enabled: agentDraft.enabled, baseURL: agentDraft.baseURL, apiKey: agentKey.trim(), model: agentDraft.model, contextTokens: agentDraft.contextTokens, maxOutputTokens: agentDraft.maxOutputTokens, temperature: agentDraft.temperature, systemPrompt: agentDraft.systemPrompt, timeoutSeconds: agentDraft.timeoutSeconds }); onClose() } catch (err) { setError((err as Error).message) } finally { setBusy(false) } }}>
+    <form className="settings-form" onSubmit={async e => {
+      e.preventDefault()
+      if (locked) return
+      setBusy(true)
+      setError('')
+      try {
+        const reload = connectionChanged(connectionDraft)
+        setApiBase(connectionOrigin(connectionDraft))
+        await onSave(draft)
+        if (agentChanged && agentDraft) await onSaveAgent({ enabled: agentDraft.enabled, baseURL: agentDraft.baseURL, apiKey: agentKey.trim(), model: agentDraft.model, contextTokens: agentDraft.contextTokens, maxOutputTokens: agentDraft.maxOutputTokens, temperature: agentDraft.temperature, systemPrompt: agentDraft.systemPrompt, timeoutSeconds: agentDraft.timeoutSeconds })
+        if (reload) { window.location.reload(); return }
+        onClose()
+      } catch (err) { setError((err as Error).message) } finally { setBusy(false) }
+    }}>
       <div className="settings-layout">
         <nav className="settings-menu" aria-label="设置菜单">{sections.map(({ id, label, icon: Icon }) => <button key={id} type="button" aria-current={section === id ? 'page' : undefined} aria-controls="settings-details" className={section === id ? 'active' : ''} onClick={() => setSection(id)} disabled={locked}><Icon size={17} /><span>{label}</span></button>)}</nav>
         <div className="settings-details" id="settings-details"><fieldset className="settings-fields" disabled={locked}>
@@ -70,6 +86,7 @@ export function SettingsPanel({ settings, systemDark, agent, onPreview, onSave, 
             <section className="settings-section"><h4>标签页</h4><div className="setting-row"><div><strong>多笔记 Tab</strong><p>同时打开多篇笔记，最多 10 个，超出时自动关闭最早打开的。</p></div><Switch label="多笔记 Tab" checked={draft.multiTabs} onChange={multiTabs => patch({ multiTabs })} /></div></section>
           </>}
           {section === 'agent' && (agentDraft ? <AgentSettings draft={agentDraft} apiKey={agentKey} disabled={locked} onChange={patch => setAgentDraft(current => current ? { ...current, ...patch } : current)} onKeyChange={setAgentKey} /> : <p className="field-help">暂时无法读取 Agent 设置，其他设置仍可保存。</p>)}
+          {section === 'connection' && <ConnectionSettings draft={connectionDraft} disabled={locked} onChange={setConnectionDraft} />}
           {section === 'shortcuts' && <ShortcutSettings shortcuts={draft.shortcuts ?? {}} disabled={locked} onChange={shortcuts => patch({ shortcuts })} />}
           {section === 'storage' && <StorageSettings assetsDir={settings.assetsDir} draftAssetsDir={draft.assetsDir} scanExcludes={settings.scanExcludes ?? []} draftScanExcludes={draft.scanExcludes ?? []} onDirectoryChange={assetsDir => patch({ assetsDir })} onExcludesChange={scanExcludes => patch({ scanExcludes })} beforeAction={beforeStorageAction} onBusyChange={setStorageBusy} />}
         </fieldset></div>

@@ -1,4 +1,4 @@
-import { ApiError, api, json, query } from '../api'
+import { ApiError, api, apiURL, json, query } from '../api'
 import type { AgentConfig, AgentConfigInput, AgentEvent, AgentMessage, AgentMode, Conversation } from '../types'
 
 export function getAgentConfig() {
@@ -40,7 +40,7 @@ export function setMessageOutcome(id: string, outcome: 'accepted' | 'rejected', 
 export type ChatRequest = { conversationId?: string; mode: AgentMode; message: string; note?: { path: string; content: string } }
 
 export async function* streamChat(body: ChatRequest, signal: AbortSignal): AsyncGenerator<AgentEvent> {
-  const response = await fetch('/api/agent/chat', {
+  const response = await fetch(apiURL('/api/agent/chat'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),

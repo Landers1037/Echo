@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { MouseEvent } from 'react'
 import { Link2, RefreshCw } from 'lucide-react'
-import { api, json } from '../api'
+import { api, json, resolveApiPath } from '../api'
 
 type ServerPreview = { url: string; title?: string; site?: string; hasImage: boolean; image?: string }
 type LinkPreview = ServerPreview & { revision: number }
@@ -56,7 +56,7 @@ function cardTitle(label: string, href: string, preview: LinkPreview) {
 }
 
 function imageSrc(preview: LinkPreview) {
-  const image = preview.image || ''
+  const image = resolveApiPath(preview.image || '')
   return `${image}${image.includes('?') ? '&' : '?'}v=${preview.revision}`
 }
 

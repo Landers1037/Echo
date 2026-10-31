@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Database, Download, FileText, Image, LoaderCircle, RefreshCw, Search, Trash2 } from 'lucide-react'
-import { api, json } from '../api'
+import { api, apiURL, json } from '../api'
 import type { AssetCleanup, StorageUsage, UnusedAssets } from '../types'
 
 type ArchiveFormat = 'zip' | 'tar'
@@ -113,7 +113,7 @@ export function StorageSettings({ assetsDir, draftAssetsDir, scanExcludes, draft
     setExporting(true); onBusyChange(true); setExportError(''); setExportNotice('')
     try {
       await beforeAction()
-      const response = await fetch(`/api/storage/export?format=${format}`)
+      const response = await fetch(apiURL(`/api/storage/export?format=${format}`))
       if (!response.ok) {
         const data = await response.json().catch(() => ({})) as { error?: string }
         throw new Error(data.error || `导出失败 (${response.status})`)

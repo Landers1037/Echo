@@ -1,5 +1,6 @@
 import { createRoot } from 'react-dom/client'
 import { zipSync, strToU8 } from 'fflate'
+import { apiURL } from './api'
 import { MarkdownView } from './components/MarkdownView'
 import type { ExportSnapshot } from './types'
 
@@ -90,7 +91,7 @@ async function renderNote(note: ExportSnapshot['notes'][number], lineNumbers: bo
 }
 
 async function requestExport(paths: string[], format: string, allowMissing = false) {
-  return fetch('/api/exports', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ paths: [...new Set(paths)].sort(), format, allowMissing }) })
+  return fetch(apiURL('/api/exports'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ paths: [...new Set(paths)].sort(), format, allowMissing }) })
 }
 
 function warningFrom(data: Record<string, unknown>): Warning {

@@ -7,6 +7,7 @@ import remarkBreaks from 'remark-breaks'
 import remarkFrontmatter from 'remark-frontmatter'
 import { codeToHtml } from 'shiki'
 import { Check, Copy, FileSymlink } from 'lucide-react'
+import { apiURL } from '../api'
 import { NOTE_REF_TITLE } from '../noteReference'
 import { DrawingEmbed } from './Drawing'
 import { DrawioEmbed } from './Drawio'
@@ -175,7 +176,7 @@ export function MarkdownView({ content, notePath, assets, lineNumbers, fontSize,
       const external = /^(https?:|data:|blob:|\/\/)/i.test(src)
       const embedded = assets?.[src] || assets?.[decodeSafe(src)]
       if (exporting && !external && !embedded) return <span className="missing-image">[图片缺失：{alt || src}]</span>
-      const image = embedded || (external ? src : `/api/assets?path=${encodeURIComponent(resolveNotePath(notePath, src))}`)
+      const image = embedded || (external ? src : apiURL(`/api/assets?path=${encodeURIComponent(resolveNotePath(notePath, src))}`))
       if (exporting) return <img src={image} alt={alt || ''} title={title} loading="eager" onError={event => { event.currentTarget.classList.add('image-error') }} />
       return <PreviewableImage src={image} alt={alt || ''} title={title} onOpen={() => setImagePreview({ src: image, alt: alt || '' })} />
     },

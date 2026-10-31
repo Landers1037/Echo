@@ -21,19 +21,26 @@ import (
 type handler struct {
 	ws            *Workspace
 	dev           bool
+	remote        bool
 	web           http.Handler
 	openDirectory func(string) error
 	pickFolder    func() (string, bool, error)
 }
 
 func NewHandler(ws *Workspace, dev bool) http.Handler {
+	return NewHandlerEx(ws, dev, false)
+}
+
+// NewHandlerEx creates a handler. When remote is true, non-loopback Host and
+// private-network Origins are accepted so a LAN frontend can call this API.
+func NewHandlerEx(ws *Workspace, dev, remote bool) http.Handler {
 	if ws.clients == nil {
 		ws.clients = map[chan []byte]bool{}
 	}
 	if ws.store != nil && ws.store.broadcast == nil {
 		ws.store.broadcast = ws.broadcast
 	}
-	return &handler{ws: ws, dev: dev, web: web.Handler(), openDirectory: openNotebookDirectory, pickFolder: pickFolderOnDesktop}
+	return &handler{ws: ws, dev: dev, remote: remote, web: web.Handler(), openDirectory: openNotebookDirectory, pickFolder: pickFolderOnDesktop}
 }
 func jsonResponse(w http.ResponseWriter, status int, value any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
@@ -66,46 +73,78 @@ func decode(r *http.Request, value any) error {
 	}
 	return nil
 }
-func localHost(host string) bool {
+func hostName(host string) string {
 	if h, _, err := net.SplitHostPort(host); err == nil {
-		host = h
+		return h
 	}
-	if host == "localhost" {
+	return strings.Trim(host, "[]")
+}
+func localHost(host string) bool {
+	host = hostName(host)
+	if strings.EqualFold(host, "localhost") {
 		return true
 	}
 	ip := net.ParseIP(strings.Trim(host, "[]"))
 	return ip != nil && ip.IsLoopback()
 }
+func privateOrLocalHost(host string) bool {
+	host = hostName(host)
+	if localHost(host) {
+		return true
+	}
+	ip := net.ParseIP(strings.Trim(host, "[]"))
+	if ip == nil {
+		return false
+	}
+	return ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLoopback()
+}
+func (h *handler) allowedOrigin(origin string, requestHost string) bool {
+	parsed, err := url.Parse(origin)
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+		return false
+	}
+	if parsed.Host == requestHost {
+		return true
+	}
+	if h.dev && localHost(parsed.Host) && (parsed.Host == "localhost:5173" || parsed.Host == "127.0.0.1:5173") {
+		return true
+	}
+	if localHost(parsed.Host) && localHost(requestHost) {
+		return true
+	}
+	if h.remote && privateOrLocalHost(parsed.Host) {
+		return true
+	}
+	return false
+}
+func writeCORS(w http.ResponseWriter, origin string) {
+	w.Header().Set("Access-Control-Allow-Origin", origin)
+	w.Header().Set("Vary", "Origin")
+	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+}
 func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Referrer-Policy", "same-origin")
-	if !localHost(r.Host) {
+	if !localHost(r.Host) && !h.remote {
 		jsonResponse(w, http.StatusForbidden, map[string]any{"error": "仅允许本机访问"})
 		return
 	}
 	origin := r.Header.Get("Origin")
+	originOK := false
 	if origin != "" {
-		parsed, err := url.Parse(origin)
-		allowed := err == nil && parsed.Host == r.Host && (parsed.Scheme == "http" || parsed.Scheme == "https")
-		if h.dev && err == nil && localHost(parsed.Host) && (parsed.Host == "localhost:5173" || parsed.Host == "127.0.0.1:5173") {
-			allowed = true
-		}
-		if !allowed {
+		if !h.allowedOrigin(origin, r.Host) {
 			jsonResponse(w, http.StatusForbidden, map[string]any{"error": "请求来源不受信任"})
 			return
 		}
-		if h.dev {
-			w.Header().Set("Access-Control-Allow-Origin", origin)
-			w.Header().Set("Vary", "Origin")
-			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
-			w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
-		}
+		originOK = true
+		writeCORS(w, origin)
 	}
 	if r.Method == "OPTIONS" {
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
-	if r.Method != "GET" && r.Method != "HEAD" && r.Header.Get("Sec-Fetch-Site") == "cross-site" {
+	if r.Method != "GET" && r.Method != "HEAD" && r.Header.Get("Sec-Fetch-Site") == "cross-site" && !originOK {
 		jsonResponse(w, http.StatusForbidden, map[string]any{"error": "不允许跨站写入"})
 		return
 	}

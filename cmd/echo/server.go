@@ -6,10 +6,22 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"strings"
 	"time"
 
 	"echo/internal/app"
 )
+
+func listenAllowsRemote(host string) bool {
+	if strings.EqualFold(host, "localhost") {
+		return false
+	}
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return true
+	}
+	return !ip.IsLoopback()
+}
 
 func runServer(ctx context.Context, dataDir string, explicit bool, addr string, dev bool, loopbackOnly bool, out io.Writer) error {
 	host, _, err := net.SplitHostPort(addr)
@@ -18,8 +30,9 @@ func runServer(ctx context.Context, dataDir string, explicit bool, addr string, 
 	}
 	ip := net.ParseIP(host)
 	if loopbackOnly && host != "localhost" && (ip == nil || !ip.IsLoopback()) {
-		return fmt.Errorf("Echo is a personal local app: --addr must use a loopback address")
+		return fmt.Errorf("Echo is a personal local app: --addr must use a loopback address (or pass --allow-remote)")
 	}
+	remote := listenAllowsRemote(host)
 	listener, err := net.Listen("tcp", addr)
 	if err != nil {
 		return err
@@ -31,7 +44,7 @@ func runServer(ctx context.Context, dataDir string, explicit bool, addr string, 
 	}
 	go workspace.Run(ctx)
 	server := &http.Server{
-		Handler:           app.NewHandler(workspace, dev),
+		Handler:           app.NewHandlerEx(workspace, dev, remote),
 		ReadHeaderTimeout: 10 * time.Second,
 		IdleTimeout:       90 * time.Second,
 	}
