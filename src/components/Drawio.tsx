@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Download, LoaderCircle, Pencil, Workflow, X } from 'lucide-react'
+import { Download, LoaderCircle, Pencil, Trash2, Workflow, X } from 'lucide-react'
 import { api, ApiError, json, query } from '../api'
 import type { Drawing } from '../types'
 
@@ -112,7 +112,7 @@ function drawioUrl(ui: string) {
   return `/drawio/index.html?${params}`
 }
 
-export function DrawioEmbed({ path, alt = '绘图', exporting = false, version = 0, onEdit }: { path: string; alt?: string; exporting?: boolean; version?: number; onEdit?: (path: string) => void }) {
+export function DrawioEmbed({ path, alt = '绘图', exporting = false, version = 0, onEdit, onDelete }: { path: string; alt?: string; exporting?: boolean; version?: number; onEdit?: (path: string) => void; onDelete?: (path: string) => void }) {
   const host = useRef<HTMLDivElement>(null)
   const [rendering, setRendering] = useState(true)
   const [empty, setEmpty] = useState(false)
@@ -144,11 +144,15 @@ export function DrawioEmbed({ path, alt = '绘图', exporting = false, version =
     }).catch(reason => { if (alive) { setError(reason instanceof Error ? reason.message : '绘图无法显示'); setRendering(false) } })
     return () => { alive = false }
   }, [path, version])
+  const actions = !exporting && (onEdit || onDelete)
   return <div className="drawing-embed">
     <div ref={host} className="drawing-frame" data-rendering={rendering ? 'true' : undefined} aria-label={alt} />
     {empty && <p className="drawing-empty">空白绘图</p>}
     {error && <p className="drawing-error">{error}</p>}
-    {!exporting && onEdit && <button type="button" className="drawing-edit" aria-label="编辑绘图" title="编辑绘图" onClick={() => onEdit(path)}><Pencil size={15} /></button>}
+    {actions && <div className="drawing-actions">
+      {onEdit && <button type="button" className="drawing-edit" aria-label="编辑绘图" title="编辑绘图" onClick={() => onEdit(path)}><Pencil size={15} /></button>}
+      {onDelete && <button type="button" className="drawing-edit danger" aria-label="删除绘图" title="删除绘图" onClick={() => onDelete(path)}><Trash2 size={15} /></button>}
+    </div>}
   </div>
 }
 

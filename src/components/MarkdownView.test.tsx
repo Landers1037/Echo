@@ -14,8 +14,8 @@ const { initializeMermaid, renderMermaid } = vi.hoisted(() => ({
 
 vi.mock('shiki', () => ({ codeToHtml: async (code: string) => `<pre class="shiki"><code><span class="line">${code.replace(/</g, '&lt;')}</span></code></pre>` }))
 vi.mock('mermaid', () => ({ default: { initialize: initializeMermaid, render: (id: string, code: string) => renderMermaid(id, code) } }))
-vi.mock('./Drawing', () => ({ DrawingEmbed: ({ path, onEdit }: { path: string; onEdit?: (path: string) => void }) => <button type="button" onClick={() => onEdit?.(path)}>{path}</button> }))
-vi.mock('./Drawio', () => ({ DrawioEmbed: ({ path, onEdit }: { path: string; onEdit?: (path: string) => void }) => <button type="button" onClick={() => onEdit?.(path)}>{path}</button> }))
+vi.mock('./Drawing', () => ({ DrawingEmbed: ({ path, onEdit, onDelete }: { path: string; onEdit?: (path: string) => void; onDelete?: (path: string) => void }) => <div><button type="button" onClick={() => onEdit?.(path)}>{path}</button>{onDelete && <button type="button" aria-label={`删除 ${path}`} onClick={() => onDelete(path)}>删除</button>}</div> }))
+vi.mock('./Drawio', () => ({ DrawioEmbed: ({ path, onEdit, onDelete }: { path: string; onEdit?: (path: string) => void; onDelete?: (path: string) => void }) => <div><button type="button" onClick={() => onEdit?.(path)}>{path}</button>{onDelete && <button type="button" aria-label={`删除 ${path}`} onClick={() => onDelete(path)}>删除</button>}</div> }))
 afterEach(() => { cleanup(); clearLinkPreviews(); vi.unstubAllGlobals(); vi.restoreAllMocks() })
 
 describe('Markdown rendering', () => {
@@ -97,6 +97,15 @@ describe('Markdown rendering', () => {
     expect(screen.getByRole('button', { name: 'data:application/vnd.jgraph.mxfile;base64,abc' })).toBeInTheDocument()
     rerender(<MarkdownView content="![流程](../图表/missing.drawio)" notePath="项目/记录.md" lineNumbers={false} exporting />)
     expect(screen.getByText('[绘图缺失：流程]')).toBeInTheDocument()
+  })
+
+  it('wires delete actions for draw.io and excalidraw embeds', () => {
+    const remove = vi.fn()
+    render(<MarkdownView content={'![流程](../图表/流程.drawio)\n![架构](../.assets/a.excalidraw)'} notePath="项目/记录.md" lineNumbers={false} onDeleteDrawing={remove} />)
+    fireEvent.click(screen.getByRole('button', { name: '删除 图表/流程.drawio' }))
+    fireEvent.click(screen.getByRole('button', { name: '删除 .assets/a.excalidraw' }))
+    expect(remove).toHaveBeenCalledWith('图表/流程.drawio')
+    expect(remove).toHaveBeenCalledWith('.assets/a.excalidraw')
   })
 
   it('renders mermaid diagrams in the active theme and uses the light theme while exporting', async () => {
