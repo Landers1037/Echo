@@ -59,8 +59,8 @@ func (g *guiApp) create() error {
 		AssignTo: &g.mw,
 		Title:    "Echo",
 		Font:     Font{Family: "Segoe UI", PointSize: 9},
-		MinSize:  Size{Width: 520, Height: 240},
-		Size:     Size{Width: 640, Height: 460},
+		MinSize:  Size{Width: 480, Height: 200},
+		Size:     Size{Width: 560, Height: 280},
 		Layout:   VBox{},
 		Children: []Widget{
 			Composite{
@@ -68,12 +68,20 @@ func (g *guiApp) create() error {
 				Layout:   VBox{},
 				Children: []Widget{
 					Label{Text: "笔记目录"},
-					LineEdit{AssignTo: &g.path, Text: app.LastRepository()},
 					Composite{
-						Layout: HBox{},
+						Layout: HBox{Spacing: 6},
+						Children: []Widget{
+							LineEdit{AssignTo: &g.path, Text: app.LastRepository(), StretchFactor: 1},
+							PushButton{Text: "浏览...", OnClicked: g.browse, MinSize: Size{Width: 72}},
+						},
+					},
+					Composite{
+						Layout: HBox{Spacing: 8, Alignment: AlignHNearVCenter},
 						Children: []Widget{
 							Composite{
-								Layout: VBox{},
+								Layout:  VBox{},
+								MinSize: Size{Width: 150},
+								MaxSize: Size{Width: 180},
 								Children: []Widget{
 									Label{Text: "监听 IP"},
 									LineEdit{AssignTo: &g.host, Text: saved.Host},
@@ -81,20 +89,20 @@ func (g *guiApp) create() error {
 							},
 							Composite{
 								Layout:  VBox{},
-								MinSize: Size{Width: 110},
-								MaxSize: Size{Width: 140},
+								MinSize: Size{Width: 90},
+								MaxSize: Size{Width: 110},
 								Children: []Widget{
 									Label{Text: "端口"},
-									LineEdit{AssignTo: &g.port, Text: saved.Port, MaxLength: 5, MinSize: Size{Width: 110}},
+									LineEdit{AssignTo: &g.port, Text: saved.Port, MaxLength: 5},
 								},
 							},
-						},
-					},
-					Composite{
-						Layout: HBox{},
-						Children: []Widget{
-							PushButton{Text: "浏览...", OnClicked: g.browse},
-							PushButton{AssignTo: &g.openBtn, Text: "打开", OnClicked: g.start},
+							Composite{
+								Layout: VBox{},
+								Children: []Widget{
+									Label{Text: " "},
+									PushButton{AssignTo: &g.openBtn, Text: "启动", OnClicked: g.start, MinSize: Size{Width: 72}},
+								},
+							},
 						},
 					},
 				},

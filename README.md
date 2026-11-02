@@ -31,6 +31,17 @@ npm run build
 
 构建依次执行 TypeScript 检查、Vite 打包和 Go 编译。Windows 输出 `dist/echo.exe`，其他系统输出 `dist/echo`。前端静态资源通过 `go:embed` 编译进入二进制；把该可执行文件复制到其他目录即可运行，实际笔记和图片写在外部数据目录。
 
+### Windows GUI
+
+无控制台的 Windows 启动器使用原生 Win32（[tailscale/walk](https://github.com/tailscale/walk)），不依赖 CGO：
+
+```powershell
+npm run build:windows
+.\dist\echo-gui.exe
+```
+
+该命令在普通构建之外用 `-tags gui` 编译 GUI 入口，并带 `-H windowsgui`。未加 `gui` 标签时仍走 CLI 入口。
+
 运行参数：
 
 ```powershell
