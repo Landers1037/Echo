@@ -686,7 +686,7 @@ func (h *handler) api(s *Store, w http.ResponseWriter, r *http.Request) error {
 				jsonResponse(w, 200, doc)
 				return nil
 			}
-			w.Header().Set("Content-Type", docxMediaType)
+			w.Header().Set("Content-Type", officeDocumentMediaType(doc.Path))
 			w.Header().Set("Cache-Control", "private, max-age=0, must-revalidate")
 			w.Header().Set("X-Echo-Revision", doc.Revision)
 			w.Header().Set("X-Echo-Modified", doc.Modified)

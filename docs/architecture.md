@@ -384,6 +384,6 @@ Vite 插件 `excalidrawAssets` 在开发时提供 Excalidraw 字体，构建时�
 
 - **新增普通 API**：在 `handler.api` 的 `switch` 中添加 case（已经持有 Store 锁），业务逻辑写成 `Store` 方法放在对应文件；修改了数据就调用 `s.changed()`；修改 `state.json` 时遵循「改内存 → `persist()` → 失败则回滚内存」的模式。在 `src/types.ts` 补充类型，在 `docs/features.md` 补充 API 清单。
 - **不应持有 Store 锁的长连接接口**（流式、外部调用）：参照 `/api/agent` 在 `ServeHTTP` 中提前分流。
-- **新增文件类型**：需要同时考虑 `tree()`、`recycle()`、`move()`、指纹计算、存储统计/清理，以及前端 `TreeEntry.type`。DOCX 是只读预览类型示例：入树为 `type: "docx"`，经 `/api/documents` 提供二进制与移动/回收，不进入 `/notes` 或版本库。
+- **新增文件类型**：需要同时考虑 `tree()`、`recycle()`、`move()`、指纹计算、存储统计/清理，以及前端 `TreeEntry.type`。Office 文档是只读预览类型示例：入树为 `type: "docx" | "pptx" | "xlsx"`，经 `/api/documents` 提供二进制与移动/回收，不进入 `/notes` 或版本库。
 - **新增 Agent 工具**：修改 `noteToolsJSON`、`noteInstructions`；在前端 `NoteAiSession.apply` 和 `partialJson` 中实现增量应用；在 `AgentPanel.toolLabel` 中添加显示名称。
 - **新增操作系统相关能力**：放在 `desktop_<os>.go` 中，按 build tag 区分，通过 `handler` 的函数字段注入，方便测试替换。

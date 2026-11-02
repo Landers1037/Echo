@@ -263,12 +263,12 @@ func (s *Store) move(from, to, rev string, folder bool) (Note, error) {
 		return Note{}, err
 	}
 	drawing := !folder && isDrawingName(from)
-	docx := !folder && isDocxName(from)
+	office := !folder && isOfficeDocumentName(from)
 	if drawing && !strings.EqualFold(path.Ext(from), path.Ext(to)) {
 		return Note{}, fmt.Errorf("绘图必须保持原扩展名")
 	}
-	if docx && !strings.EqualFold(path.Ext(from), path.Ext(to)) {
-		return Note{}, fmt.Errorf("文档必须保持 .docx 扩展名")
+	if office && !strings.EqualFold(path.Ext(from), path.Ext(to)) {
+		return Note{}, fmt.Errorf("文档必须保持原扩展名")
 	}
 	if !folder {
 		if drawing {
@@ -282,7 +282,7 @@ func (s *Store) move(from, to, rev string, folder bool) (Note, error) {
 			if _, e = s.drawingPath(to); e != nil {
 				return Note{}, e
 			}
-		} else if docx {
+		} else if office {
 			current, _, e := s.readDocument(from)
 			if e != nil {
 				return Note{}, e
@@ -410,7 +410,7 @@ func (s *Store) move(from, to, rev string, folder bool) (Note, error) {
 		}
 		return Note{}, err
 	}
-	if folder || drawing || docx {
+	if folder || drawing || office {
 		return Note{}, nil
 	}
 	return s.readNote(to)

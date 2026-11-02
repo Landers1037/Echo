@@ -698,6 +698,38 @@ func TestDocxTreeReadMoveAndRecycle(t *testing.T) {
 	if _, _, err := s.readDocument("归档/说明.docx"); err != nil {
 		t.Fatal(err)
 	}
+
+	for _, item := range []struct {
+		path string
+		kind string
+		mime string
+	}{
+		{"演示/方案.pptx", "pptx", pptxMediaType},
+		{"表格/预算.xlsx", "xlsx", xlsxMediaType},
+	} {
+		payload := []byte("PK\x03\x04echo-" + item.kind)
+		full := filepath.Join(s.root, filepath.FromSlash(item.path))
+		if err := os.MkdirAll(filepath.Dir(full), 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(full, payload, 0644); err != nil {
+			t.Fatal(err)
+		}
+		entry, ok := findTreeEntry(mustTree(t, s), item.path)
+		if !ok || entry.Type != item.kind {
+			t.Fatalf("%s tree entry %+v %v", item.kind, entry, ok)
+		}
+		rr := request(t, h, "GET", "/api/documents?path="+url.QueryEscape(item.path), nil)
+		if rr.Code != 200 {
+			t.Fatalf("%s bytes %d %s", item.kind, rr.Code, rr.Body.String())
+		}
+		if rr.Header().Get("Content-Type") != item.mime {
+			t.Fatalf("%s content type %s", item.kind, rr.Header().Get("Content-Type"))
+		}
+		if !bytes.Equal(rr.Body.Bytes(), payload) {
+			t.Fatalf("%s body mismatch", item.kind)
+		}
+	}
 }
 
 func TestDrawioCreateSaveMoveExportAndCleanup(t *testing.T) {

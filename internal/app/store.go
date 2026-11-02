@@ -109,6 +109,8 @@ type Document struct {
 	Size     int64  `json:"size"`
 }
 const docxMediaType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+const pptxMediaType = "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+const xlsxMediaType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 const maxDocumentBytes = 50 * 1024 * 1024
 type Conflict struct {
 	Current Note
@@ -261,6 +263,38 @@ func isDrawingName(name string) bool {
 func isDocxName(name string) bool {
 	return strings.EqualFold(path.Ext(name), ".docx")
 }
+func isOfficeDocumentName(name string) bool {
+	switch strings.ToLower(path.Ext(name)) {
+	case ".docx", ".pptx", ".xlsx":
+		return true
+	default:
+		return false
+	}
+}
+func officeDocumentType(name string) string {
+	switch strings.ToLower(path.Ext(name)) {
+	case ".docx":
+		return "docx"
+	case ".pptx":
+		return "pptx"
+	case ".xlsx":
+		return "xlsx"
+	default:
+		return ""
+	}
+}
+func officeDocumentMediaType(name string) string {
+	switch strings.ToLower(path.Ext(name)) {
+	case ".docx":
+		return docxMediaType
+	case ".pptx":
+		return pptxMediaType
+	case ".xlsx":
+		return xlsxMediaType
+	default:
+		return "application/octet-stream"
+	}
+}
 func isDrawioName(name string) bool {
 	return strings.EqualFold(path.Ext(name), ".drawio")
 }
@@ -288,8 +322,8 @@ func (s *Store) documentPath(name string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if !isDocxName(name) {
-		return "", fmt.Errorf("文档必须使用 .docx 扩展名")
+	if !isOfficeDocumentName(name) {
+		return "", fmt.Errorf("文档必须使用 .docx、.pptx 或 .xlsx 扩展名")
 	}
 	if name == s.state.Settings.AssetsDir || strings.HasPrefix(name, s.state.Settings.AssetsDir+"/") {
 		return "", fmt.Errorf("不能在资源目录中保存文档")
@@ -676,8 +710,8 @@ func (s *Store) tree() ([]TreeEntry, error) {
 				result = append(result, TreeEntry{Path: p, Name: entry.Name(), Type: "note"})
 			} else if isDrawingName(entry.Name()) {
 				result = append(result, TreeEntry{Path: p, Name: entry.Name(), Type: "drawing"})
-			} else if isDocxName(entry.Name()) {
-				result = append(result, TreeEntry{Path: p, Name: entry.Name(), Type: "docx"})
+			} else if kind := officeDocumentType(entry.Name()); kind != "" {
+				result = append(result, TreeEntry{Path: p, Name: entry.Name(), Type: kind})
 			}
 		}
 		sort.SliceStable(result, func(i, j int) bool {
@@ -699,7 +733,7 @@ func (s *Store) recycle(name string) error {
 	if err != nil {
 		return err
 	}
-	if !info.IsDir() && !strings.EqualFold(path.Ext(name), ".md") && !isDrawingName(name) && !isDocxName(name) {
+	if !info.IsDir() && !strings.EqualFold(path.Ext(name), ".md") && !isDrawingName(name) && !isOfficeDocumentName(name) {
 		return fmt.Errorf("只能删除笔记、绘图、文档或文件夹")
 	}
 	if name == s.state.Settings.AssetsDir || strings.HasPrefix(s.state.Settings.AssetsDir, name+"/") {
