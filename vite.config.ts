@@ -76,12 +76,13 @@ function excalidrawAssets(): Plugin {
 
 export default defineConfig({
   plugins: [react(), excalidrawAssets(), drawioAssets()],
+  optimizeDeps: { exclude: ['@silurus/ooxml'] },
   server: {
     host: '127.0.0.1',
     port: 5173,
     strictPort: true,
     proxy: { '/api': { target: 'http://127.0.0.1:8080', changeOrigin: false } },
   },
-  build: { outDir: 'internal/web/dist', emptyOutDir: false, chunkSizeWarningLimit: 1200 },
+  build: { outDir: 'internal/web/dist', emptyOutDir: false, chunkSizeWarningLimit: 2500 },
   test: { environment: 'jsdom', include: ['src/**/*.test.{ts,tsx}'], setupFiles: ['src/test-setup.ts'] },
 })

@@ -263,8 +263,12 @@ func (s *Store) move(from, to, rev string, folder bool) (Note, error) {
 		return Note{}, err
 	}
 	drawing := !folder && isDrawingName(from)
+	docx := !folder && isDocxName(from)
 	if drawing && !strings.EqualFold(path.Ext(from), path.Ext(to)) {
 		return Note{}, fmt.Errorf("绘图必须保持原扩展名")
+	}
+	if docx && !strings.EqualFold(path.Ext(from), path.Ext(to)) {
+		return Note{}, fmt.Errorf("文档必须保持 .docx 扩展名")
 	}
 	if !folder {
 		if drawing {
@@ -276,6 +280,17 @@ func (s *Store) move(from, to, rev string, folder bool) (Note, error) {
 				return Note{}, &Conflict{Current: Note{Path: current.Path, Content: current.Content, Revision: current.Revision, Modified: current.Modified}, message: "绘图已被其他窗口或外部程序修改"}
 			}
 			if _, e = s.drawingPath(to); e != nil {
+				return Note{}, e
+			}
+		} else if docx {
+			current, _, e := s.readDocument(from)
+			if e != nil {
+				return Note{}, e
+			}
+			if current.Revision != rev {
+				return Note{}, &Conflict{Current: Note{Path: current.Path, Revision: current.Revision, Modified: current.Modified}, message: "文档已被其他窗口或外部程序修改"}
+			}
+			if _, e = s.documentPath(to); e != nil {
 				return Note{}, e
 			}
 		} else {
@@ -395,7 +410,7 @@ func (s *Store) move(from, to, rev string, folder bool) (Note, error) {
 		}
 		return Note{}, err
 	}
-	if folder || drawing {
+	if folder || drawing || docx {
 		return Note{}, nil
 	}
 	return s.readNote(to)

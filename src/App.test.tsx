@@ -21,6 +21,23 @@ vi.mock('./components/Drawio', () => ({
   DrawioEmbed: () => null,
   DrawioModal: ({ path, onClose }: { path: string; onClose: () => void }) => <div role="dialog" aria-label="绘图"><span>{path}</span><button type="button" onClick={onClose}>关闭绘图</button></div>,
 }))
+vi.mock('@silurus/ooxml/docx', () => ({
+  DocxScrollViewer: vi.fn(function MockViewer(this: {
+    destroy: () => void
+    load: () => Promise<void>
+    getScale: () => number
+    setScale: (scale: number) => void
+    fitWidth: () => void
+  }, host: HTMLElement) {
+    host.setAttribute('data-docx-host', '1')
+    this.destroy = vi.fn()
+    this.load = vi.fn(async () => undefined)
+    this.getScale = vi.fn(() => 1)
+    this.setScale = vi.fn()
+    this.fitWidth = vi.fn()
+  }),
+}))
+vi.mock('@silurus/ooxml/math', () => ({ math: {} }))
 vi.mock('motion/react', async () => {
   const React = await import('react')
   type Props = React.ComponentProps<'div'> & { initial?: unknown; animate?: unknown; exit?: unknown; transition?: unknown }
@@ -42,7 +59,7 @@ function deferred() {
   return { promise, resolve }
 }
 
-function noteTree(notes: Note[], folders: string[], drawings: string[] = []): TreeEntry[] {
+function noteTree(notes: Note[], folders: string[], drawings: string[] = [], documents: string[] = []): TreeEntry[] {
   const root: TreeEntry[] = []
   const directories = new Map<string, TreeEntry>()
   function children(path: string): TreeEntry[] {
@@ -64,14 +81,19 @@ function noteTree(notes: Note[], folders: string[], drawings: string[] = []): Tr
     const parts = drawing.split('/')
     children(parts.slice(0, -1).join('/')).push({ path: drawing, name: parts.at(-1)!, type: 'drawing' })
   }
+  for (const document of documents) {
+    const parts = document.split('/')
+    children(parts.slice(0, -1).join('/')).push({ path: document, name: parts.at(-1)!, type: 'docx' })
+  }
   return root
 }
 
-function createServer(extraNotes: Note[] = [], initialFolders: string[] = [], initialSettings: Partial<Settings> = {}, initialDrawings: string[] = []) {
+function createServer(extraNotes: Note[] = [], initialFolders: string[] = [], initialSettings: Partial<Settings> = {}, initialDrawings: string[] = [], initialDocuments: string[] = []) {
   let note: Note = { path: '测试.md', title: '测试笔记', metadata: { tags: [], group: '' }, revision: 'v1', modified: '2026-10-22T12:00:00Z', content: '# 初始笔记\n' }
   const createdNotes: Note[] = []
   const folders = [...initialFolders]
   const drawings = [...initialDrawings]
+  const documents = [...initialDocuments]
   const allNotes = () => [note, ...extraNotes, ...createdNotes]
   let savedSettings = { ...settings, ...initialSettings }
   let settingsError = false
@@ -161,7 +183,12 @@ function createServer(extraNotes: Note[] = [], initialFolders: string[] = [], in
       return new Response(new Uint8Array([1, 2, 3, 4]), { status: 200, headers: { 'Content-Type': format === 'tar' ? 'application/x-tar' : 'application/zip', 'Content-Disposition': header } })
     }
     if (url.pathname === '/api/notes' && method === 'GET') return response(url.searchParams.has('path') ? allNotes().find(item => item.path === url.searchParams.get('path')) : allNotes().map(item => ({ ...item, content: '' })))
-    if (url.pathname === '/api/tree') return response(noteTree(allNotes(), folders, drawings))
+    if (url.pathname === '/api/tree') return response(noteTree(allNotes(), folders, drawings, documents))
+    if (url.pathname === '/api/documents' && method === 'GET') {
+      const path = url.searchParams.get('path') || ''
+      if (url.searchParams.get('meta') === '1') return response({ path, revision: 'docx-1', modified: note.modified, size: 3 })
+      return new Response(new Uint8Array([1, 2, 3]), { status: 200, headers: { 'Content-Type': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' } })
+    }
     if (url.pathname === '/api/drawings' && method === 'POST') {
       const request = body as { path?: string; notePath?: string }
       if (request.notePath) return response({ path: '.assets/drawing.excalidraw', markdownPath: '.assets/drawing.excalidraw', revision: 'd1', modified: note.modified, content: '{"type":"excalidraw","elements":[]}' }, 201)
@@ -316,6 +343,28 @@ describe('App creates items inside a folder', () => {
     fireEvent.change(screen.getByLabelText('笔记路径'), { target: { value: '根目录笔记' } })
     fireEvent.click(screen.getByRole('button', { name: '创建笔记' }))
     await waitFor(() => expect(server.calls.find(call => call.path === '/api/notes' && call.method === 'POST')?.body).toEqual({ path: '根目录笔记.md', content: '' }))
+  })
+
+  it('opens directory docx documents in the main preview', async () => {
+    const server = createServer([], ['资料'], {}, [], ['资料/说明.docx'])
+    await openApp(server)
+    fireEvent.click(screen.getByRole('button', { name: '资料' }))
+    fireEvent.click(screen.getByRole('button', { name: '说明' }))
+    expect(await screen.findByRole('region', { name: '预览 资料/说明.docx' })).toBeInTheDocument()
+    expect(screen.getByText(/只读预览/)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '关闭文档预览' }))
+    await waitFor(() => expect(screen.queryByRole('region', { name: '预览 资料/说明.docx' })).not.toBeInTheDocument())
+  })
+
+  it('shows the docx file name as the active tab', async () => {
+    const server = createServer([], ['资料'], { multiTabs: true }, [], ['资料/说明.docx'])
+    await openApp(server)
+    fireEvent.click(screen.getByRole('button', { name: '资料' }))
+    fireEvent.click(screen.getByRole('button', { name: '说明' }))
+    expect(await screen.findByRole('region', { name: '预览 资料/说明.docx' })).toBeInTheDocument()
+    const tabs = within(screen.getByRole('tablist', { name: '已打开的笔记' }))
+    expect(tabs.getByRole('tab', { name: '说明' })).toHaveAttribute('aria-selected', 'true')
+    expect(tabs.getByRole('tab', { name: '测试' })).toHaveAttribute('aria-selected', 'false')
   })
 
   it('opens directory drawings and creates one inside the selected folder', async () => {

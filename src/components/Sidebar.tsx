@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
-import { BookOpen, Search, Plus, FolderPlus, FileText, ChevronRight, Folder, MoreHorizontal, LayoutGrid, ListTodo, Settings, Trash2, Tags, FolderOpen, X, ArrowUpRight, Box, LoaderCircle, PenTool, LocateFixed, Workflow, CalendarDays } from 'lucide-react'
+import { BookOpen, Search, Plus, FolderPlus, FileText, FileType, ChevronRight, Folder, MoreHorizontal, LayoutGrid, ListTodo, Settings, Trash2, Tags, FolderOpen, X, ArrowUpRight, Box, LoaderCircle, PenTool, LocateFixed, Workflow, CalendarDays } from 'lucide-react'
 import { motion } from 'motion/react'
 import type { NoteSummary, TreeEntry } from '../types'
 import { Logo } from './Logo'
@@ -12,7 +12,8 @@ type Props = {
   filterTags: string[]; setFilterTags: (value: string[]) => void; selected: string[]; setSelected: (value: string[]) => void
   onSelect: (path: string) => void; onView: (view: 'plans' | 'board' | 'calendar') => void; onCreate: () => void; onFolder: () => void; onCreateDrawing: () => void
   onOpenDrawing: (path: string) => void; activeDrawing: string
-  onManage: (path: string, type: 'note' | 'folder' | 'drawing') => void; onDraw: () => void; onSettings: () => void; onTrash: () => void; onRepositories: () => void; onCategories: () => void; onClose: () => void
+  onOpenDocx: (path: string) => void; activeDocx: string
+  onManage: (path: string, type: 'note' | 'folder' | 'drawing' | 'docx') => void; onDraw: () => void; onSettings: () => void; onTrash: () => void; onRepositories: () => void; onCategories: () => void; onClose: () => void
   onOpenDirectory: () => void; openingDirectory: boolean
 }
 
@@ -69,7 +70,12 @@ export function Sidebar(p: Props) {
       <button className="row-action icon-button" aria-label={`管理绘图 ${entry.path}`} onClick={() => p.onManage(entry.path, 'drawing')}><MoreHorizontal size={15} /></button>
     </div>
   }
-  const noteRow = (note: NoteSummary, depth = 0) => <div className={`note-row ${p.active === note.path && p.view === 'note' ? 'active' : ''} ${p.selected.includes(note.path) ? 'is-selected' : ''} ${located?.path === note.path ? `is-located locate-${located.token % 2}` : ''}`} data-tree-path={note.path} key={note.path} style={{ paddingLeft: `${14 + depth * 16}px` }}>
+  const docxRow = (entry: TreeEntry, depth = 0) => <div className={`note-row ${p.activeDocx === entry.path && p.view === 'note' ? 'active' : ''}`} key={entry.path} style={{ paddingLeft: `${14 + depth * 16}px` }} data-tree-path={entry.path}>
+    <span className="drawing-spacer" />
+    <button className="note-link" onClick={() => p.onOpenDocx(entry.path)} title={entry.path}><FileType size={15} /><span>{entry.name.replace(/\.docx$/i, '')}</span></button>
+    <button className="row-action icon-button" aria-label={`管理文档 ${entry.path}`} onClick={() => p.onManage(entry.path, 'docx')}><MoreHorizontal size={15} /></button>
+  </div>
+  const noteRow = (note: NoteSummary, depth = 0) => <div className={`note-row ${p.active === note.path && p.view === 'note' && !p.activeDocx ? 'active' : ''} ${p.selected.includes(note.path) ? 'is-selected' : ''} ${located?.path === note.path ? `is-located locate-${located.token % 2}` : ''}`} data-tree-path={note.path} key={note.path} style={{ paddingLeft: `${14 + depth * 16}px` }}>
     <input type="checkbox" aria-label={`选择 ${note.title}`} className="note-check" checked={p.selected.includes(note.path)} onChange={() => toggleSelected(note.path)} />
     <button className="note-link" onClick={() => p.onSelect(note.path)} title={note.path}><FileText size={15} /><span>{note.title}</span></button>
     <button className="row-action icon-button" aria-label={`管理 ${note.path}`} onClick={() => p.onManage(note.path, 'note')}><MoreHorizontal size={15} /></button>
@@ -77,7 +83,7 @@ export function Sidebar(p: Props) {
   const renderTree = (entries: TreeEntry[], depth = 0): React.ReactNode => entries.map(entry => entry.type === 'folder' ? <div key={entry.path}>
     <div className="folder-row" style={{ paddingLeft: `${14 + depth * 16}px` }}><button className="folder-link" onClick={() => setExpandedFolders(folders => ({ ...folders, [entry.path]: !folders[entry.path] }))} aria-expanded={!!expandedFolders[entry.path]}><ChevronRight size={13} className={expandedFolders[entry.path] ? 'rotated' : ''} /><Folder size={15} /><span>{entry.name}</span></button><button className="row-action icon-button" aria-label={`管理文件夹 ${entry.path}`} onClick={() => p.onManage(entry.path, 'folder')}><MoreHorizontal size={15} /></button></div>
     {expandedFolders[entry.path] && renderTree(entry.children || [], depth + 1)}
-  </div> : entry.type === 'drawing' ? drawingRow(entry, depth) : visible.has(entry.path) ? noteRow(p.notes.find(note => note.path === entry.path) || { path: entry.path, title: entry.name.replace(/\.md$/i, ''), metadata: { tags: [], group: '' }, modified: '', revision: '' }, depth) : null)
+  </div> : entry.type === 'drawing' ? drawingRow(entry, depth) : entry.type === 'docx' ? docxRow(entry, depth) : visible.has(entry.path) ? noteRow(p.notes.find(note => note.path === entry.path) || { path: entry.path, title: entry.name.replace(/\.md$/i, ''), metadata: { tags: [], group: '' }, modified: '', revision: '' }, depth) : null)
   return <><div className={`sidebar-scrim ${p.open ? 'visible' : ''}`} onClick={p.onClose} />
     <aside id="note-sidebar" className={`sidebar ${p.open ? 'open' : ''}`} inert={!p.open}>
       <div className="brand"><Logo /><div><strong>echo<span>.</span></strong><small>让想法有处安放</small></div><button className="icon-button mobile-close" aria-label="关闭目录" onClick={p.onClose}><X size={18} /></button></div>

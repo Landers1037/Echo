@@ -1,6 +1,7 @@
 package app
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -673,6 +674,61 @@ func (h *handler) api(s *Store, w http.ResponseWriter, r *http.Request) error {
 		}
 		s.changed()
 		jsonResponse(w, 200, drawing)
+		return nil
+	case "/api/documents":
+		switch method {
+		case "GET", "HEAD":
+			doc, data, err := s.readDocument(query.Get("path"))
+			if err != nil {
+				return err
+			}
+			if query.Get("meta") == "1" {
+				jsonResponse(w, 200, doc)
+				return nil
+			}
+			w.Header().Set("Content-Type", docxMediaType)
+			w.Header().Set("Cache-Control", "private, max-age=0, must-revalidate")
+			w.Header().Set("X-Echo-Revision", doc.Revision)
+			w.Header().Set("X-Echo-Modified", doc.Modified)
+			if method == "HEAD" {
+				w.Header().Set("Content-Length", strconv.FormatInt(int64(len(data)), 10))
+				w.WriteHeader(200)
+				return nil
+			}
+			http.ServeContent(w, r, path.Base(doc.Path), time.Time{}, bytes.NewReader(data))
+			return nil
+		case "DELETE":
+			if _, _, err := s.readDocument(query.Get("path")); err != nil {
+				return err
+			}
+			if err := s.recycle(query.Get("path")); err != nil {
+				return err
+			}
+			s.changed()
+			jsonResponse(w, 200, map[string]bool{"ok": true})
+			return nil
+		}
+	case "/api/documents/move":
+		if method != "POST" {
+			break
+		}
+		var request struct {
+			Path     string `json:"path"`
+			Target   string `json:"target"`
+			Revision string `json:"revision"`
+		}
+		if err := decode(r, &request); err != nil {
+			return err
+		}
+		if _, err := s.move(request.Path, request.Target, request.Revision, false); err != nil {
+			return err
+		}
+		doc, _, err := s.readDocument(request.Target)
+		if err != nil {
+			return err
+		}
+		s.changed()
+		jsonResponse(w, 200, doc)
 		return nil
 	case "/api/plans":
 		switch method {

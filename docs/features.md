@@ -34,13 +34,14 @@
 
 ## 3. 目录与文件管理
 
-- **目录树**（`GET /api/tree`）：只显示文件夹、`.md`、`.excalidraw`、`.drawio`；隐藏点开头的条目、资源目录和符号链接；文件夹排在前面，同类按名称排序。
+- **目录树**（`GET /api/tree`）：只显示文件夹、`.md`、`.excalidraw`、`.drawio`、`.docx`；隐藏点开头的条目、资源目录和符号链接；文件夹排在前面，同类按名称排序。
+- **DOCX 预览**：目录中的 `.docx` 不进入 `/notes` 列表，也不参与分组/标签/搜索。点击后主面板用 `@silurus/ooxml` 的 Canvas/WASM 查看器只读预览（可滚动、可选中复制）；不支持在应用内新建或编辑 Word 文档。
 - **新建**：笔记、文件夹、绘图都支持用 `/` 一次创建多层目录。新建笔记的默认内容为 `# 文件名`（前端调用时传入空内容）。文件夹名不能以点开头。目标已存在时报错，不会覆盖。
-- **重命名 / 移动**（`/api/notes/move`、`/api/folders/move`、`/api/drawings/move`）：
-  - 必须带 revision（文件夹除外）；不能移动到自身或子目录，不能移动资源目录，也不能移动到资源目录里。
+- **重命名 / 移动**（`/api/notes/move`、`/api/folders/move`、`/api/drawings/move`、`/api/documents/move`）：
+  - 必须带 revision（文件夹除外）；不能移动到自身或子目录，不能移动资源目录，也不能移动到资源目录里。DOCX 必须保持 `.docx` 扩展名。
   - 移动后**自动改写所有笔记中指向被移动对象的相对链接**，以及被移动笔记自身的出站相对链接；同时更新提醒和任务完成历史中的笔记路径。
-  - 前端同步更新多标签页、当前笔记和正在打开的绘图的路径。
-- **删除**：移到 `.echo/trash/<id>`，在 `state.json` 中记录原路径和时间。只允许删除笔记、绘图和文件夹；不能删除资源目录或包含资源目录的文件夹。
+  - 前端同步更新多标签页、当前笔记、正在打开的绘图和文档预览的路径。
+- **删除**：移到 `.echo/trash/<id>`，在 `state.json` 中记录原路径和时间。只允许删除笔记、绘图、DOCX 文档和文件夹；不能删除资源目录或包含资源目录的文件夹。
 - **回收站**：`GET /api/trash` 列出条目，`POST /api/trash/restore` 恢复。原路径已有文件时拒绝恢复。目前没有「彻底删除」或「清空回收站」功能。
 
 ## 4. 编辑与预览
@@ -253,6 +254,8 @@
 | POST | `/assets?notePath=` | multipart 上传图片，字段为 `file` |
 | GET / POST / PUT / DELETE | `/drawings` | 读取 `?path=` / 新建 `{path}`（`.excalidraw` 或 `.drawio`）或 `{notePath}`（只在资源目录创建 `.excalidraw`）/ 保存 `{path, content, revision, force?}` / 删除 `?path=` |
 | POST | `/drawings/move` | `{path, target, revision}` |
+| GET / HEAD / DELETE | `/documents` | 读取 DOCX 原始字节（`?path=`）或元数据（`?path=&meta=1`）/ 删除 `?path=` |
+| POST | `/documents/move` | `{path, target, revision}` |
 | GET / PUT | `/settings` | 读取 / 保存设置（可能触发资源目录迁移） |
 | GET | `/storage` | 存储占用 |
 | POST | `/storage/open` | 在系统文件管理器中打开笔记库 |

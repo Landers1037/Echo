@@ -28,6 +28,9 @@ func Handler() http.Handler {
 			r.URL.Path = "/"
 		}
 		w.Header().Set("X-Content-Type-Options", "nosniff")
+		if strings.EqualFold(path.Ext(name), ".wasm") {
+			w.Header().Set("Content-Type", "application/wasm")
+		}
 		fileServer.ServeHTTP(w, r)
 	})
 }

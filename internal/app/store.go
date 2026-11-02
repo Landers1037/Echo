@@ -102,6 +102,14 @@ type Drawing struct {
 	Modified string `json:"modified"`
 	Content  string `json:"content"`
 }
+type Document struct {
+	Path     string `json:"path"`
+	Revision string `json:"revision"`
+	Modified string `json:"modified"`
+	Size     int64  `json:"size"`
+}
+const docxMediaType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+const maxDocumentBytes = 50 * 1024 * 1024
 type Conflict struct {
 	Current Note
 	message string
@@ -250,6 +258,9 @@ func isDrawingName(name string) bool {
 	ext := strings.ToLower(path.Ext(name))
 	return ext == ".excalidraw" || ext == ".drawio"
 }
+func isDocxName(name string) bool {
+	return strings.EqualFold(path.Ext(name), ".docx")
+}
 func isDrawioName(name string) bool {
 	return strings.EqualFold(path.Ext(name), ".drawio")
 }
@@ -269,6 +280,19 @@ func (s *Store) drawingPath(name string) (string, error) {
 	}
 	if !isDrawingName(name) {
 		return "", fmt.Errorf("绘图必须使用 .excalidraw 或 .drawio 扩展名")
+	}
+	return s.safePath(name)
+}
+func (s *Store) documentPath(name string) (string, error) {
+	name, err := cleanRelative(name)
+	if err != nil {
+		return "", err
+	}
+	if !isDocxName(name) {
+		return "", fmt.Errorf("文档必须使用 .docx 扩展名")
+	}
+	if name == s.state.Settings.AssetsDir || strings.HasPrefix(name, s.state.Settings.AssetsDir+"/") {
+		return "", fmt.Errorf("不能在资源目录中保存文档")
 	}
 	return s.safePath(name)
 }
@@ -540,6 +564,34 @@ func (s *Store) readDrawing(name string) (Drawing, error) {
 	}
 	return Drawing{Path: filepath.ToSlash(name), Revision: revision(data), Modified: info.ModTime().UTC().Format(time.RFC3339Nano), Content: string(data)}, nil
 }
+func (s *Store) readDocument(name string) (Document, []byte, error) {
+	var err error
+	name, err = cleanRelative(name)
+	if err != nil {
+		return Document{}, nil, err
+	}
+	file, err := s.documentPath(name)
+	if err != nil {
+		return Document{}, nil, err
+	}
+	data, err := os.ReadFile(file)
+	if err != nil {
+		return Document{}, nil, err
+	}
+	if len(data) == 0 || int64(len(data)) > maxDocumentBytes {
+		return Document{}, nil, fmt.Errorf("文档不能为空，且不能超过 50MB")
+	}
+	info, err := os.Stat(file)
+	if err != nil {
+		return Document{}, nil, err
+	}
+	return Document{
+		Path:     filepath.ToSlash(name),
+		Revision: revision(data),
+		Modified: info.ModTime().UTC().Format(time.RFC3339Nano),
+		Size:     info.Size(),
+	}, data, nil
+}
 func (s *Store) createDrawing(name, content string) (Drawing, error) {
 	name, err := cleanRelative(name)
 	if err != nil {
@@ -624,6 +676,8 @@ func (s *Store) tree() ([]TreeEntry, error) {
 				result = append(result, TreeEntry{Path: p, Name: entry.Name(), Type: "note"})
 			} else if isDrawingName(entry.Name()) {
 				result = append(result, TreeEntry{Path: p, Name: entry.Name(), Type: "drawing"})
+			} else if isDocxName(entry.Name()) {
+				result = append(result, TreeEntry{Path: p, Name: entry.Name(), Type: "docx"})
 			}
 		}
 		sort.SliceStable(result, func(i, j int) bool {
@@ -645,8 +699,8 @@ func (s *Store) recycle(name string) error {
 	if err != nil {
 		return err
 	}
-	if !info.IsDir() && !strings.EqualFold(path.Ext(name), ".md") && !isDrawingName(name) {
-		return fmt.Errorf("只能删除笔记、绘图或文件夹")
+	if !info.IsDir() && !strings.EqualFold(path.Ext(name), ".md") && !isDrawingName(name) && !isDocxName(name) {
+		return fmt.Errorf("只能删除笔记、绘图、文档或文件夹")
 	}
 	if name == s.state.Settings.AssetsDir || strings.HasPrefix(s.state.Settings.AssetsDir, name+"/") {
 		return fmt.Errorf("不能删除资源目录")
