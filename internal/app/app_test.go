@@ -48,6 +48,25 @@ func request(t *testing.T, h http.Handler, method, route string, body any) *http
 	return rr
 }
 
+func TestHealthReportsBuildVersion(t *testing.T) {
+	previous := BuildVersion
+	BuildVersion = "20261102-171200"
+	t.Cleanup(func() { BuildVersion = previous })
+	s := testStore(t)
+	h := NewHandler(attachStore(s), false)
+	rr := request(t, h, "GET", "/api/health", nil)
+	if rr.Code != 200 {
+		t.Fatalf("status %d %s", rr.Code, rr.Body.String())
+	}
+	var body map[string]any
+	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body["version"] != "20261102-171200" {
+		t.Fatalf("version = %#v", body["version"])
+	}
+}
+
 func TestMetadataPreservesUnknownFieldsAndRejectsInvalid(t *testing.T) {
 	content := "---\ntitle: Keep this\ncustom:\n  nested: yes\necho:\n  customFlag: true\n  tags: [old]\n  group: before\n---\n# My note\n"
 	updated, err := writeMetadata(content, Metadata{Tags: []string{"new", "new", "  two  "}, Group: "after"})

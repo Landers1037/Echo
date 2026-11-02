@@ -2,11 +2,13 @@ import { spawn } from 'node:child_process'
 import { mkdir, readdir, rm } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { versionLdflags } from './build-version.mjs'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const frontend = join(root, 'internal', 'web', 'dist')
 
 const windowsGui = process.argv.includes('--windows-gui')
+
 
 function run(command, args, env) {
   return new Promise((resolveRun, reject) => {
@@ -48,12 +50,12 @@ try {
     ])
     const executable = join(root, 'dist', 'echo-gui.exe')
     console.log('[echo] Embedding frontend and building Windows GUI…')
-    await run('go', ['build', '-trimpath', '-tags', 'gui', '-ldflags', '-w -s -H windowsgui', '-o', executable, './cmd/echo'], { GOOS: 'windows' })
+    await run('go', ['build', '-trimpath', '-tags', 'gui', '-ldflags', versionLdflags('-w -s -H windowsgui'), '-o', executable, './cmd/echo'], { GOOS: 'windows' })
     console.log(`[echo] Built ${executable}`)
   } else {
     const executable = join(root, 'dist', process.platform === 'win32' ? 'echo.exe' : 'echo')
     console.log('[echo] Embedding frontend and building executable…')
-    await run('go', ['build', '-trimpath', '-ldflags', '-w -s', '-o', executable, './cmd/echo'])
+    await run('go', ['build', '-trimpath', '-ldflags', versionLdflags('-w -s'), '-o', executable, './cmd/echo'])
     console.log(`[echo] Built ${executable}`)
   }
 } catch (error) {

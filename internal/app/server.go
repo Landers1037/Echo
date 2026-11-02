@@ -207,7 +207,7 @@ func (h *handler) api(s *Store, w http.ResponseWriter, r *http.Request) error {
 	method := r.Method
 	switch r.URL.Path {
 	case "/api/health":
-		jsonResponse(w, 200, map[string]any{"ok": true, "dataDir": s.root})
+		jsonResponse(w, 200, map[string]any{"ok": true, "dataDir": s.root, "version": BuildVersion})
 		return nil
 	case "/api/tree":
 		if method != "GET" {

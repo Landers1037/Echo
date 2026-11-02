@@ -3,6 +3,7 @@ import { watch } from 'node:fs'
 import { mkdir, readdir, stat, unlink } from 'node:fs/promises'
 import { dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { versionLdflags } from './build-version.mjs'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const scratch = join(root, '.echo-dev')
@@ -63,7 +64,7 @@ async function rebuildBackend() {
     const candidate = join(scratch, `echo-${process.pid}-${++sequence}${isWindows ? '.exe' : ''}`)
     binaries.add(candidate)
     console.log('[echo] Building Go backend…')
-    const build = launch('go', ['build', '-o', candidate, './cmd/echo'])
+    const build = launch('go', ['build', '-ldflags', versionLdflags(), '-o', candidate, './cmd/echo'])
     const result = await completed(build)
     if (stopping) break
     if (result === 0) {
