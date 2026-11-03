@@ -62,12 +62,21 @@ function retarget(value: string, ids: Map<string, string>) {
   })
 }
 
-function sizedSvg(svg: string) {
-  const root = new DOMParser().parseFromString(svg, 'image/svg+xml').documentElement
-  if (root.nodeName.toLowerCase() !== 'svg') return svg
+/** 用 HTML 解析器处理 Mermaid SVG。XML DOMParser 会弄坏 foreignObject 里的 HTML，预览只剩小白块。 */
+export function prepareDiagramPreview(svg: string, maxWidth = 0, maxHeight = 0) {
+  const holder = document.createElement('div')
+  holder.innerHTML = svg.trim()
+  const root = holder.querySelector('svg')
+  if (!root) return svg
   const box = root.getAttribute('viewBox')?.trim().split(/[\s,]+/).map(Number) ?? []
-  const width = box.length === 4 && box[2] > 0 ? box[2] : readSize(root.getAttribute('width')) || 960
-  const height = box.length === 4 && box[3] > 0 ? box[3] : readSize(root.getAttribute('height')) || 540
+  let width = box.length === 4 && box[2] > 0 ? box[2] : readSize(root.getAttribute('width')) || 960
+  let height = box.length === 4 && box[3] > 0 ? box[3] : readSize(root.getAttribute('height')) || 540
+  // 把固有宽高压进视口；保留 viewBox，后续放大仍清晰。
+  if (maxWidth > 0 && maxHeight > 0 && width > 0 && height > 0) {
+    const scale = Math.min(1, maxWidth / width, maxHeight / height)
+    width *= scale
+    height *= scale
+  }
   root.setAttribute('xmlns', 'http://www.w3.org/2000/svg')
   root.setAttribute('width', String(Math.round(width)))
   root.setAttribute('height', String(Math.round(height)))
@@ -84,7 +93,21 @@ function sizedSvg(svg: string) {
       if (next && next !== attr.value) node.setAttribute(attr.name, next)
     }
   }
-  return new XMLSerializer().serializeToString(root)
+  // Mermaid 主题写在 <style>#svgId ...</style>；id 改了选择器也要跟着改，否则连线会被涂黑。
+  for (const style of root.querySelectorAll('style')) {
+    const css = style.textContent
+    if (!css?.includes('#')) continue
+    const next = retarget(css, ids)
+    if (next !== css) style.textContent = next
+  }
+  return root.outerHTML
+}
+
+function previewFrame() {
+  return {
+    width: Math.max(280, window.innerWidth - 80),
+    height: Math.max(200, window.innerHeight - 210),
+  }
 }
 
 export function MermaidBlock({ code, dark, fallback, preview = false }: { code: string; dark: boolean; fallback: ReactNode; preview?: boolean }) {
@@ -93,11 +116,15 @@ export function MermaidBlock({ code, dark, fallback, preview = false }: { code: 
   const [error, setError] = useState('')
   const [rendering, setRendering] = useState(!cached)
   const [open, setOpen] = useState(false)
+  const [previewSvg, setPreviewSvg] = useState('')
   const [url, setUrl] = useState('')
   useEffect(() => { setOpen(false) }, [code, dark])
   useEffect(() => () => { if (url) URL.revokeObjectURL(url) }, [url])
   function openPreview() {
-    const next = URL.createObjectURL(new Blob([sizedSvg(svg)], { type: 'image/svg+xml;charset=utf-8' }))
+    const frame = previewFrame()
+    const prepared = prepareDiagramPreview(svg, frame.width, frame.height)
+    const next = URL.createObjectURL(new Blob([prepared], { type: 'image/svg+xml' }))
+    setPreviewSvg(prepared)
     setUrl(current => { if (current) URL.revokeObjectURL(current); return next })
     setOpen(true)
   }
@@ -133,7 +160,7 @@ export function MermaidBlock({ code, dark, fallback, preview = false }: { code: 
   const markup = svg ? { __html: svg } : undefined
   if (preview && svg) return <>
     <button type="button" className="mermaid-block" aria-label="预览图表" title="预览图表" onClick={openPreview} dangerouslySetInnerHTML={markup} />
-    {open && url && <ImagePreview src={url} alt="图表" fileName="图表.svg" kind="diagram" markup={sizedSvg(svg)} onClose={() => setOpen(false)} />}
+    {open && url && previewSvg && <ImagePreview src={url} alt="图表" fileName="图表.svg" kind="diagram" markup={previewSvg} onClose={() => setOpen(false)} />}
   </>
   return <div className="mermaid-block" data-rendering={rendering ? 'true' : undefined} dangerouslySetInnerHTML={markup} />
 }

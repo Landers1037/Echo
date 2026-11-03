@@ -8,7 +8,7 @@ const { initializeMermaid, renderMermaid } = vi.hoisted(() => ({
   initializeMermaid: vi.fn(),
   renderMermaid: vi.fn(async (id: string, code: string) => {
     if (code.includes('BAD')) throw new Error('Parse error on line 1')
-    return { svg: `<svg class="diagram" id="${id}"><defs><marker id="arrow"/></defs><path marker-end="url(#arrow)"/></svg>` }
+    return { svg: `<svg class="diagram" id="${id}"><style>#${id} .edgePath .path{stroke:#333;fill:none}#${id} .node rect{fill:#fff}</style><defs><marker id="arrow"/></defs><path class="edgePath" marker-end="url(#arrow)"/></svg>` }
   }),
 }))
 
@@ -166,13 +166,18 @@ describe('Markdown rendering', () => {
       fireEvent.click(opener)
       const dialog = screen.getByRole('dialog', { name: '图表预览' })
       const inlineId = opener.querySelector('svg')?.id
-      const previewId = dialog.querySelector('.diagram-preview svg')?.id
+      const preview = dialog.querySelector('.diagram-preview svg')
+      const previewId = preview?.id
       expect(inlineId).toBeTruthy()
       expect(previewId).toBeTruthy()
       expect(previewId).not.toBe(inlineId)
       expect(opener.innerHTML).toContain('url(#arrow)')
       expect(opener.innerHTML).not.toContain('arrow-preview')
-      expect(dialog.querySelector('.diagram-preview svg')?.innerHTML).toMatch(/url\(#arrow-preview\d+\)/)
+      expect(opener.querySelector('style')?.textContent).toContain(`#${inlineId} .edgePath .path{stroke:#333;fill:none}`)
+      const previewHtml = preview?.innerHTML || ''
+      expect(previewHtml).toMatch(/url\(#arrow-preview\d+\)/)
+      expect(previewHtml).toMatch(new RegExp(`#${previewId?.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} \\.edgePath \\.path\\{stroke:#333;fill:none\\}`))
+      expect(previewHtml).not.toContain(`#${inlineId} `)
       expect(within(dialog).queryByRole('button', { name: '复制图片' })).not.toBeInTheDocument()
       fireEvent.click(within(dialog).getByRole('button', { name: '放大' }))
       expect(within(dialog).getByRole('button', { name: /重置缩放/ })).toHaveTextContent('125%')
