@@ -9,8 +9,10 @@ import { codeToHtml } from 'shiki'
 import { Check, Copy, FileSymlink } from 'lucide-react'
 import { apiURL } from '../api'
 import { NOTE_REF_TITLE } from '../noteReference'
+import type { TableEditAction } from '../markdownTable'
 import { DrawingEmbed } from './Drawing'
 import { DrawioEmbed } from './Drawio'
+import { EditableTable } from './EditableTable'
 import { ImagePreview, PreviewableImage } from './ImagePreview'
 import { LinkCard } from './LinkCard'
 import { MermaidBlock } from './Mermaid'
@@ -24,6 +26,7 @@ export type MarkdownViewProps = {
   noteTitles?: Record<string, string>
   onNavigate?: (path: string) => void
   onToggleTask?: (line: number, checked: boolean) => void
+  onEditTable?: (startLine: number, action: TableEditAction) => void
   onEditDrawing?: (path: string) => void
   onDeleteDrawing?: (path: string) => void
   drawingVersion?: number
@@ -41,6 +44,7 @@ type MarkdownRenderContextValue = {
   noteTitles?: Record<string, string>
   onNavigate?: (path: string) => void
   onToggleTask?: (line: number, checked: boolean) => void
+  onEditTable?: (startLine: number, action: TableEditAction) => void
   onEditDrawing?: (path: string) => void
   onDeleteDrawing?: (path: string) => void
   drawingVersion: number
@@ -269,8 +273,12 @@ function MarkdownInput({ type, checked }: ComponentPropsWithoutRef<'input'>) {
 }
 
 function MarkdownTable({ children, node }: ComponentPropsWithoutRef<'table'> & ExtraProps) {
-  const { exporting } = useMarkdownRender()
-  return <div className="markdown-table-wrap" data-source-line={exporting ? undefined : node?.position?.start.line}><table>{children}</table></div>
+  const { exporting, onEditTable } = useMarkdownRender()
+  const sourceLine = exporting ? undefined : node?.position?.start.line
+  if (!exporting && onEditTable && sourceLine) {
+    return <EditableTable sourceLine={sourceLine} onEdit={onEditTable}>{children}</EditableTable>
+  }
+  return <div className="markdown-table-wrap" data-source-line={sourceLine}><table>{children}</table></div>
 }
 
 const previewComponents: Components = {
@@ -295,7 +303,7 @@ const exportComponents: Components = {
   table: MarkdownTable,
 }
 
-export function MarkdownView({ content, notePath, assets, lineNumbers, fontSize, noteTitles, onNavigate, onToggleTask, onEditDrawing, onDeleteDrawing, drawingVersion = 0, exporting = false, dark = false, strictLineBreaks = false, autoParseLinks = false, annotations }: MarkdownViewProps) {
+export function MarkdownView({ content, notePath, assets, lineNumbers, fontSize, noteTitles, onNavigate, onToggleTask, onEditTable, onEditDrawing, onDeleteDrawing, drawingVersion = 0, exporting = false, dark = false, strictLineBreaks = false, autoParseLinks = false, annotations }: MarkdownViewProps) {
   const [imagePreview, setImagePreview] = useState<{ src: string; alt: string } | null>(null)
   useEffect(() => { setImagePreview(null) }, [notePath, exporting])
   const remarkPlugins = strictLineBreaks ? breakRemarkPlugins : defaultRemarkPlugins
@@ -307,6 +315,7 @@ export function MarkdownView({ content, notePath, assets, lineNumbers, fontSize,
     noteTitles,
     onNavigate,
     onToggleTask,
+    onEditTable,
     onEditDrawing,
     onDeleteDrawing,
     drawingVersion,
@@ -314,7 +323,7 @@ export function MarkdownView({ content, notePath, assets, lineNumbers, fontSize,
     dark,
     autoParseLinks,
     openImage: (src, alt) => setImagePreview({ src, alt }),
-  }), [notePath, assets, lineNumbers, noteTitles, onNavigate, onToggleTask, onEditDrawing, onDeleteDrawing, drawingVersion, exporting, dark, autoParseLinks])
+  }), [notePath, assets, lineNumbers, noteTitles, onNavigate, onToggleTask, onEditTable, onEditDrawing, onDeleteDrawing, drawingVersion, exporting, dark, autoParseLinks])
   return <MarkdownRenderContext.Provider value={render}><div className="markdown-body" style={!exporting && fontSize !== undefined ? { fontSize } : undefined}><ReactMarkdown remarkPlugins={remarkPlugins} skipHtml components={components}>{content}</ReactMarkdown>{imagePreview && <ImagePreview src={imagePreview.src} alt={imagePreview.alt} onClose={() => setImagePreview(null)} />}{!exporting && annotations}</div></MarkdownRenderContext.Provider>
 }
 

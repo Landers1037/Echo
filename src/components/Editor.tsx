@@ -28,6 +28,7 @@ const aiHighlightField = StateField.define<DecorationSet>({
 
 export type EditorController = {
   getDoc: () => string
+  replaceDoc: (next: string) => void
   beginAiSession: () => void
   applyAiStream: (toolId: string, name: string, partialArgs: string) => void
   finishAiSession: () => { failures: string[] }
@@ -92,6 +93,13 @@ export function Editor(props: EditorProps) {
   if (!controller.current) {
     controller.current = {
       getDoc: () => view.current?.state.doc.toString() ?? '',
+      replaceDoc(next) {
+        const editor = view.current
+        if (!editor || aiActive.current) return
+        const current = editor.state.doc.toString()
+        if (current === next) return
+        editor.dispatch({ changes: { from: 0, to: current.length, insert: next }, scrollIntoView: false })
+      },
       beginAiSession: () => { session.current?.begin(); requestAnimationFrame(() => view.current?.requestMeasure()) },
       applyAiStream: (toolId, name, partialArgs) => session.current?.apply(toolId, name, partialArgs),
       finishAiSession: () => session.current?.finish() ?? { failures: [] },

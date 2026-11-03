@@ -75,6 +75,41 @@ describe('Markdown rendering', () => {
     expect(screen.getByRole('table')).toHaveTextContent('示例')
     expect(container.querySelector('script')).toBeNull()
     expect(screen.getByText('危险链接')).not.toHaveAttribute('href', 'javascript:alert(1)')
+    expect(container.querySelector('.editable-table')).toBeNull()
+  })
+
+  it('enables interactive table editing when onEditTable is provided', () => {
+    const onEditTable = vi.fn()
+    const content = '| 列一 | 列二 |\n| --- | --- |\n| 内容 | 内容 |'
+    const { container, rerender } = render(<MarkdownView content={content} notePath="test.md" lineNumbers={false} onEditTable={onEditTable} />)
+    const wrap = container.querySelector('.editable-table')
+    expect(wrap).toHaveAttribute('data-source-line', '1')
+    const cell = screen.getAllByText('内容')[0]
+    Object.defineProperty(cell, 'getBoundingClientRect', {
+      configurable: true,
+      value: () => ({ x: 40, y: 40, width: 80, height: 30, top: 40, left: 40, bottom: 70, right: 120, toJSON() { return {} } }),
+    })
+    Object.defineProperty(wrap!, 'getBoundingClientRect', {
+      configurable: true,
+      value: () => ({ x: 0, y: 0, width: 200, height: 100, top: 0, left: 0, bottom: 100, right: 200, toJSON() { return {} } }),
+    })
+    fireEvent.mouseMove(cell, { clientX: 80, clientY: 68 })
+    fireEvent.click(screen.getByRole('button', { name: '新增行' }))
+    expect(onEditTable).toHaveBeenCalledWith(1, { type: 'insertRow', at: 1 })
+
+    fireEvent.contextMenu(cell, { clientX: 90, clientY: 50 })
+    fireEvent.click(screen.getByRole('menuitem', { name: '插入列' }))
+    expect(onEditTable).toHaveBeenCalledWith(1, { type: 'insertColumn', at: 1 })
+
+    fireEvent.contextMenu(cell, { clientX: 90, clientY: 50 })
+    fireEvent.click(screen.getByRole('menuitem', { name: '删除当前行' }))
+    expect(onEditTable).toHaveBeenCalledWith(1, { type: 'deleteRow', index: 0 })
+
+    fireEvent.contextMenu(screen.getByRole('columnheader', { name: '列一' }), { clientX: 50, clientY: 20 })
+    expect(screen.getByRole('menuitem', { name: '删除当前行' })).toBeDisabled()
+
+    rerender(<MarkdownView content={content} notePath="test.md" lineNumbers={false} onEditTable={onEditTable} exporting />)
+    expect(container.querySelector('.editable-table')).toBeNull()
   })
 
   it('renders excalidraw references as drawings and embeds them when exporting', () => {

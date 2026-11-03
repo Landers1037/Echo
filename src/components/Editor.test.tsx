@@ -49,6 +49,15 @@ describe('editor formatting shortcuts', () => {
     expect(editor.state.doc.toString()).toBe('## 你好\n')
   })
 
+  it('replaces the document through the editor controller', async () => {
+    const ready = { current: null as EditorController | null }
+    const onChange = vi.fn()
+    render(<Editor {...props} value={'| a | b |\n| --- | --- |\n| 1 | 2 |'} onChange={onChange} onReady={value => { ready.current = value }} />)
+    await waitFor(() => expect(ready.current).toBeTruthy())
+    ready.current?.replaceDoc('| a | b | c |\n| --- | --- | --- |\n| 1 | 2 |  |')
+    await waitFor(() => expect(onChange.mock.calls.at(-1)?.[0]).toBe('| a | b | c |\n| --- | --- | --- |\n| 1 | 2 |  |'))
+  })
+
   it('streams an AI edit into the document and restores it when rejected', async () => {
     const ready = { current: null as EditorController | null }
     const onChange = vi.fn()
