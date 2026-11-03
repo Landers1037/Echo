@@ -261,6 +261,38 @@ PRAGMA user_version = 2;
 	}
 }
 
+func TestNoteVersionsContentEndpoint(t *testing.T) {
+	s, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { s.closeVersions() })
+	if _, err = s.initVersionRepo(); err != nil {
+		t.Fatal(err)
+	}
+	note, err := s.createNote("对比.md", "# left\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	created, err := s.createNoteVersion(note.Path, "manual")
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := NewHandler(attachStore(s), false)
+	rr := request(t, h, "GET", "/api/note-versions/content?id="+created.ID, nil)
+	var body struct {
+		ID      string `json:"id"`
+		Path    string `json:"path"`
+		Content string `json:"content"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if rr.Code != 200 || body.ID != created.ID || body.Path != note.Path || body.Content != "# left\n" {
+		t.Fatalf("content: %d %+v %s", rr.Code, body, rr.Body.String())
+	}
+}
+
 func TestNoteVersionsRenameLabel(t *testing.T) {
 	s, err := Open(t.TempDir())
 	if err != nil {

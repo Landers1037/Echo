@@ -1,0 +1,14 @@
+.version-diff{display:flex;flex-direction:column;gap:12px;min-height:0}
+.version-diff-meta{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:12px;color:var(--muted)}
+.version-diff-meta span:first-child,.version-diff-meta span:last-child{color:var(--text);font-weight:600}
+.version-diff-body{margin:0;max-height:min(58vh,560px);overflow:auto;border:1px solid var(--border);border-radius:var(--radius);background:var(--bg);font:12px/1.65 var(--font-mono)}
+.version-diff-line{display:grid;grid-template-columns:64px 16px minmax(0,1fr);gap:0;padding:0 10px 0 0;white-space:pre-wrap;overflow-wrap:anywhere}
+.version-diff-gutter{display:grid;grid-template-columns:1fr 1fr;gap:4px;padding:0 6px;color:var(--muted);text-align:right;user-select:none;border-right:1px solid var(--border);background:var(--panel)}
+.version-diff-mark{text-align:center;user-select:none;color:var(--muted)}
+.version-diff-line code{padding:0 8px;font:inherit;background:transparent}
+.version-diff-line.is-add{background:color-mix(in srgb,#3f8f5a 16%,transparent)}
+.version-diff-line.is-add .version-diff-mark{color:#2f7a48}
+.version-diff-line.is-del{background:color-mix(in srgb,#c45c4a 16%,transparent)}
+.version-diff-line.is-del .version-diff-mark{color:#b04538}
+:root[data-theme=dark] .version-diff-line.is-add{background:color-mix(in srgb,#3f8f5a 28%,transparent)}
+:root[data-theme=dark] .version-diff-line.is-del{background:color-mix(in srgb,#c45c4a 28%,transparent)}

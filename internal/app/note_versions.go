@@ -851,6 +851,21 @@ func (h *handler) versionRoutes(w http.ResponseWriter, r *http.Request) error {
 		return nil
 	case "/api/note-versions":
 		return h.serveNoteVersions(s, w, r)
+	case "/api/note-versions/content":
+		if r.Method != http.MethodGet {
+			jsonResponse(w, http.StatusNotFound, map[string]string{"error": "接口或请求方法不存在"})
+			return nil
+		}
+		id := strings.TrimSpace(r.URL.Query().Get("id"))
+		if id == "" {
+			return fmt.Errorf("请指定版本")
+		}
+		pathName, content, err := s.readNoteVersionContent(id)
+		if err != nil {
+			return err
+		}
+		jsonResponse(w, http.StatusOK, map[string]string{"id": id, "path": pathName, "content": content})
+		return nil
 	case "/api/note-versions/restore":
 		if r.Method != http.MethodPost {
 			jsonResponse(w, http.StatusNotFound, map[string]string{"error": "接口或请求方法不存在"})

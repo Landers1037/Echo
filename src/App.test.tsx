@@ -152,6 +152,12 @@ function createServer(extraNotes: Note[] = [], initialFolders: string[] = [], in
       noteVersions = noteVersions.filter(item => item.id !== id)
       return response({ ok: true })
     }
+    if (url.pathname === '/api/note-versions/content' && method === 'GET') {
+      const id = url.searchParams.get('id')
+      const target = noteVersions.find(item => item.id === id)
+      if (!target) return response({ error: '版本不存在' }, 404)
+      return response({ id, path: target.path, content: `# ${target.label}\n` })
+    }
     if (url.pathname === '/api/note-versions/restore' && method === 'POST') {
       const request = body as { versionId: string; revision: string }
       const target = noteVersions.find(item => item.id === request.versionId)
@@ -1432,7 +1438,11 @@ describe('note version snapshots', () => {
     fireEvent.click(within(rename).getByRole('button', { name: '保存' }))
     await waitFor(() => expect(server.calls.some(call => call.path === '/api/note-versions' && call.method === 'PUT')).toBe(true))
     await waitFor(() => expect(within(screen.getByRole('dialog', { name: '管理历史版本' })).getByText('发布前定稿')).toBeInTheDocument())
-    fireEvent.click(within(screen.getByRole('dialog', { name: '管理历史版本' })).getAllByRole('button', { name: '删除' })[0])
+    fireEvent.click(within(screen.getByRole('dialog', { name: '管理历史版本' })).getByRole('button', { name: '对比 发布前定稿' }))
+    fireEvent.click(within(screen.getByRole('dialog', { name: '管理历史版本' })).getByRole('button', { name: '与此对比' }))
+    expect(await screen.findByRole('dialog', { name: '版本对比' })).toBeInTheDocument()
+    fireEvent.click(within(screen.getByRole('dialog', { name: '版本对比' })).getByRole('button', { name: '关闭' }))
+    fireEvent.click(within(screen.getByRole('dialog', { name: '管理历史版本' })).getByRole('button', { name: '删除 发布前定稿' }))
     fireEvent.click(within(await screen.findByRole('dialog', { name: '确认删除版本' })).getByRole('button', { name: '删除' }))
     await waitFor(() => expect(server.calls.some(call => call.path === '/api/note-versions' && call.method === 'DELETE')).toBe(true))
   })
