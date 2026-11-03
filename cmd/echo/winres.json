@@ -1,4 +1,9 @@
 {
+  "RT_GROUP_ICON": {
+    "#7": {
+      "0000": "../../assets/branding/echo-logo.png"
+    }
+  },
   "RT_MANIFEST": {
     "#1": {
       "0409": {

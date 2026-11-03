@@ -134,6 +134,11 @@ func (g *guiApp) create() error {
 	if err != nil {
 		return err
 	}
+	// walk's window class loads resource ID 7 as HIcon; set it on the form too
+	// so the title bar / taskbar match even if the class icon is unavailable.
+	if icon, err := walk.NewIconFromResourceId(7); err == nil {
+		_ = g.mw.SetIcon(icon)
+	}
 	g.mw.SetExitOnClose(false)
 	g.mw.ToolBar().SetVisible(false)
 	g.mw.StatusBar().SetVisible(false)
