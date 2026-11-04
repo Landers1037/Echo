@@ -12,6 +12,7 @@ import { searchKeymap } from '@codemirror/search'
 import { Bold, Italic, Heading, Strikethrough, Underline, Quote, List, ListOrdered, ListTodo, Link, FileSymlink, ImagePlus, Shapes, Code, Code2, Table2, Undo2, Redo2, LoaderCircle, RefreshCw, X, Workflow } from 'lucide-react'
 import { undo, redo } from '@codemirror/commands'
 import { bindingFor, formatShortcut, shortcutBindings } from '../shortcuts'
+import { EditorContextMenu, type EditorContextMenuItem } from './EditorContextMenu'
 
 const aiAnnotation = Annotation.define<true>()
 const setAiHighlight = StateEffect.define<DecorationSet>()
@@ -53,6 +54,22 @@ export type EditorProps = {
 
 type Upload = { id: number; file: File; status: 'uploading' | 'error'; error?: string }
 type Anchor = { from: number; to: number }
+type ContextMenuState = { left: number; top: number; hasSelection: boolean }
+
+const headingLabels = ['一', '二', '三', '四', '五', '六']
+
+async function writeClipboard(text: string) {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text)
+    return
+  }
+  throw new Error('clipboard unavailable')
+}
+
+async function readClipboard() {
+  if (navigator.clipboard?.readText) return navigator.clipboard.readText()
+  throw new Error('clipboard unavailable')
+}
 
 function shortcutExtension(shortcuts: Record<string, string> | undefined, commands: { current: Record<string, () => void> }): Extension {
   return keymap.of(shortcutBindings(shortcuts).map(binding => ({
@@ -110,7 +127,9 @@ export function Editor(props: EditorProps) {
   const anchors = useRef(new Map<number, Anchor>())
   const uploadCounter = useRef(0)
   const fileInput = useRef<HTMLInputElement>(null)
+  const openContextMenu = useRef<(event: MouseEvent, editor: EditorView) => boolean>(() => false)
   const [uploads, setUploads] = useState<Upload[]>([])
+  const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null)
   const mounted = useRef(true)
   useEffect(() => { view.current?.requestMeasure() }, [props.fontSize])
   useEffect(() => {
@@ -203,6 +222,48 @@ export function Editor(props: EditorProps) {
     editor.focus()
   }
 
+  async function copySelection() {
+    const editor = view.current
+    if (!editor) return
+    const { from, to } = editor.state.selection.main
+    if (from === to) return
+    try { await writeClipboard(editor.state.sliceDoc(from, to)) } catch { /* ignore */ }
+    editor.focus()
+  }
+
+  async function cutSelection() {
+    const editor = view.current
+    if (!editor || aiActive.current) return
+    const { from, to } = editor.state.selection.main
+    if (from === to) return
+    try {
+      await writeClipboard(editor.state.sliceDoc(from, to))
+      editor.dispatch({ changes: { from, to, insert: '' }, selection: { anchor: from }, scrollIntoView: true })
+    } catch { /* ignore */ }
+    editor.focus()
+  }
+
+  async function pasteClipboard() {
+    if (aiActive.current) return
+    try {
+      const text = await readClipboard()
+      if (text) insertText(text)
+    } catch { /* ignore */ }
+  }
+
+  openContextMenu.current = (event, editor) => {
+    if (aiActive.current) return false
+    event.preventDefault()
+    const selection = editor.state.selection.main
+    const hasSelection = selection.from !== selection.to
+    if (!hasSelection) {
+      const position = editor.posAtCoords({ x: event.clientX, y: event.clientY })
+      if (position != null) editor.dispatch({ selection: { anchor: position } })
+    }
+    setContextMenu({ left: event.clientX, top: event.clientY, hasSelection })
+    return true
+  }
+
   async function performUpload(upload: Upload) {
     setUploads(items => items.some(item => item.id === upload.id)
       ? items.map(item => item.id === upload.id ? { ...item, status: 'uploading', error: undefined } : item)
@@ -287,6 +348,9 @@ export function Editor(props: EditorProps) {
         files.forEach(file => uploadFile(file, position))
         return true
       },
+      contextmenu(event, editor) {
+        return openContextMenu.current(event, editor)
+      },
     }),
     EditorView.theme({
       '&': { height: '100%', backgroundColor: 'transparent', color: 'var(--text)' },
@@ -309,6 +373,63 @@ export function Editor(props: EditorProps) {
     const key = actionId ? bindingFor(props.shortcuts, actionId) : ''
     return key ? `${label} (${formatShortcut(key)})` : label
   }
+
+  function shortcutLabel(actionId: string) {
+    const key = bindingFor(props.shortcuts, actionId)
+    return key ? formatShortcut(key) : undefined
+  }
+
+  const contextMenuItems: EditorContextMenuItem[] = contextMenu ? [
+    { id: 'cut', label: '剪切', shortcut: formatShortcut('Mod-x'), disabled: !contextMenu.hasSelection, action: () => { void cutSelection() } },
+    { id: 'copy', label: '复制', shortcut: formatShortcut('Mod-c'), disabled: !contextMenu.hasSelection, action: () => { void copySelection() } },
+    { id: 'paste', label: '粘贴', shortcut: formatShortcut('Mod-v'), action: () => { void pasteClipboard() } },
+    { id: 'sep-clipboard', kind: 'separator' },
+    {
+      id: 'heading',
+      kind: 'submenu',
+      label: '设置标题',
+      children: headingLabels.map((label, index) => ({
+        id: `heading${index + 1}`,
+        label: `${label}级标题`,
+        shortcut: shortcutLabel(`heading${index + 1}`),
+        action: () => commands.current[`heading${index + 1}`]?.(),
+      })),
+    },
+    { id: 'sep-heading', kind: 'separator' },
+    { id: 'bold', label: '加粗', shortcut: shortcutLabel('bold'), action: () => commands.current.bold?.() },
+    { id: 'italic', label: '斜体', shortcut: shortcutLabel('italic'), action: () => commands.current.italic?.() },
+    { id: 'strikethrough', label: '删除线', shortcut: shortcutLabel('strikethrough'), action: () => commands.current.strikethrough?.() },
+    { id: 'underline', label: '下划线', shortcut: shortcutLabel('underline'), action: () => commands.current.underline?.() },
+    { id: 'inlineCode', label: '行内代码', shortcut: shortcutLabel('inlineCode'), action: () => commands.current.inlineCode?.() },
+    { id: 'codeBlock', label: '代码块', shortcut: shortcutLabel('codeBlock'), action: () => commands.current.codeBlock?.() },
+    { id: 'sep-text', kind: 'separator' },
+    { id: 'orderedList', label: '有序列表', shortcut: shortcutLabel('orderedList'), action: () => commands.current.orderedList?.() },
+    { id: 'unorderedList', label: '无序列表', shortcut: shortcutLabel('unorderedList'), action: () => commands.current.unorderedList?.() },
+    { id: 'task', label: '待办任务', action: () => { prefixLines('- [ ] '); latest.current.onTaskInsert?.() } },
+    { id: 'sep-list', kind: 'separator' },
+    {
+      id: 'insert',
+      kind: 'submenu',
+      label: '插入',
+      children: [
+        { id: 'link', label: '链接', action: () => replaceSelection('[', '](https://)', '链接文字') },
+        { id: 'table', label: '表格', action: () => insertText('\n| 列一 | 列二 | 列三 |\n| --- | --- | --- |\n| 内容 | 内容 | 内容 |\n| 内容 | 内容 | 内容 |\n') },
+        { id: 'image', label: '图片', action: () => fileInput.current?.click() },
+        { id: 'drawing', label: '绘图', action: () => { void insertDrawing() } },
+      ],
+    },
+    {
+      id: 'quote',
+      kind: 'submenu',
+      label: '引用',
+      children: [
+        { id: 'quoteBlock', label: '引用块', shortcut: shortcutLabel('quote'), action: () => commands.current.quote?.() },
+        { id: 'noteRef', label: '引用笔记', action: () => { void insertNoteReference() } },
+        { id: 'drawioRef', label: '引用 Draw.io', action: () => { void insertDrawioReference() } },
+      ],
+    },
+  ] : []
+
   const tools = [
     { id: 'heading', icon: Heading, title: '标题', action: () => prefixLines('## ') },
     { id: 'bold', icon: Bold, title: toolTitle('加粗', 'bold'), action: () => commands.current.bold?.() },
@@ -343,5 +464,6 @@ export function Editor(props: EditorProps) {
       {upload.status === 'error' && <><button type="button" onClick={() => void performUpload(upload)}><RefreshCw size={13} /> 重试</button><button type="button" aria-label="取消上传" onClick={() => { anchors.current.delete(upload.id); setUploads(items => items.filter(item => item.id !== upload.id)) }}><X size={13} /></button></>}
     </div>)}</div>}
     <CodeMirror value={props.value} theme={props.dark ? 'dark' : 'light'} extensions={extensions} basicSetup={{ lineNumbers: props.lineNumbers, foldGutter: true, highlightActiveLineGutter: false, highlightActiveLine: true, autocompletion: true, closeBrackets: true, searchKeymap: true }} onCreateEditor={editor => { view.current = editor; latest.current.onReady?.(controller.current!) }} onChange={props.onChange} className="codemirror-editor" aria-label="Markdown 源码编辑器" />
+    {contextMenu && <EditorContextMenu left={contextMenu.left} top={contextMenu.top} items={contextMenuItems} onClose={() => setContextMenu(null)} />}
   </div>
 }

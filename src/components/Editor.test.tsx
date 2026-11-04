@@ -104,3 +104,39 @@ describe('editor formatting shortcuts', () => {
     expect(String(onChange.mock.calls.at(-1)?.[0])).toContain('![架构](../图表/架构.drawio)')
   })
 })
+
+describe('editor context menu', () => {
+  it('intercepts the native context menu and closes on Escape', () => {
+    render(<Editor {...props} />)
+    const content = document.querySelector('.cm-content')
+    if (!content) throw new Error('编辑器尚未挂载')
+    fireEvent.contextMenu(content, { clientX: 40, clientY: 60 })
+    expect(screen.getByRole('menu', { name: '编辑器快捷菜单' })).toBeInTheDocument()
+    fireEvent.keyDown(window, { key: 'Escape' })
+    expect(screen.queryByRole('menu', { name: '编辑器快捷菜单' })).not.toBeInTheDocument()
+  })
+
+  it('wraps the current selection in bold from the context menu', () => {
+    const onChange = vi.fn()
+    render(<Editor {...props} value="你好" onChange={onChange} />)
+    const editor = EditorView.findFromDOM(document.querySelector('.cm-editor')!)
+    if (!editor) throw new Error('编辑器尚未挂载')
+    editor.dispatch({ selection: { anchor: 0, head: editor.state.doc.length } })
+    fireEvent.contextMenu(editor.contentDOM, { clientX: 24, clientY: 24 })
+    fireEvent.click(screen.getByRole('menuitem', { name: /加粗/ }))
+    expect(editor.state.doc.toString()).toBe('**你好**')
+    expect(screen.queryByRole('menu', { name: '编辑器快捷菜单' })).not.toBeInTheDocument()
+  })
+
+  it('inserts a markdown table template from the insert submenu', () => {
+    const onChange = vi.fn()
+    render(<Editor {...props} value="" onChange={onChange} />)
+    const editor = EditorView.findFromDOM(document.querySelector('.cm-editor')!)
+    if (!editor) throw new Error('编辑器尚未挂载')
+    fireEvent.contextMenu(editor.contentDOM, { clientX: 24, clientY: 24 })
+    fireEvent.mouseEnter(screen.getByRole('menuitem', { name: '插入' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: '表格' }))
+    expect(editor.state.doc.toString()).toContain('| 列一 | 列二 | 列三 |')
+    expect(editor.state.doc.toString()).toContain('| --- | --- | --- |')
+  })
+})
