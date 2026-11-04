@@ -79,7 +79,11 @@ func (s *Store) snapshot(paths []string) (ExportSnapshot, map[string]exportAsset
 					snapshot.Missing = append(snapshot.Missing, note.Path+": "+source)
 					continue
 				}
-				if !isDrawingName(target) && !strings.HasPrefix(assetMIME(target, data), "image/") {
+				if !isDrawingName(target) && !isHtmlDocumentName(target) && !strings.HasPrefix(assetMIME(target, data), "image/") {
+					snapshot.Missing = append(snapshot.Missing, note.Path+": "+source)
+					continue
+				}
+				if isHtmlDocumentName(target) && (len(data) == 0 || int64(len(data)) > maxHtmlDocumentBytes) {
 					snapshot.Missing = append(snapshot.Missing, note.Path+": "+source)
 					continue
 				}
@@ -93,6 +97,9 @@ func (s *Store) snapshot(paths []string) (ExportSnapshot, map[string]exportAsset
 			mediaType := assetMIME(target, asset.data)
 			if kind := drawingMediaType(target); kind != "" {
 				mediaType = kind
+			}
+			if isHtmlDocumentName(target) {
+				mediaType = "text/html"
 			}
 			item.Assets[source] = "data:" + mediaType + ";base64," + base64.StdEncoding.EncodeToString(asset.data)
 		}

@@ -16,6 +16,7 @@ vi.mock('shiki', () => ({ codeToHtml: async (code: string) => `<pre class="shiki
 vi.mock('mermaid', () => ({ default: { initialize: initializeMermaid, render: (id: string, code: string) => renderMermaid(id, code) } }))
 vi.mock('./Drawing', () => ({ DrawingEmbed: ({ path, onEdit, onDelete }: { path: string; onEdit?: (path: string) => void; onDelete?: (path: string) => void }) => <div><button type="button" onClick={() => onEdit?.(path)}>{path}</button>{onDelete && <button type="button" aria-label={`删除 ${path}`} onClick={() => onDelete(path)}>删除</button>}</div> }))
 vi.mock('./Drawio', () => ({ DrawioEmbed: ({ path, onEdit, onDelete }: { path: string; onEdit?: (path: string) => void; onDelete?: (path: string) => void }) => <div><button type="button" onClick={() => onEdit?.(path)}>{path}</button>{onDelete && <button type="button" aria-label={`删除 ${path}`} onClick={() => onDelete(path)}>删除</button>}</div> }))
+vi.mock('./HtmlEmbed', () => ({ HtmlEmbed: ({ path, onOpen, exporting }: { path: string; exporting?: boolean; onOpen?: (path: string) => void }) => <div data-html-path={path} data-exporting={exporting ? 'true' : undefined}>{onOpen && <button type="button" aria-label={`整页打开 ${path}`} onClick={() => onOpen(path)}>整页</button>}</div> }))
 afterEach(() => { cleanup(); clearLinkPreviews(); vi.unstubAllGlobals(); vi.restoreAllMocks() })
 
 describe('Markdown rendering', () => {
@@ -141,6 +142,16 @@ describe('Markdown rendering', () => {
     fireEvent.click(screen.getByRole('button', { name: '删除 .assets/a.excalidraw' }))
     expect(remove).toHaveBeenCalledWith('图表/流程.drawio')
     expect(remove).toHaveBeenCalledWith('.assets/a.excalidraw')
+  })
+
+  it('renders HTML demos as sandboxed embeds and opens them full page', () => {
+    const open = vi.fn()
+    const { container, rerender } = render(<MarkdownView content="![演示](../demos/小球.html)" notePath="项目/记录.md" lineNumbers={false} onOpenHtml={open} />)
+    expect(container.querySelector('[data-html-path="demos/小球.html"]')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '整页打开 demos/小球.html' }))
+    expect(open).toHaveBeenCalledWith('demos/小球.html')
+    rerender(<MarkdownView content="![演示](../demos/missing.html)" notePath="项目/记录.md" lineNumbers={false} exporting />)
+    expect(screen.getByText('[HTML 演示缺失：演示]')).toBeInTheDocument()
   })
 
   it('renders mermaid diagrams in the active theme and uses the light theme while exporting', async () => {

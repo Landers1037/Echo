@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
-import { BookOpen, Search, Plus, FolderPlus, FileText, FileType, FileSpreadsheet, Presentation, ChevronRight, Folder, MoreHorizontal, LayoutGrid, ListTodo, Settings, Trash2, Tags, FolderOpen, X, ArrowUpRight, Box, LoaderCircle, PenTool, LocateFixed, Workflow, CalendarDays } from 'lucide-react'
+import { BookOpen, Search, Plus, FolderPlus, FileText, FileType, FileSpreadsheet, Presentation, ChevronRight, Folder, MoreHorizontal, LayoutGrid, ListTodo, Settings, Trash2, Tags, FolderOpen, X, ArrowUpRight, Box, LoaderCircle, PenTool, LocateFixed, Workflow, CalendarDays, Code2 } from 'lucide-react'
 import { motion } from 'motion/react'
-import type { NoteSummary, OfficeTreeType, TreeEntry } from '../types'
-import { isOfficeTreeType, officeDisplayName } from '../office'
+import type { LibraryDocumentType, NoteSummary, OfficeTreeType, TreeEntry } from '../types'
+import { isHtmlTreeType, isLibraryDocumentTreeType, isOfficeTreeType, officeDisplayName } from '../office'
 import { Logo } from './Logo'
 
-type ManageType = 'note' | 'folder' | 'drawing' | OfficeTreeType
+type ManageType = 'note' | 'folder' | 'drawing' | LibraryDocumentType
 
 type Props = {
   notes: NoteSummary[]; tree: TreeEntry[]; groups: string[]; tags: string[]; active: string; view: string; open: boolean
@@ -74,6 +74,13 @@ export function Sidebar(p: Props) {
     </div>
   }
   const officeRow = (entry: TreeEntry, depth = 0) => {
+    if (isHtmlTreeType(entry.type)) {
+      return <div className={`note-row ${p.activeOffice === entry.path && p.view === 'note' ? 'active' : ''}`} key={entry.path} style={{ paddingLeft: `${14 + depth * 16}px` }} data-tree-path={entry.path}>
+        <span className="drawing-spacer" />
+        <button className="note-link" onClick={() => p.onOpenOffice(entry.path)} title={entry.path}><Code2 size={15} /><span>{officeDisplayName(entry.name)}</span></button>
+        <button className="row-action icon-button" aria-label={`管理 HTML ${entry.path}`} onClick={() => p.onManage(entry.path, 'html')}><MoreHorizontal size={15} /></button>
+      </div>
+    }
     const kind = (isOfficeTreeType(entry.type) ? entry.type : 'docx') as OfficeTreeType
     const Icon = kind === 'pptx' ? Presentation : kind === 'xlsx' ? FileSpreadsheet : FileType
     return <div className={`note-row ${p.activeOffice === entry.path && p.view === 'note' ? 'active' : ''}`} key={entry.path} style={{ paddingLeft: `${14 + depth * 16}px` }} data-tree-path={entry.path}>
@@ -90,7 +97,7 @@ export function Sidebar(p: Props) {
   const renderTree = (entries: TreeEntry[], depth = 0): React.ReactNode => entries.map(entry => entry.type === 'folder' ? <div key={entry.path}>
     <div className="folder-row" style={{ paddingLeft: `${14 + depth * 16}px` }}><button className="folder-link" onClick={() => setExpandedFolders(folders => ({ ...folders, [entry.path]: !folders[entry.path] }))} aria-expanded={!!expandedFolders[entry.path]}><ChevronRight size={13} className={expandedFolders[entry.path] ? 'rotated' : ''} /><Folder size={15} /><span>{entry.name}</span></button><button className="row-action icon-button" aria-label={`管理文件夹 ${entry.path}`} onClick={() => p.onManage(entry.path, 'folder')}><MoreHorizontal size={15} /></button></div>
     {expandedFolders[entry.path] && renderTree(entry.children || [], depth + 1)}
-  </div> : entry.type === 'drawing' ? drawingRow(entry, depth) : isOfficeTreeType(entry.type) ? officeRow(entry, depth) : visible.has(entry.path) ? noteRow(p.notes.find(note => note.path === entry.path) || { path: entry.path, title: entry.name.replace(/\.md$/i, ''), metadata: { tags: [], group: '' }, modified: '', revision: '' }, depth) : null)
+  </div> : entry.type === 'drawing' ? drawingRow(entry, depth) : isLibraryDocumentTreeType(entry.type) ? officeRow(entry, depth) : visible.has(entry.path) ? noteRow(p.notes.find(note => note.path === entry.path) || { path: entry.path, title: entry.name.replace(/\.md$/i, ''), metadata: { tags: [], group: '' }, modified: '', revision: '' }, depth) : null)
   return <><div className={`sidebar-scrim ${p.open ? 'visible' : ''}`} onClick={p.onClose} />
     <aside id="note-sidebar" className={`sidebar ${p.open ? 'open' : ''}`} inert={!p.open}>
       <div className="brand"><Logo /><div><strong>echo<span>.</span></strong><small>让想法有处安放</small></div><button className="icon-button mobile-close" aria-label="关闭目录" onClick={p.onClose}><X size={18} /></button></div>

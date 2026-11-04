@@ -7,7 +7,7 @@
 | 模块 | 简述 | 后端 | 前端 |
 | --- | --- | --- | --- |
 | 笔记库与仓库 | 本地目录即笔记库；可在最近 5 个仓库之间切换 | `repositories.go`、`store.go` | `RepoSwitcher.tsx` |
-| 目录与文件管理 | 目录树、新建/重命名/移动/删除、回收站 | `store.go`、`files.go` | `Sidebar.tsx`、`App.tsx` |
+| 目录与文件管理 | 目录树、新建/重命名/移动/删除、回收站；Office/HTML 只读文档 | `store.go`、`files.go` | `Sidebar.tsx`、`App.tsx`、`OfficePreview.tsx`、`HtmlPreview.tsx` |
 | 编辑与预览 | CodeMirror 源码编辑、Markdown 预览、预览标注、自动保存、冲突处理 | `store.go`、`annotations.go` | `Editor.tsx`、`MarkdownView.tsx`、`App.tsx` |
 | 分类 | 逻辑分组 + 多标签，写入 frontmatter | `metadata.go`、`files.go` | `App.tsx`（分类对话框） |
 | 搜索与筛选 | 全文搜索、分组和标签筛选、多选批量操作 | `server.go` `/api/notes?q=` | `Sidebar.tsx` |
@@ -34,14 +34,15 @@
 
 ## 3. 目录与文件管理
 
-- **目录树**（`GET /api/tree`）：只显示文件夹、`.md`、`.excalidraw`、`.drawio`、`.docx`、`.pptx`、`.xlsx`；隐藏点开头的条目、资源目录和符号链接；文件夹排在前面，同类按名称排序。
+- **目录树**（`GET /api/tree`）：只显示文件夹、`.md`、`.excalidraw`、`.drawio`、`.docx`、`.pptx`、`.xlsx`、`.html` / `.htm`；隐藏点开头的条目、资源目录和符号链接；文件夹排在前面，同类按名称排序。
 - **Office 文档预览**：目录中的 `.docx` / `.pptx` / `.xlsx` 不进入 `/notes` 列表，也不参与分组/标签/搜索。点击后主面板用 `@silurus/ooxml` 的 Canvas/WASM 查看器只读预览（Word/PowerPoint 可滚动分页，Excel 可切换工作表；均可缩放）；开启多标签时可与笔记一并显示在 Tab 栏。不支持在应用内新建或编辑这些文档。
+- **HTML 演示**：目录中的 `.html` / `.htm` 同样不进入 `/notes`。侧栏点击后整页只读预览；笔记内可用图片语法引用，预览以沙箱 iframe 渲染（允许脚本、禁止同源）。不支持在应用内新建或编辑；单文件不超过 5MB。API 与 Office 共用 `/api/documents`。
 - **新建**：笔记、文件夹、绘图都支持用 `/` 一次创建多层目录。新建笔记的默认内容为 `# 文件名`（前端调用时传入空内容）。文件夹名不能以点开头。目标已存在时报错，不会覆盖。
 - **重命名 / 移动**（`/api/notes/move`、`/api/folders/move`、`/api/drawings/move`、`/api/documents/move`）：
-  - 必须带 revision（文件夹除外）；不能移动到自身或子目录，不能移动资源目录，也不能移动到资源目录里。Office 文档必须保持原扩展名（`.docx` / `.pptx` / `.xlsx`）。
+  - 必须带 revision（文件夹除外）；不能移动到自身或子目录，不能移动资源目录，也不能移动到资源目录里。Office / HTML 文档必须保持原扩展名（`.docx` / `.pptx` / `.xlsx` / `.html` / `.htm`）。
   - 移动后**自动改写所有笔记中指向被移动对象的相对链接**，以及被移动笔记自身的出站相对链接；同时更新提醒和任务完成历史中的笔记路径。
   - 前端同步更新多标签页、当前笔记、正在打开的绘图和文档预览的路径。
-- **删除**：移到 `.echo/trash/<id>`，在 `state.json` 中记录原路径和时间。只允许删除笔记、绘图、Office 文档（docx/pptx/xlsx）和文件夹；不能删除资源目录或包含资源目录的文件夹。
+- **删除**：移到 `.echo/trash/<id>`，在 `state.json` 中记录原路径和时间。只允许删除笔记、绘图、Office/HTML 文档和文件夹；不能删除资源目录或包含资源目录的文件夹。
 - **回收站**：`GET /api/trash` 列出条目，`POST /api/trash/restore` 恢复。原路径已有文件时拒绝恢复。目前没有「彻底删除」或「清空回收站」功能。
 
 ## 4. 编辑与预览
@@ -54,7 +55,7 @@
 ### 4.2 源码编辑器（`Editor.tsx`）
 
 - CodeMirror 6 + Markdown 语言包（代码块中的语言可以高亮），支持查找替换、撤销重做、折叠和自动补全。
-- 工具栏：标题、加粗、斜体、删除线、下划线（`<u>`）、引用、无序/有序/任务列表、链接、**笔记引用**、**引用 Draw.io**、图片、**绘图**、行内代码、代码块、表格、**卡片**（下拉：普通 / 横向 Tab / 纵向 Tab / 手风琴 / 轮播）、撤销、重做。右键「插入」子菜单提供相同卡片模板。
+- 工具栏：标题、加粗、斜体、删除线、下划线（`<u>`）、引用、无序/有序/任务列表、链接、**笔记引用**、**引用 Draw.io**、**引用 HTML**、图片、**绘图**、行内代码、代码块、表格、**卡片**（下拉：普通 / 横向 Tab / 纵向 Tab / 手风琴 / 轮播）、撤销、重做。右键「插入」子菜单提供相同卡片模板。
 - 快捷键可在设置中自定义（`shortcuts.ts`）：标题 1–6 级、加粗、斜体、删除线、下划线、行内代码、代码块、引用、有序/无序列表。保留键（保存、搜索、查找、撤销、重做、全选、复制、粘贴、剪切）不能占用，也不允许重复绑定；后端 `validateShortcuts` 会再校验一次。
 - 全局快捷键：`Ctrl/Cmd+S` 保存，`Ctrl/Cmd+K` 聚焦侧栏搜索框。
 - 图片可以通过文件选择、拖放、粘贴上传。上传期间在插入位置保留锚点，完成后替换为相对路径；失败时可以重试。
@@ -66,6 +67,7 @@
 - **卡片块**（`remark-directive` + `remarkEchoCards`）：`:::card[标题]` 普通卡片；`:::htabs` / `:::vtabs` / `:::accordion` / `:::carousel` 用二级标题 `##` 切分面板。预览可交互（Tab 切换、手风琴多开且默认展开第一项、轮播手动翻页）；导出（含 HTML 预览导出与 DOCX）时展平为静态标题+正文。实现见 `src/remarkEchoCards.ts`、`src/components/EchoCards.tsx`。
 - 代码块使用 shiki 高亮（结果有缓存），可选显示行号；`mermaid` 代码块渲染为图表，渲染失败时退回代码块。
 - 图片通过 `/api/assets?path=` 加载；`.excalidraw` 与 `.drawio` 引用显示为静态图，右下角有编辑按钮；点击图片可以放大预览、复制、下载（`ImagePreview.tsx`）。
+- `.html` / `.htm` 引用显示为沙箱 iframe 演示（`HtmlEmbed.tsx`），可一键整页打开（`HtmlPreview.tsx`）。导出 HTML/PDF 时以内联 `srcdoc` 嵌入；导出 DOCX 时写成占位文字。
 - 内部链接：title 为 `echo-ref` 或者指向库内 `.md` 的相对链接，点击后在应用内打开对应笔记。
 - 任务勾选框可以直接点击，会通过 `/api/tasks` 回写源文件。
 - 标题带 `data-heading-line`，供大纲导航定位。段落、引用、列表项、表格、代码块和标题同时带 `data-source-line`（导出时不加），供预览标注锚定。
@@ -143,7 +145,7 @@
 
 ## 9. 笔记引用
 
-- 编辑器工具栏的「笔记引用」按钮打开 `NotePicker`（目录树形式，排除当前笔记），选择后插入 `[标题](相对路径 "echo-ref")`。旁边的「引用 Draw.io」使用同一个选择器，只显示 `.drawio` 文件。
+- 编辑器工具栏的「笔记引用」按钮打开 `NotePicker`（目录树形式，排除当前笔记），选择后插入 `[标题](相对路径 "echo-ref")`。旁边的「引用 Draw.io」「引用 HTML」使用同一个选择器，分别只显示 `.drawio` 与 `.html`/`.htm`；HTML 插入为 `![名称](相对路径.html)`。
 - 预览中点击引用会在应用内打开目标笔记。
 - 移动或重命名目标笔记时，后端会自动改写这些相对链接。
 
@@ -255,7 +257,7 @@
 | POST | `/assets?notePath=` | multipart 上传图片，字段为 `file` |
 | GET / POST / PUT / DELETE | `/drawings` | 读取 `?path=` / 新建 `{path}`（`.excalidraw` 或 `.drawio`）或 `{notePath}`（只在资源目录创建 `.excalidraw`）/ 保存 `{path, content, revision, force?}` / 删除 `?path=` |
 | POST | `/drawings/move` | `{path, target, revision}` |
-| GET / HEAD / DELETE | `/documents` | 读取 DOCX 原始字节（`?path=`）或元数据（`?path=&meta=1`）/ 删除 `?path=` |
+| GET / HEAD / DELETE | `/documents` | 读取 Office/HTML 原始字节（`?path=`）或元数据（`?path=&meta=1`）/ 删除 `?path=` |
 | POST | `/documents/move` | `{path, target, revision}` |
 | GET / PUT | `/settings` | 读取 / 保存设置（可能触发资源目录迁移） |
 | GET | `/storage` | 存储占用 |

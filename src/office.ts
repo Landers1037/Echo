@@ -1,7 +1,15 @@
-import type { OfficeTreeType, TreeEntry } from './types'
+import type { LibraryDocumentType, OfficeTreeType, TreeEntry } from './types'
 
 export function isOfficePath(path: string) {
   return /\.(?:docx|pptx|xlsx)$/i.test(path)
+}
+
+export function isHtmlPath(path: string) {
+  return /\.html?$/i.test(path)
+}
+
+export function isLibraryDocumentPath(path: string) {
+  return isOfficePath(path) || isHtmlPath(path)
 }
 
 export function officeTreeType(path: string): OfficeTreeType | null {
@@ -13,14 +21,22 @@ export function isOfficeTreeType(type: TreeEntry['type']): type is OfficeTreeTyp
   return type === 'docx' || type === 'pptx' || type === 'xlsx'
 }
 
+export function isHtmlTreeType(type: TreeEntry['type']): type is 'html' {
+  return type === 'html'
+}
+
+export function isLibraryDocumentTreeType(type: TreeEntry['type']): type is LibraryDocumentType {
+  return isOfficeTreeType(type) || type === 'html'
+}
+
 export function collectOfficePaths(entries: TreeEntry[], result: string[] = []) {
   for (const entry of entries) {
-    if (isOfficeTreeType(entry.type)) result.push(entry.path)
+    if (isLibraryDocumentTreeType(entry.type)) result.push(entry.path)
     if (entry.children?.length) collectOfficePaths(entry.children, result)
   }
   return result
 }
 
 export function officeDisplayName(path: string) {
-  return path.split('/').pop()?.replace(/\.(?:docx|pptx|xlsx)$/i, '') || path
+  return path.split('/').pop()?.replace(/\.(?:docx|pptx|xlsx|html|htm)$/i, '') || path
 }

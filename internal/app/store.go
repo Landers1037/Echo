@@ -111,7 +111,9 @@ type Document struct {
 const docxMediaType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 const pptxMediaType = "application/vnd.openxmlformats-officedocument.presentationml.presentation"
 const xlsxMediaType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+const htmlMediaType = "text/html; charset=utf-8"
 const maxDocumentBytes = 50 * 1024 * 1024
+const maxHtmlDocumentBytes = 5 * 1024 * 1024
 type Conflict struct {
 	Current Note
 	message string
@@ -271,6 +273,17 @@ func isOfficeDocumentName(name string) bool {
 		return false
 	}
 }
+func isHtmlDocumentName(name string) bool {
+	switch strings.ToLower(path.Ext(name)) {
+	case ".html", ".htm":
+		return true
+	default:
+		return false
+	}
+}
+func isLibraryDocumentName(name string) bool {
+	return isOfficeDocumentName(name) || isHtmlDocumentName(name)
+}
 func officeDocumentType(name string) string {
 	switch strings.ToLower(path.Ext(name)) {
 	case ".docx":
@@ -279,6 +292,8 @@ func officeDocumentType(name string) string {
 		return "pptx"
 	case ".xlsx":
 		return "xlsx"
+	case ".html", ".htm":
+		return "html"
 	default:
 		return ""
 	}
@@ -291,6 +306,8 @@ func officeDocumentMediaType(name string) string {
 		return pptxMediaType
 	case ".xlsx":
 		return xlsxMediaType
+	case ".html", ".htm":
+		return htmlMediaType
 	default:
 		return "application/octet-stream"
 	}
@@ -322,8 +339,8 @@ func (s *Store) documentPath(name string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if !isOfficeDocumentName(name) {
-		return "", fmt.Errorf("文档必须使用 .docx、.pptx 或 .xlsx 扩展名")
+	if !isLibraryDocumentName(name) {
+		return "", fmt.Errorf("文档必须使用 .docx、.pptx、.xlsx、.html 或 .htm 扩展名")
 	}
 	if name == s.state.Settings.AssetsDir || strings.HasPrefix(name, s.state.Settings.AssetsDir+"/") {
 		return "", fmt.Errorf("不能在资源目录中保存文档")
@@ -612,8 +629,14 @@ func (s *Store) readDocument(name string) (Document, []byte, error) {
 	if err != nil {
 		return Document{}, nil, err
 	}
-	if len(data) == 0 || int64(len(data)) > maxDocumentBytes {
-		return Document{}, nil, fmt.Errorf("文档不能为空，且不能超过 50MB")
+	limit := int64(maxDocumentBytes)
+	limitLabel := "50MB"
+	if isHtmlDocumentName(name) {
+		limit = maxHtmlDocumentBytes
+		limitLabel = "5MB"
+	}
+	if len(data) == 0 || int64(len(data)) > limit {
+		return Document{}, nil, fmt.Errorf("文档不能为空，且不能超过 %s", limitLabel)
 	}
 	info, err := os.Stat(file)
 	if err != nil {
@@ -733,7 +756,7 @@ func (s *Store) recycle(name string) error {
 	if err != nil {
 		return err
 	}
-	if !info.IsDir() && !strings.EqualFold(path.Ext(name), ".md") && !isDrawingName(name) && !isOfficeDocumentName(name) {
+	if !info.IsDir() && !strings.EqualFold(path.Ext(name), ".md") && !isDrawingName(name) && !isLibraryDocumentName(name) {
 		return fmt.Errorf("只能删除笔记、绘图、文档或文件夹")
 	}
 	if name == s.state.Settings.AssetsDir || strings.HasPrefix(s.state.Settings.AssetsDir, name+"/") {

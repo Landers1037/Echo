@@ -15,7 +15,7 @@ import { unified } from 'unified'
 import type { Root, RootContent } from 'mdast'
 import { DrawingEmbed } from './components/Drawing'
 import { DrawioEmbed } from './components/Drawio'
-import { drawingKind, remarkUnderline } from './components/MarkdownView'
+import { drawingKind, htmlKind, remarkUnderline } from './components/MarkdownView'
 import { remarkEchoCards } from './remarkEchoCards'
 import type { ExportSnapshot } from './types'
 
@@ -173,6 +173,10 @@ async function embedDrawings(node: { children: RootContent[] }, assets: Record<s
   const next: RootContent[] = []
   for (const child of node.children) {
     if (child.type === 'image') {
+      if (htmlKind(child.url)) {
+        next.push({ type: 'text', value: `[HTML 演示：${child.alt || child.url}]` })
+        continue
+      }
       const kind = drawingKind(child.url)
       if (kind) {
         if (!ready.has(child.url) && !missing.has(child.url)) {
@@ -197,6 +201,7 @@ async function loadImage(url: string, assets: Record<string, string>, ready: Map
   const drawing = ready.get(url)
   if (drawing) return normalizeSvgBytes(drawing)
   if (drawingKind(url)) throw new Error('绘图缺失')
+  if (htmlKind(url)) throw new Error('HTML 演示')
   if (url.startsWith('data:')) return normalizeSvgBytes(dataUrlBytes(url))
   const embedded = assetData(assets, url)
   if (embedded) return normalizeSvgBytes(dataUrlBytes(embedded))

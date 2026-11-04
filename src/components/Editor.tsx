@@ -9,7 +9,7 @@ import { Annotation, Compartment, EditorState, StateEffect, StateField, type Ext
 import { NoteAiSession } from '../agent/editorSession'
 import { autocompletion } from '@codemirror/autocomplete'
 import { searchKeymap } from '@codemirror/search'
-import { Bold, Italic, Heading, Strikethrough, Underline, Quote, List, ListOrdered, ListTodo, Link, FileSymlink, ImagePlus, Shapes, Code, Code2, Table2, SquareStack, Undo2, Redo2, LoaderCircle, RefreshCw, X, Workflow } from 'lucide-react'
+import { Bold, Italic, Heading, Strikethrough, Underline, Quote, List, ListOrdered, ListTodo, Link, FileSymlink, ImagePlus, Shapes, Code, Code2, Table2, SquareStack, Undo2, Redo2, LoaderCircle, RefreshCw, X, Workflow, FileCode2 } from 'lucide-react'
 import { undo, redo } from '@codemirror/commands'
 import { bindingFor, formatShortcut, shortcutBindings } from '../shortcuts'
 import { ECHO_CARD_TEMPLATES, type EchoCardKind } from '../remarkEchoCards'
@@ -55,6 +55,7 @@ export type EditorProps = {
   onDrawingInsert?: () => Promise<string>
   onNoteReference?: () => Promise<string | null>
   onDrawioReference?: () => Promise<string | null>
+  onHtmlReference?: () => Promise<string | null>
   onSave: () => void
   onTaskInsert?: () => void
   shortcuts: Record<string, string>
@@ -221,6 +222,11 @@ export function Editor(props: EditorProps) {
 
   async function insertDrawioReference() {
     const markdown = await latest.current.onDrawioReference?.()
+    if (markdown) insertText(`\n${markdown}\n`)
+  }
+
+  async function insertHtmlReference() {
+    const markdown = await latest.current.onHtmlReference?.()
     if (markdown) insertText(`\n${markdown}\n`)
   }
 
@@ -441,6 +447,7 @@ export function Editor(props: EditorProps) {
         { id: 'quoteBlock', label: '引用块', shortcut: shortcutLabel('quote'), action: () => commands.current.quote?.() },
         { id: 'noteRef', label: '引用笔记', action: () => { void insertNoteReference() } },
         { id: 'drawioRef', label: '引用 Draw.io', action: () => { void insertDrawioReference() } },
+        { id: 'htmlRef', label: '引用 HTML', action: () => { void insertHtmlReference() } },
       ],
     },
   ] : []
@@ -458,6 +465,7 @@ export function Editor(props: EditorProps) {
     { id: 'link', icon: Link, title: '链接', action: () => replaceSelection('[', '](https://)', '链接文字') },
     { id: 'noteRef', icon: FileSymlink, title: '引用笔记', action: () => { void insertNoteReference() } },
     { id: 'drawioRef', icon: Workflow, title: '引用 Draw.io', action: () => { void insertDrawioReference() } },
+    { id: 'htmlRef', icon: FileCode2, title: '引用 HTML', action: () => { void insertHtmlReference() } },
     { id: 'image', icon: ImagePlus, title: '上传图片（也可直接粘贴）', action: () => fileInput.current?.click() },
     { id: 'drawing', icon: Shapes, title: '插入绘图', action: () => { void insertDrawing() } },
     { id: 'inlineCode', icon: Code, title: toolTitle('行内代码', 'inlineCode'), action: () => commands.current.inlineCode?.() },

@@ -751,6 +751,98 @@ func TestDocxTreeReadMoveAndRecycle(t *testing.T) {
 	}
 }
 
+func TestHtmlTreeReadMoveRecycleAndSnapshot(t *testing.T) {
+	s := testStore(t)
+	h := NewHandler(attachStore(s), false)
+	payload := []byte("<!doctype html><html><body><script>document.body.textContent='demo'</script></body></html>")
+	pathName := filepath.Join(s.root, "演示", "小球.html")
+	if err := os.MkdirAll(filepath.Dir(pathName), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(pathName, payload, 0644); err != nil {
+		t.Fatal(err)
+	}
+	entry, ok := findTreeEntry(mustTree(t, s), "演示/小球.html")
+	if !ok || entry.Type != "html" || entry.Name != "小球.html" {
+		t.Fatalf("tree entry %+v %v", entry, ok)
+	}
+	rr := request(t, h, "GET", "/api/documents?path="+url.QueryEscape("演示/小球.html")+"&meta=1", nil)
+	if rr.Code != 200 {
+		t.Fatalf("meta %d %s", rr.Code, rr.Body.String())
+	}
+	var meta Document
+	if err := json.Unmarshal(rr.Body.Bytes(), &meta); err != nil {
+		t.Fatal(err)
+	}
+	if meta.Path != "演示/小球.html" || meta.Revision == "" || meta.Size != int64(len(payload)) {
+		t.Fatalf("meta %+v", meta)
+	}
+	rr = request(t, h, "GET", "/api/documents?path="+url.QueryEscape("演示/小球.html"), nil)
+	if rr.Code != 200 {
+		t.Fatalf("bytes %d %s", rr.Code, rr.Body.String())
+	}
+	if rr.Header().Get("Content-Type") != htmlMediaType {
+		t.Fatalf("content type %s", rr.Header().Get("Content-Type"))
+	}
+	if !bytes.Equal(rr.Body.Bytes(), payload) {
+		t.Fatalf("body mismatch %q", rr.Body.Bytes())
+	}
+	note := create(t, s, "笔记/引用.md", "# Demo\n![小球](../演示/小球.html)\n")
+	snapshot, assets, err := s.snapshot([]string{note.Path})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(snapshot.Missing) != 0 {
+		t.Fatalf("missing %#v", snapshot.Missing)
+	}
+	if _, ok = assets["演示/小球.html"]; !ok {
+		t.Fatalf("html missing from snapshot assets %#v", assets)
+	}
+	embedded := snapshot.Notes[0].Assets["../演示/小球.html"]
+	if !strings.HasPrefix(embedded, "data:text/html;base64,") {
+		t.Fatalf("embedded asset %s", embedded)
+	}
+	rr = request(t, h, "POST", "/api/documents/move", map[string]any{"path": "演示/小球.html", "target": "归档/小球.html", "revision": meta.Revision})
+	if rr.Code != 200 {
+		t.Fatalf("move %d %s", rr.Code, rr.Body.String())
+	}
+	var moved Document
+	if err := json.Unmarshal(rr.Body.Bytes(), &moved); err != nil || moved.Path != "归档/小球.html" {
+		t.Fatalf("moved %+v %v", moved, err)
+	}
+	if entry, ok = findTreeEntry(mustTree(t, s), "归档/小球.html"); !ok || entry.Type != "html" {
+		t.Fatalf("new path missing %+v %v", entry, ok)
+	}
+	updated, err := s.readNote(note.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(updated.Content, "%E5%BD%92%E6%A1%A3/%E5%B0%8F%E7%90%83.html") {
+		t.Fatalf("note link not rewritten: %s", updated.Content)
+	}
+	rr = request(t, h, "DELETE", "/api/documents?path="+url.QueryEscape("归档/小球.html"), nil)
+	if rr.Code != 200 {
+		t.Fatalf("delete %d %s", rr.Code, rr.Body.String())
+	}
+	if _, ok = findTreeEntry(mustTree(t, s), "归档/小球.html"); ok {
+		t.Fatal("deleted html remained in the tree")
+	}
+	if len(s.state.Trash) == 0 {
+		t.Fatal("html was not recycled")
+	}
+	oversized := bytes.Repeat([]byte("a"), maxHtmlDocumentBytes+1)
+	bigPath := filepath.Join(s.root, "演示", "过大.html")
+	if err := os.MkdirAll(filepath.Dir(bigPath), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(bigPath, oversized, 0644); err != nil {
+		t.Fatal(err)
+	}
+	if rr = request(t, h, "GET", "/api/documents?path="+url.QueryEscape("演示/过大.html"), nil); rr.Code < 400 {
+		t.Fatalf("accepted oversized html: %d %s", rr.Code, rr.Body.String())
+	}
+}
+
 func TestDrawioCreateSaveMoveExportAndCleanup(t *testing.T) {
 	s := testStore(t)
 	h := NewHandler(attachStore(s), false)

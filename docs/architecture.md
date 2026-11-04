@@ -181,7 +181,8 @@ flowchart LR
 - 打开笔记库时如果 `.echo` 及其关键文件是符号链接，拒绝打开。
 - 目录树和笔记列表跳过点开头的目录、资源目录、符号链接，以及 `scanExcludes` 匹配的路径。规则是 .gitignore 的常用子集：无斜杠的名字匹配任意层级，前导 `/` 只匹配笔记库根，末尾 `/` 只匹配目录，`*` 和 `?` 匹配一层，`**` 匹配多层。匹配到目录后不再进入该目录。存储占用和未引用图片检查使用同一套规则，回收站按删除前的原始路径判断。不支持 `!` 否定，也不能排除整个笔记库。新建、移动和新建文件夹的目标如果落在排除路径内会被拒绝；按路径直接打开已有笔记仍然可以。
 - `/api/assets` 只返回 `image/*` 并排除 SVG（防 XSS）；上传按文件内容嗅探类型，只接受 PNG/JPEG/GIF/WebP，大小不超过 20MB，以随机 ID 命名。
-- 前端预览不执行原始 HTML（只对 `<u>` 做白名单处理）。
+- 前端预览不执行原始 HTML（只对 `<u>` 做白名单处理）。引用库内 `.html`/`.htm` 时，先经 `/api/documents` 取回文本，再用 `blob:` URL 放入 `iframe sandbox="allow-scripts"`（不加 `allow-same-origin`），避免演示页获得与主应用相同的源。
+- HTML 演示单文件上限 5MB；不进入资源目录，也不经 `/api/assets` 提供。
 
 ### 5.6 Agent 相关安全
 
@@ -384,6 +385,6 @@ Vite 插件 `excalidrawAssets` 在开发时提供 Excalidraw 字体，构建时�
 
 - **新增普通 API**：在 `handler.api` 的 `switch` 中添加 case（已经持有 Store 锁），业务逻辑写成 `Store` 方法放在对应文件；修改了数据就调用 `s.changed()`；修改 `state.json` 时遵循「改内存 → `persist()` → 失败则回滚内存」的模式。在 `src/types.ts` 补充类型，在 `docs/features.md` 补充 API 清单。
 - **不应持有 Store 锁的长连接接口**（流式、外部调用）：参照 `/api/agent` 在 `ServeHTTP` 中提前分流。
-- **新增文件类型**：需要同时考虑 `tree()`、`recycle()`、`move()`、指纹计算、存储统计/清理，以及前端 `TreeEntry.type`。Office 文档是只读预览类型示例：入树为 `type: "docx" | "pptx" | "xlsx"`，经 `/api/documents` 提供二进制与移动/回收，不进入 `/notes` 或版本库。
+- **新增文件类型**：需要同时考虑 `tree()`、`recycle()`、`move()`、指纹计算、存储统计/清理，以及前端 `TreeEntry.type`。Office / HTML 文档是只读预览类型示例：入树为 `type: "docx" | "pptx" | "xlsx" | "html"`，经 `/api/documents` 提供二进制与移动/回收，不进入 `/notes` 或版本库。
 - **新增 Agent 工具**：修改 `noteToolsJSON`、`noteInstructions`；在前端 `NoteAiSession.apply` 和 `partialJson` 中实现增量应用；在 `AgentPanel.toolLabel` 中添加显示名称。
 - **新增操作系统相关能力**：放在 `desktop_<os>.go` 中，按 build tag 区分，通过 `handler` 的函数字段注入，方便测试替换。

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { drawioReferenceMarkdown, noteReferenceMarkdown, relativeNoteHref } from './noteReference'
+import { drawioReferenceMarkdown, htmlReferenceMarkdown, noteReferenceMarkdown, relativeNoteHref } from './noteReference'
 
 describe('note references', () => {
   it('builds a relative link for sibling, child and parent notes', () => {
@@ -17,6 +17,12 @@ describe('note references', () => {
     expect(drawioReferenceMarkdown('项目/记录.md', '项目/架构.drawio')).toBe(`![架构](${encodeURIComponent('架构.drawio')})`)
     expect(drawioReferenceMarkdown('文档/子/记录.md', '文档/图.drawio')).toBe(`![图](../${encodeURIComponent('图.drawio')})`)
     expect(drawioReferenceMarkdown('记录.md', '图表/my chart (1).drawio')).toBe(`![my chart (1)](${encodeURIComponent('图表')}/my%20chart%20%281%29.drawio)`)
+  })
+
+  it('builds a relative HTML image for sibling, nested and encoded names', () => {
+    expect(htmlReferenceMarkdown('项目/记录.md', '项目/演示.html')).toBe(`![演示](${encodeURIComponent('演示.html')})`)
+    expect(htmlReferenceMarkdown('文档/子/记录.md', '文档/动画.htm')).toBe(`![动画](../${encodeURIComponent('动画.htm')})`)
+    expect(htmlReferenceMarkdown('记录.md', 'demos/my demo (1).html')).toBe(`![my demo (1)](${encodeURIComponent('demos')}/my%20demo%20%281%29.html)`)
   })
 
   it('drops brackets and escapes backslashes in the visible label', () => {

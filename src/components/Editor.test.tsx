@@ -97,11 +97,23 @@ describe('editor formatting shortcuts', () => {
     const buttons = screen.getAllByRole('button')
     const noteIndex = buttons.findIndex(button => button.getAttribute('aria-label') === '引用笔记')
     const drawIndex = buttons.findIndex(button => button.getAttribute('aria-label') === '引用 Draw.io')
+    const htmlIndex = buttons.findIndex(button => button.getAttribute('aria-label') === '引用 HTML')
     expect(drawIndex).toBe(noteIndex + 1)
+    expect(htmlIndex).toBe(drawIndex + 1)
     fireEvent.click(screen.getByRole('button', { name: '引用 Draw.io' }))
     await waitFor(() => expect(onChange).toHaveBeenCalled())
     expect(onDrawioReference).toHaveBeenCalledOnce()
     expect(String(onChange.mock.calls.at(-1)?.[0])).toContain('![架构](../图表/架构.drawio)')
+  })
+
+  it('inserts an HTML reference returned by the picker', async () => {
+    const onChange = vi.fn()
+    const onHtmlReference = vi.fn(async () => '![演示](../demos/小球.html)')
+    render(<Editor {...props} value="正文" onChange={onChange} onHtmlReference={onHtmlReference} />)
+    fireEvent.click(screen.getByRole('button', { name: '引用 HTML' }))
+    await waitFor(() => expect(onChange).toHaveBeenCalled())
+    expect(onHtmlReference).toHaveBeenCalledOnce()
+    expect(String(onChange.mock.calls.at(-1)?.[0])).toContain('![演示](../demos/小球.html)')
   })
 })
 

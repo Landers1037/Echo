@@ -28,3 +28,8 @@ export function drawioReferenceMarkdown(fromPath: string, targetPath: string) {
   const file = targetPath.split('/').pop() || targetPath
   return `![${linkLabel(file.replace(/\.drawio$/i, ''), targetPath)}](${relativeNoteHref(fromPath, targetPath)})`
 }
+
+export function htmlReferenceMarkdown(fromPath: string, targetPath: string) {
+  const file = targetPath.split('/').pop() || targetPath
+  return `![${linkLabel(file.replace(/\.html?$/i, ''), targetPath)}](${relativeNoteHref(fromPath, targetPath)})`
+}

@@ -16,6 +16,7 @@ import { DrawingEmbed } from './Drawing'
 import { DrawioEmbed } from './Drawio'
 import { echoCardFromDivProps } from './EchoCards'
 import { EditableTable } from './EditableTable'
+import { HtmlEmbed } from './HtmlEmbed'
 import { ImagePreview, PreviewableImage } from './ImagePreview'
 import { LinkCard } from './LinkCard'
 import { MermaidBlock } from './Mermaid'
@@ -32,6 +33,7 @@ export type MarkdownViewProps = {
   onEditTable?: (startLine: number, action: TableEditAction) => void
   onEditDrawing?: (path: string) => void
   onDeleteDrawing?: (path: string) => void
+  onOpenHtml?: (path: string) => void
   drawingVersion?: number
   exporting?: boolean
   dark?: boolean
@@ -50,6 +52,7 @@ type MarkdownRenderContextValue = {
   onEditTable?: (startLine: number, action: TableEditAction) => void
   onEditDrawing?: (path: string) => void
   onDeleteDrawing?: (path: string) => void
+  onOpenHtml?: (path: string) => void
   drawingVersion: number
   exporting: boolean
   dark: boolean
@@ -201,6 +204,12 @@ export function drawingKind(src: string): '' | 'drawio' | 'excalidraw' {
   return ''
 }
 
+export function htmlKind(src: string) {
+  const clean = decodeSafe(src).split('#')[0].split('?')[0]
+  if (/^(?:[a-z][a-z\d+.-]*:|\/\/)/i.test(clean)) return false
+  return /\.html?$/i.test(clean)
+}
+
 function MarkdownPre({ children }: ComponentPropsWithoutRef<'pre'>) {
   return <>{children}</>
 }
@@ -219,7 +228,7 @@ function MarkdownCode({ className, children, node }: ComponentPropsWithoutRef<'c
 }
 
 function MarkdownImg({ src, alt, title }: ComponentPropsWithoutRef<'img'>) {
-  const { notePath, assets, exporting, drawingVersion, onEditDrawing, onDeleteDrawing, openImage } = useMarkdownRender()
+  const { notePath, assets, exporting, drawingVersion, onEditDrawing, onDeleteDrawing, onOpenHtml, openImage } = useMarkdownRender()
   if (!src) return <span className="missing-image">图片地址为空</span>
   const kind = drawingKind(src)
   if (kind) {
@@ -235,6 +244,12 @@ function MarkdownImg({ src, alt, title }: ComponentPropsWithoutRef<'img'>) {
       onDelete: exporting ? undefined : onDeleteDrawing,
     }
     return kind === 'drawio' ? <DrawioEmbed {...embed} /> : <DrawingEmbed {...embed} />
+  }
+  if (htmlKind(src)) {
+    const htmlPath = resolveNotePath(notePath, src)
+    const embedded = assets?.[src] || assets?.[decodeSafe(src)]
+    if (exporting && !embedded) return <span className="missing-image">[HTML 演示缺失：{alt || src}]</span>
+    return <HtmlEmbed path={htmlPath} alt={alt || 'HTML 演示'} exporting={exporting} embedded={embedded} onOpen={exporting ? undefined : onOpenHtml} />
   }
   const external = /^(https?:|data:|blob:|\/\/)/i.test(src)
   const embedded = assets?.[src] || assets?.[decodeSafe(src)]
@@ -315,7 +330,7 @@ const exportComponents: Components = {
   div: MarkdownDiv,
 }
 
-export function MarkdownView({ content, notePath, assets, lineNumbers, fontSize, noteTitles, onNavigate, onToggleTask, onEditTable, onEditDrawing, onDeleteDrawing, drawingVersion = 0, exporting = false, dark = false, strictLineBreaks = false, autoParseLinks = false, annotations }: MarkdownViewProps) {
+export function MarkdownView({ content, notePath, assets, lineNumbers, fontSize, noteTitles, onNavigate, onToggleTask, onEditTable, onEditDrawing, onDeleteDrawing, onOpenHtml, drawingVersion = 0, exporting = false, dark = false, strictLineBreaks = false, autoParseLinks = false, annotations }: MarkdownViewProps) {
   const [imagePreview, setImagePreview] = useState<{ src: string; alt: string } | null>(null)
   useEffect(() => { setImagePreview(null) }, [notePath, exporting])
   const remarkPlugins = strictLineBreaks ? breakRemarkPlugins : defaultRemarkPlugins
@@ -330,12 +345,13 @@ export function MarkdownView({ content, notePath, assets, lineNumbers, fontSize,
     onEditTable,
     onEditDrawing,
     onDeleteDrawing,
+    onOpenHtml,
     drawingVersion,
     exporting,
     dark,
     autoParseLinks,
     openImage: (src, alt) => setImagePreview({ src, alt }),
-  }), [notePath, assets, lineNumbers, noteTitles, onNavigate, onToggleTask, onEditTable, onEditDrawing, onDeleteDrawing, drawingVersion, exporting, dark, autoParseLinks])
+  }), [notePath, assets, lineNumbers, noteTitles, onNavigate, onToggleTask, onEditTable, onEditDrawing, onDeleteDrawing, onOpenHtml, drawingVersion, exporting, dark, autoParseLinks])
   return <MarkdownRenderContext.Provider value={render}><div className="markdown-body" style={!exporting && fontSize !== undefined ? { fontSize } : undefined}><ReactMarkdown remarkPlugins={remarkPlugins} skipHtml components={components}>{content}</ReactMarkdown>{imagePreview && <ImagePreview src={imagePreview.src} alt={imagePreview.alt} onClose={() => setImagePreview(null)} />}{!exporting && annotations}</div></MarkdownRenderContext.Provider>
 }
 

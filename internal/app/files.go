@@ -263,7 +263,7 @@ func (s *Store) move(from, to, rev string, folder bool) (Note, error) {
 		return Note{}, err
 	}
 	drawing := !folder && isDrawingName(from)
-	office := !folder && isOfficeDocumentName(from)
+	office := !folder && isLibraryDocumentName(from)
 	if drawing && !strings.EqualFold(path.Ext(from), path.Ext(to)) {
 		return Note{}, fmt.Errorf("绘图必须保持原扩展名")
 	}

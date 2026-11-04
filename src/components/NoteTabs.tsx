@@ -3,7 +3,7 @@ import { X } from 'lucide-react'
 import './NoteTabs.css'
 
 function noteName(path: string) {
-  return path.split('/').pop()?.replace(/\.(?:md|docx|pptx|xlsx)$/i, '') || path
+  return path.split('/').pop()?.replace(/\.(?:md|docx|pptx|xlsx|html|htm)$/i, '') || path
 }
 
 export function NoteTabs({ tabs, active, dirty, onSelect, onClose }: { tabs: string[]; active: string; dirty: boolean; onSelect: (path: string) => void; onClose: (path: string) => void }) {
