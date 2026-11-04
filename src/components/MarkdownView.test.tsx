@@ -514,3 +514,45 @@ describe('Markdown rendering', () => {
     expect(fetchMock).not.toHaveBeenCalled()
   })
 })
+
+describe('echo card blocks', () => {
+  it('renders a titled card and keeps nested markdown', () => {
+    render(<MarkdownView content={':::card[概览]\n**加粗**正文\n:::\n'} notePath="笔记.md" lineNumbers={false} />)
+    expect(document.querySelector('.echo-card--card .echo-card-title')).toHaveTextContent('概览')
+    expect(document.querySelector('.echo-card--card strong')).toHaveTextContent('加粗')
+  })
+
+  it('switches horizontal tabs and expands all panels while exporting', () => {
+    const content = ':::htabs\n## 甲\n第一页\n\n## 乙\n第二页\n:::\n'
+    const { rerender } = render(<MarkdownView content={content} notePath="笔记.md" lineNumbers={false} />)
+    expect(screen.getByRole('tab', { name: '甲' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByText('第一页')).toBeInTheDocument()
+    expect(screen.queryByText('第二页')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('tab', { name: '乙' }))
+    expect(screen.getByRole('tab', { name: '乙' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByText('第二页')).toBeInTheDocument()
+    rerender(<MarkdownView content={content} notePath="笔记.md" lineNumbers={false} exporting />)
+    expect(screen.getByText('第一页')).toBeInTheDocument()
+    expect(screen.getByText('第二页')).toBeInTheDocument()
+    expect(screen.queryByRole('tab', { name: '甲' })).not.toBeInTheDocument()
+  })
+
+  it('toggles accordion panels and starts with the first open', () => {
+    render(<MarkdownView content={':::accordion\n## 一\n内容甲\n\n## 二\n内容乙\n:::\n'} notePath="笔记.md" lineNumbers={false} />)
+    expect(screen.getByText('内容甲')).toBeInTheDocument()
+    expect(screen.queryByText('内容乙')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '二' }))
+    expect(screen.getByText('内容乙')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '一' }))
+    expect(screen.queryByText('内容甲')).not.toBeInTheDocument()
+  })
+
+  it('pages a carousel without autoplay controls beyond next/prev', () => {
+    render(<MarkdownView content={':::carousel\n## 幻灯一\n页一\n\n## 幻灯二\n页二\n:::\n'} notePath="笔记.md" lineNumbers={false} />)
+    expect(screen.getByText('页一')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '下一页' }))
+    expect(screen.getByText('页二')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '上一页' }))
+    expect(screen.getByText('页一')).toBeInTheDocument()
+  })
+})

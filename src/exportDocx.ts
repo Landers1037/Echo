@@ -2,6 +2,7 @@ import { createElement } from 'react'
 import { createRoot } from 'react-dom/client'
 import { HighlightColor, TextRun, UnderlineType } from 'docx'
 import remarkBreaks from 'remark-breaks'
+import remarkDirective from 'remark-directive'
 import remarkDocx from 'remark-docx'
 import { imagePlugin } from 'remark-docx/plugins/image'
 import { mermaidPlugin } from 'remark-docx/plugins/mermaid'
@@ -15,6 +16,7 @@ import type { Root, RootContent } from 'mdast'
 import { DrawingEmbed } from './components/Drawing'
 import { DrawioEmbed } from './components/Drawio'
 import { drawingKind, remarkUnderline } from './components/MarkdownView'
+import { remarkEchoCards } from './remarkEchoCards'
 import type { ExportSnapshot } from './types'
 
 const docxType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
@@ -214,6 +216,8 @@ export async function noteToDocx(note: NoteSnapshot, { strictLineBreaks }: { str
   if (strictLineBreaks) processor.use(remarkBreaks)
   const file = await processor
     .use(remarkFrontmatter)
+    .use(remarkDirective)
+    .use(remarkEchoCards, { flatten: true })
     .use(remarkUnderline)
     .use(() => async tree => {
       const root = tree as Root

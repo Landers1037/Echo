@@ -139,4 +139,26 @@ describe('editor context menu', () => {
     expect(editor.state.doc.toString()).toContain('| 列一 | 列二 | 列三 |')
     expect(editor.state.doc.toString()).toContain('| --- | --- | --- |')
   })
+
+  it('inserts a card template from the insert submenu', () => {
+    render(<Editor {...props} value="" />)
+    const editor = EditorView.findFromDOM(document.querySelector('.cm-editor')!)
+    if (!editor) throw new Error('编辑器尚未挂载')
+    fireEvent.contextMenu(editor.contentDOM, { clientX: 24, clientY: 24 })
+    fireEvent.mouseEnter(screen.getByRole('menuitem', { name: '插入' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: '普通卡片' }))
+    expect(editor.state.doc.toString()).toContain(':::card[卡片标题]')
+    expect(editor.state.doc.toString()).toContain(':::')
+  })
+})
+
+describe('editor card toolbar', () => {
+  it('opens the card menu and inserts a horizontal tabs template', () => {
+    const onChange = vi.fn()
+    render(<Editor {...props} value="" onChange={onChange} />)
+    fireEvent.click(screen.getByRole('button', { name: '插入卡片' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: '横向切换卡片' }))
+    expect(String(onChange.mock.calls.at(-1)?.[0])).toContain(':::htabs')
+    expect(String(onChange.mock.calls.at(-1)?.[0])).toContain('## 标签一')
+  })
 })

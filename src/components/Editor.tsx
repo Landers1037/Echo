@@ -9,10 +9,19 @@ import { Annotation, Compartment, EditorState, StateEffect, StateField, type Ext
 import { NoteAiSession } from '../agent/editorSession'
 import { autocompletion } from '@codemirror/autocomplete'
 import { searchKeymap } from '@codemirror/search'
-import { Bold, Italic, Heading, Strikethrough, Underline, Quote, List, ListOrdered, ListTodo, Link, FileSymlink, ImagePlus, Shapes, Code, Code2, Table2, Undo2, Redo2, LoaderCircle, RefreshCw, X, Workflow } from 'lucide-react'
+import { Bold, Italic, Heading, Strikethrough, Underline, Quote, List, ListOrdered, ListTodo, Link, FileSymlink, ImagePlus, Shapes, Code, Code2, Table2, SquareStack, Undo2, Redo2, LoaderCircle, RefreshCw, X, Workflow } from 'lucide-react'
 import { undo, redo } from '@codemirror/commands'
 import { bindingFor, formatShortcut, shortcutBindings } from '../shortcuts'
+import { ECHO_CARD_TEMPLATES, type EchoCardKind } from '../remarkEchoCards'
 import { EditorContextMenu, type EditorContextMenuItem } from './EditorContextMenu'
+
+const cardInsertItems: { id: EchoCardKind; label: string }[] = [
+  { id: 'card', label: '普通卡片' },
+  { id: 'htabs', label: '横向切换卡片' },
+  { id: 'vtabs', label: '纵向切换卡片' },
+  { id: 'accordion', label: '手风琴卡片' },
+  { id: 'carousel', label: '轮播卡片' },
+]
 
 const aiAnnotation = Annotation.define<true>()
 const setAiHighlight = StateEffect.define<DecorationSet>()
@@ -130,6 +139,7 @@ export function Editor(props: EditorProps) {
   const openContextMenu = useRef<(event: MouseEvent, editor: EditorView) => boolean>(() => false)
   const [uploads, setUploads] = useState<Upload[]>([])
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null)
+  const [cardMenu, setCardMenu] = useState<{ left: number; top: number } | null>(null)
   const mounted = useRef(true)
   useEffect(() => { view.current?.requestMeasure() }, [props.fontSize])
   useEffect(() => {
@@ -416,6 +426,11 @@ export function Editor(props: EditorProps) {
         { id: 'table', label: '表格', action: () => insertText('\n| 列一 | 列二 | 列三 |\n| --- | --- | --- |\n| 内容 | 内容 | 内容 |\n| 内容 | 内容 | 内容 |\n') },
         { id: 'image', label: '图片', action: () => fileInput.current?.click() },
         { id: 'drawing', label: '绘图', action: () => { void insertDrawing() } },
+        ...cardInsertItems.map(item => ({
+          id: `card-${item.id}`,
+          label: item.label,
+          action: () => insertText(ECHO_CARD_TEMPLATES[item.id]),
+        })),
       ],
     },
     {
@@ -450,9 +465,33 @@ export function Editor(props: EditorProps) {
     { id: 'table', icon: Table2, title: '插入表格', action: () => insertText('\n| 列一 | 列二 | 列三 |\n| --- | --- | --- |\n| 内容 | 内容 | 内容 |\n| 内容 | 内容 | 内容 |\n') },
   ]
 
+  const cardMenuItems: EditorContextMenuItem[] = cardInsertItems.map(item => ({
+    id: item.id,
+    label: item.label,
+    action: () => insertText(ECHO_CARD_TEMPLATES[item.id]),
+  }))
+
   return <div className="editor-shell" style={{ '--editor-font-size': `${props.fontSize}px` } as CSSProperties}>
     <div className="editor-toolbar" role="toolbar" aria-label="Markdown 快捷操作">
       {tools.map(({ id, icon: Icon, title, action }) => <button key={id} type="button" className="icon-button" title={title} aria-label={title} disabled={aiLocked} onMouseDown={event => event.preventDefault()} onClick={action}><Icon size={16} strokeWidth={1.7} /></button>)}
+      <button
+        type="button"
+        className="icon-button"
+        title="插入卡片"
+        aria-label="插入卡片"
+        aria-haspopup="menu"
+        aria-expanded={Boolean(cardMenu)}
+        disabled={aiLocked}
+        onMouseDown={event => event.preventDefault()}
+        onClick={event => {
+          if (cardMenu) {
+            setCardMenu(null)
+            return
+          }
+          const rect = event.currentTarget.getBoundingClientRect()
+          setCardMenu({ left: rect.left, top: rect.bottom + 4 })
+        }}
+      ><SquareStack size={16} strokeWidth={1.7} /></button>
       <span className="toolbar-separator" />
       <button type="button" className="icon-button" title="撤销" aria-label="撤销" disabled={aiLocked} onClick={() => { if (view.current) undo(view.current) }}><Undo2 size={16} /></button>
       <button type="button" className="icon-button" title="重做" aria-label="重做" disabled={aiLocked} onClick={() => { if (view.current) redo(view.current) }}><Redo2 size={16} /></button>
@@ -465,5 +504,6 @@ export function Editor(props: EditorProps) {
     </div>)}</div>}
     <CodeMirror value={props.value} theme={props.dark ? 'dark' : 'light'} extensions={extensions} basicSetup={{ lineNumbers: props.lineNumbers, foldGutter: true, highlightActiveLineGutter: false, highlightActiveLine: true, autocompletion: true, closeBrackets: true, searchKeymap: true }} onCreateEditor={editor => { view.current = editor; latest.current.onReady?.(controller.current!) }} onChange={props.onChange} className="codemirror-editor" aria-label="Markdown 源码编辑器" />
     {contextMenu && <EditorContextMenu left={contextMenu.left} top={contextMenu.top} items={contextMenuItems} onClose={() => setContextMenu(null)} />}
+    {cardMenu && <EditorContextMenu left={cardMenu.left} top={cardMenu.top} items={cardMenuItems} onClose={() => setCardMenu(null)} />}
   </div>
 }

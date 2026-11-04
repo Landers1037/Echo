@@ -4,14 +4,17 @@ import ReactMarkdown from 'react-markdown'
 import type { Components, ExtraProps } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import remarkBreaks from 'remark-breaks'
+import remarkDirective from 'remark-directive'
 import remarkFrontmatter from 'remark-frontmatter'
 import { codeToHtml } from 'shiki'
 import { Check, Copy, FileSymlink } from 'lucide-react'
 import { apiURL } from '../api'
 import { NOTE_REF_TITLE } from '../noteReference'
 import type { TableEditAction } from '../markdownTable'
+import { remarkEchoCards } from '../remarkEchoCards'
 import { DrawingEmbed } from './Drawing'
 import { DrawioEmbed } from './Drawio'
+import { echoCardFromDivProps } from './EchoCards'
 import { EditableTable } from './EditableTable'
 import { ImagePreview, PreviewableImage } from './ImagePreview'
 import { LinkCard } from './LinkCard'
@@ -172,8 +175,8 @@ export function remarkUnderline() {
   return (tree: MarkdownNode) => { wrapUnderline(tree) }
 }
 
-const defaultRemarkPlugins = [remarkGfm, remarkFrontmatter, remarkUnderline]
-const breakRemarkPlugins = [remarkGfm, remarkBreaks, remarkFrontmatter, remarkUnderline]
+const defaultRemarkPlugins = [remarkGfm, remarkFrontmatter, remarkDirective, remarkEchoCards, remarkUnderline]
+const breakRemarkPlugins = [remarkGfm, remarkBreaks, remarkFrontmatter, remarkDirective, remarkEchoCards, remarkUnderline]
 
 function sourceHeading(tag: 'h1' | 'h2' | 'h3' | 'h4' | 'h5') {
   return ({ node, children, ...props }: ComponentPropsWithoutRef<'h1'> & ExtraProps) => createElement(tag, { ...props, 'data-heading-line': node?.position?.start.line, 'data-source-line': node?.position?.start.line, tabIndex: -1 }, children)
@@ -281,6 +284,13 @@ function MarkdownTable({ children, node }: ComponentPropsWithoutRef<'table'> & E
   return <div className="markdown-table-wrap" data-source-line={sourceLine}><table>{children}</table></div>
 }
 
+function MarkdownDiv({ className, children, node: _node, ...props }: ComponentPropsWithoutRef<'div'> & ExtraProps) {
+  const { exporting } = useMarkdownRender()
+  const card = echoCardFromDivProps({ className, ...props }, children, exporting)
+  if (card) return card
+  return <div className={className} {...props}>{children}</div>
+}
+
 const previewComponents: Components = {
   ...previewHeadings,
   ...previewBlocks,
@@ -291,6 +301,7 @@ const previewComponents: Components = {
   li: MarkdownListItem,
   input: MarkdownInput,
   table: MarkdownTable,
+  div: MarkdownDiv,
 }
 
 const exportComponents: Components = {
@@ -301,6 +312,7 @@ const exportComponents: Components = {
   li: MarkdownListItem,
   input: MarkdownInput,
   table: MarkdownTable,
+  div: MarkdownDiv,
 }
 
 export function MarkdownView({ content, notePath, assets, lineNumbers, fontSize, noteTitles, onNavigate, onToggleTask, onEditTable, onEditDrawing, onDeleteDrawing, drawingVersion = 0, exporting = false, dark = false, strictLineBreaks = false, autoParseLinks = false, annotations }: MarkdownViewProps) {

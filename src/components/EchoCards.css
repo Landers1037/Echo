@@ -1,0 +1,32 @@
+.markdown-body .echo-card{margin:20px 0;border:1px solid var(--border);border-radius:8px;background:var(--surface);overflow:hidden}
+.markdown-body .echo-card-title{padding:14px 18px;border-bottom:1px solid var(--border);font-family:var(--font-heading);font-size:15px;font-weight:600;background:var(--panel)}
+.markdown-body .echo-card-body{padding:14px 18px}
+.markdown-body .echo-card-body>:first-child{margin-top:0}
+.markdown-body .echo-card-body>:last-child{margin-bottom:0}
+.markdown-body .echo-card-panel{display:contents}
+.markdown-body .echo-card--tabs{display:flex;flex-direction:column}
+.markdown-body .echo-card--tabs.is-vertical{flex-direction:row;align-items:stretch;min-height:160px}
+.markdown-body .echo-card-tabs{display:flex;gap:2px;padding:6px;background:var(--panel);border-bottom:1px solid var(--border);overflow:auto}
+.markdown-body .echo-card--tabs.is-vertical .echo-card-tabs{flex-direction:column;width:min(180px,36%);border-bottom:0;border-right:1px solid var(--border);flex-shrink:0}
+.markdown-body .echo-card-tabs button{padding:8px 14px;font-size:12px;color:var(--muted);white-space:nowrap;border-radius:var(--radius)}
+.markdown-body .echo-card-tabs button.is-active{background:var(--bg);color:var(--text);box-shadow:var(--shadow-sm)}
+.markdown-body .echo-card--tabs.is-vertical .echo-card-body{flex:1;min-width:0}
+.markdown-body .echo-card-accordion-item{border-bottom:1px solid var(--border)}
+.markdown-body .echo-card-accordion-item:last-child{border-bottom:0}
+.markdown-body .echo-card-accordion-trigger{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;padding:12px 18px;text-align:left;font-size:13px;font-weight:600;color:var(--text);border-radius:0}
+.markdown-body .echo-card-accordion-trigger svg{color:var(--muted);transition:transform .15s}
+.markdown-body .echo-card-accordion-item.is-open .echo-card-accordion-trigger svg{transform:rotate(180deg)}
+.markdown-body .echo-card-accordion-item .echo-card-body{padding-top:0}
+.markdown-body .echo-card-carousel-toolbar{display:flex;align-items:center;gap:8px;padding:8px 10px;border-bottom:1px solid var(--border);background:var(--panel)}
+.markdown-body .echo-card-carousel-title{flex:1;min-width:0;text-align:center;font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.markdown-body .echo-card-dots{display:flex;justify-content:center;gap:6px;padding:0 18px 14px}
+.markdown-body .echo-card-dots button{width:8px;height:8px;padding:0;border-radius:50%;background:var(--border)}
+.markdown-body .echo-card-dots button.is-active{background:var(--accent)}
+.markdown-body .echo-card-static-panel{padding:0 18px 16px}
+.markdown-body .echo-card-static-panel:first-of-type{padding-top:14px}
+.markdown-body .echo-card-static-heading{margin:0 0 8px;font-size:14px;font-weight:600}
+.markdown-body .echo-card--static>.echo-card-title+ .echo-card-static-panel{padding-top:14px}
+@media(max-width:560px){
+  .markdown-body .echo-card--tabs.is-vertical{flex-direction:column}
+  .markdown-body .echo-card--tabs.is-vertical .echo-card-tabs{width:auto;border-right:0;border-bottom:1px solid var(--border);flex-direction:row}
+}

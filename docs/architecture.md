@@ -17,7 +17,7 @@ Echo 是**个人本机使用**的 Markdown 笔记 WebApp：一个 Go 进程同�
 | 层 | 技术 |
 | --- | --- |
 | 后端 | Go 1.26（`go.mod`），标准库 `net/http`；`gopkg.in/yaml.v3`（frontmatter）、`github.com/yuin/goldmark`（Markdown AST，用于识别代码块和图片引用）、`modernc.org/sqlite`（纯 Go SQLite，用于 Agent 聊天记录和预览标注） |
-| 前端 | React 19 + TypeScript 5 + Vite 6；CodeMirror 6（`@uiw/react-codemirror`）编辑器；`react-markdown` + `remark-gfm` / `remark-breaks` / `remark-frontmatter` 预览；`shiki` 代码高亮；`mermaid` 图表；`@excalidraw/excalidraw` 绘图；Draw.io `v32.6.1` 静态站点（不作为 npm 依赖，见 `scripts/fetch-drawio.mjs`）；`motion` 动画；`lucide-react` 图标；`fflate` 生成 ZIP |
+| 前端 | React 19 + TypeScript 5 + Vite 6；CodeMirror 6（`@uiw/react-codemirror`）编辑器；`react-markdown` + `remark-gfm` / `remark-breaks` / `remark-frontmatter` / `remark-directive` 预览（卡片块见 `remarkEchoCards`）；`shiki` 代码高亮；`mermaid` 图表；`@excalidraw/excalidraw` 绘图；Draw.io `v32.6.1` 静态站点（不作为 npm 依赖，见 `scripts/fetch-drawio.mjs`）；`motion` 动画；`lucide-react` 图标；`fflate` 生成 ZIP |
 | 测试 | Go `testing`；Vitest + jsdom + Testing Library；`scripts/smoke.mjs` 针对运行中服务的 API 冒烟测试 |
 | 构建脚本 | `scripts/dev.mjs`（开发）、`scripts/build.mjs`（发布）、`scripts/fetch-drawio.mjs`（拉取离线 Draw.io） |
 
