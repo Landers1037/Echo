@@ -1,5 +1,10 @@
 .outline-toggle{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:34px;padding:7px 11px;border:1px solid var(--border);color:var(--muted);background:var(--bg);font-size:12px;white-space:nowrap}
-.outline-toggle[aria-expanded=true]{background:var(--accent-soft);border-color:color-mix(in srgb,var(--accent) 45%,var(--border));color:var(--accent)}
+.outline-toggle[aria-expanded=true],.outline-toggle[aria-pressed=true]{background:var(--accent-soft);border-color:color-mix(in srgb,var(--accent) 45%,var(--border));color:var(--accent)}
+:root .app-shell.focus-mode{justify-content:center;gap:0;padding:28px 36px;background:color-mix(in srgb,var(--panel) 72%,var(--bg))}
+:root .app-shell.focus-mode :is(.sidebar,.sidebar-resizer,.sidebar-scrim,.agent-panel,.agent-resizer,.topbar,.note-tabs,.selection-bar,.statusbar){display:none!important}
+:root .app-shell.focus-mode .main-panel{flex:1 1 auto;width:min(1120px,100%);max-width:1120px;min-width:0;min-height:0;border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--surface);box-shadow:0 18px 56px #00000026,0 4px 18px #00000014;overflow:hidden}
+:root[data-theme=dark] .app-shell.focus-mode .main-panel{box-shadow:0 22px 64px #00000073,0 6px 20px #00000040}
+@media(max-width:760px){:root .app-shell.focus-mode{padding:12px}:root .app-shell.focus-mode .main-panel{width:100%;max-width:none;border-radius:var(--radius)}}
 .fullscreen-preview{position:fixed;inset:0;z-index:90;display:flex;flex-direction:column;background:var(--bg);color:var(--text)}
 .fullscreen-preview:fullscreen{background:var(--bg)}
 .fullscreen-preview-bar{display:flex;align-items:center;justify-content:space-between;gap:16px;min-height:56px;padding:0 22px;border-bottom:1px solid var(--border);flex-shrink:0}
