@@ -164,6 +164,18 @@ describe('editor context menu', () => {
   })
 })
 
+describe('editor selection', () => {
+  it('draws a highlight layer so a single-line selection stays visible', () => {
+    render(<Editor {...props} value="你好世界" />)
+    const editor = EditorView.findFromDOM(document.querySelector('.cm-editor')!)
+    if (!editor) throw new Error('编辑器尚未挂载')
+    editor.dispatch({ selection: { anchor: 0, head: 2 } })
+    expect(document.querySelector('.cm-selectionLayer')).toBeInTheDocument()
+    expect(editor.state.selection.main.from).toBe(0)
+    expect(editor.state.selection.main.to).toBe(2)
+  })
+})
+
 describe('editor card toolbar', () => {
   it('opens the card menu and inserts a horizontal tabs template', () => {
     const onChange = vi.fn()

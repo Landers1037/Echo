@@ -3,7 +3,7 @@ import type { CSSProperties } from 'react'
 import CodeMirror from '@uiw/react-codemirror'
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
 import { languages } from '@codemirror/language-data'
-import { Decoration, EditorView, keymap } from '@codemirror/view'
+import { Decoration, drawSelection, EditorView, keymap } from '@codemirror/view'
 import type { DecorationSet, ViewUpdate } from '@codemirror/view'
 import { Annotation, Compartment, EditorState, StateEffect, StateField, type Extension } from '@codemirror/state'
 import { NoteAiSession } from '../agent/editorSession'
@@ -329,6 +329,7 @@ export function Editor(props: EditorProps) {
   const extensions = useMemo<Extension[]>(() => [
     markdown({ base: markdownLanguage, codeLanguages: languages }),
     autocompletion(),
+    drawSelection(),
     EditorView.lineWrapping,
     EditorView.updateListener.of((update: ViewUpdate) => {
       if (!update.docChanged) return
@@ -374,10 +375,12 @@ export function Editor(props: EditorProps) {
       '.cm-content': { padding: '32px 36px', minHeight: '100%', caretColor: 'var(--accent)' },
       '.cm-gutters': { backgroundColor: 'transparent', color: 'var(--muted)', borderRight: 'none' },
       '.cm-lineNumbers .cm-gutterElement': { paddingLeft: '12px', paddingRight: '8px' },
-      '.cm-activeLine': { backgroundColor: 'var(--accent-soft)' },
+      // 当前行用半透明强调色。不透明背景会盖住选区层，单行选中时看不到高亮。
+      '.cm-activeLine': { backgroundColor: 'color-mix(in srgb, var(--accent) 12%, transparent)' },
       '.cm-activeLineGutter': { backgroundColor: 'transparent' },
       '&.cm-focused': { outline: 'none' },
-      '.cm-selectionBackground, &.cm-focused .cm-selectionBackground': { backgroundColor: 'var(--selection)' },
+      '.cm-selectionBackground': { backgroundColor: 'var(--selection) !important' },
+      '.cm-cursor, .cm-dropCursor': { borderLeftColor: 'var(--accent)' },
       '.cm-ai-edit': { backgroundColor: 'color-mix(in srgb, var(--accent) 32%, transparent)', borderRadius: '2px' },
     }),
   ], [commands, props.shortcuts, readOnlyCompartment, shortcutCompartment])
