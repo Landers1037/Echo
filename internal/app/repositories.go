@@ -103,6 +103,13 @@ func loadRepositories(file string) ([]Repository, error) {
 // directory always wins. Otherwise the most recent repository is opened, and
 // a failure falls back to fallback.
 func OpenWorkspace(fallback string, explicit bool) (*Workspace, error) {
+	return OpenWorkspaceWithOptions(fallback, explicit, OpenOptions{})
+}
+
+// OpenWorkspaceWithOptions opens a notebook and, when requested, applies scan
+// excludes before the first directory walk. A history fallback is a different
+// notebook, so those excludes are not written there.
+func OpenWorkspaceWithOptions(fallback string, explicit bool, opts OpenOptions) (*Workspace, error) {
 	file, err := repositoriesPath()
 	if err != nil {
 		return nil, err
@@ -120,7 +127,7 @@ func OpenWorkspace(fallback string, explicit bool) (*Workspace, error) {
 			}
 		}
 	}
-	store, err := Open(root)
+	store, err := OpenWithOptions(root, opts)
 	if err != nil && !explicit && root != fallback {
 		store, err = Open(fallback)
 	}

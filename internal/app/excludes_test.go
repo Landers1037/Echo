@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestScanExcludePatterns(t *testing.T) {
@@ -246,6 +247,304 @@ func TestScanExcludesRejectInvalidRulesAndPreserveLegacy(t *testing.T) {
 	if _, err := Open(root); err == nil || !strings.Contains(err.Error(), "整个笔记库") {
 		t.Fatalf("corrupt excludes opened: %v", err)
 	}
+}
+
+func TestReadScanExcludes(t *testing.T) {
+	if got, err := ReadScanExcludes(""); err != nil || len(got) != 0 {
+		t.Fatalf("empty root: %#v %v", got, err)
+	}
+	missing := t.TempDir()
+	if got, err := ReadScanExcludes(missing); err != nil || len(got) != 0 {
+		t.Fatalf("missing state: %#v %v", got, err)
+	}
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, ".echo"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	state := filepath.Join(root, ".echo", "state.json")
+	if err := os.WriteFile(state, []byte(`{"settings":{"scanExcludes":[" # deps","","node_modules\\","dist","dist"]}}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	got, err := ReadScanExcludes(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got, []string{"node_modules/", "dist"}) {
+		t.Fatalf("read excludes: %#v", got)
+	}
+	if err := os.WriteFile(state, []byte("{"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ReadScanExcludes(root); err == nil || !strings.Contains(err.Error(), "损坏") {
+		t.Fatalf("corrupt state: %v", err)
+	}
+	if err := os.WriteFile(state, []byte(`{"settings":{"scanExcludes":["*"]}}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ReadScanExcludes(root); err == nil || !strings.Contains(err.Error(), "整个笔记库") {
+		t.Fatalf("invalid rules: %v", err)
+	}
+}
+
+func TestExcludeDirsToPatterns(t *testing.T) {
+	root := t.TempDir()
+	nodeModules := filepath.Join(root, "node_modules")
+	nested := filepath.Join(root, "My Notes", "cache")
+	if err := os.MkdirAll(filepath.Join(nodeModules, "pkg"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(nested, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, ".echo", "trash"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	file := filepath.Join(root, "keep.md")
+	if err := os.WriteFile(file, []byte("# keep\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	outside := t.TempDir()
+	patterns, rejected, err := ExcludeDirsToPatterns(root, []string{
+		nodeModules,
+		nested,
+		nodeModules,
+		filepath.Join(root, "My Notes", "cache") + string(filepath.Separator),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rejected) != 0 {
+		t.Fatalf("unexpected rejects: %#v", rejected)
+	}
+	if !reflect.DeepEqual(patterns, []string{"/node_modules/", "/My Notes/cache/"}) {
+		t.Fatalf("patterns: %#v", patterns)
+	}
+	_, rejected, err = ExcludeDirsToPatterns(root, []string{root, outside, file, filepath.Join(root, ".echo"), filepath.Join(root, ".echo", "trash")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rejected) != 5 {
+		t.Fatalf("rejected: %#v", rejected)
+	}
+	joined := strings.Join(rejected, "\n")
+	for _, want := range []string{"不能排除整个笔记库", "不在笔记目录内", "不是文件夹", "不能排除 .echo 配置目录"} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("rejected %q missing from %s", want, joined)
+		}
+	}
+	if _, _, err = ExcludeDirsToPatterns("", []string{nodeModules}); err == nil || !strings.Contains(err.Error(), "笔记目录") {
+		t.Fatalf("empty root: %v", err)
+	}
+	if _, _, err = ExcludeDirsToPatterns(filepath.Join(root, "missing-notebook"), []string{nodeModules}); err == nil {
+		t.Fatal("missing notebook accepted")
+	}
+	if runtime.GOOS == "windows" {
+		folded := filepath.Join(strings.ToUpper(root), "NODE_MODULES")
+		patterns, rejected, err = ExcludeDirsToPatterns(strings.ToLower(root), []string{folded})
+		if err != nil || len(rejected) != 0 || !reflect.DeepEqual(patterns, []string{"/node_modules/"}) {
+			t.Fatalf("windows case: %#v %#v %v", patterns, rejected, err)
+		}
+	}
+}
+
+func TestOpenWithOptionsAppliesExcludesBeforeFirstScan(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "node_modules", "pkg"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "node_modules", "pkg", "README.md"), []byte("# hidden\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	s, err := OpenWithOptions(root, OpenOptions{ApplyScanExcludes: true, ScanExcludes: []string{"/node_modules/"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	notes, err := s.listNotes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(notes) != 1 || notes[0].Path != "欢迎使用 Echo.md" {
+		t.Fatalf("notes: %#v", notePaths(notes))
+	}
+	if !reflect.DeepEqual(s.state.Settings.ScanExcludes, []string{"/node_modules/"}) {
+		t.Fatalf("excludes: %#v", s.state.Settings.ScanExcludes)
+	}
+	reopened, err := Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(reopened.state.Settings.ScanExcludes, []string{"/node_modules/"}) {
+		t.Fatalf("persisted: %#v", reopened.state.Settings.ScanExcludes)
+	}
+	notes, err = reopened.listNotes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if containsPath(notePaths(notes), "node_modules/pkg/README.md") {
+		t.Fatalf("excluded note indexed: %#v", notePaths(notes))
+	}
+
+	withKeep := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(withKeep, "pkg", "node_modules"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(withKeep, "keep.md"), []byte("# keep\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(withKeep, "pkg", "node_modules", "README.md"), []byte("# hidden\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	patterns, rejected, err := ExcludeDirsToPatterns(withKeep, []string{filepath.Join(withKeep, "pkg", "node_modules")})
+	if err != nil || len(rejected) != 0 {
+		t.Fatalf("convert nested: %#v %#v %v", patterns, rejected, err)
+	}
+	keptStore, err := OpenWithOptions(withKeep, OpenOptions{ApplyScanExcludes: true, ScanExcludes: patterns})
+	if err != nil {
+		t.Fatal(err)
+	}
+	notes, err = keptStore.listNotes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	paths := notePaths(notes)
+	if !containsPath(paths, "keep.md") || containsPath(paths, "pkg/node_modules/README.md") || containsPath(paths, "欢迎使用 Echo.md") {
+		t.Fatalf("first scan paths: %#v", paths)
+	}
+}
+
+func TestOpenWithOptionsReplacesAndClearsStoredExcludes(t *testing.T) {
+	s := testStore(t)
+	if err := os.MkdirAll(filepath.Join(s.root, "node_modules"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(s.root, "node_modules", "hidden.md"), []byte("# hidden\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	excluded, err := OpenWithOptions(s.root, OpenOptions{ApplyScanExcludes: true, ScanExcludes: []string{"node_modules"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	notes, err := excluded.listNotes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if containsPath(notePaths(notes), "node_modules/hidden.md") {
+		t.Fatal("hidden note was indexed")
+	}
+	if !reflect.DeepEqual(excluded.state.Settings.ScanExcludes, []string{"node_modules"}) {
+		t.Fatalf("stored: %#v", excluded.state.Settings.ScanExcludes)
+	}
+	info, err := os.Stat(filepath.Join(s.root, ".echo", "state.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	written := info.ModTime()
+	time.Sleep(20 * time.Millisecond)
+	same, err := OpenWithOptions(s.root, OpenOptions{ApplyScanExcludes: true, ScanExcludes: []string{"node_modules"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(same.state.Settings.ScanExcludes, []string{"node_modules"}) {
+		t.Fatalf("unchanged open: %#v", same.state.Settings.ScanExcludes)
+	}
+	info, err = os.Stat(filepath.Join(s.root, ".echo", "state.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.ModTime().After(written) {
+		t.Fatal("unchanged excludes rewrote state.json")
+	}
+	ignored, err := OpenWithOptions(s.root, OpenOptions{ScanExcludes: []string{"/vendor/"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(ignored.state.Settings.ScanExcludes, []string{"node_modules"}) {
+		t.Fatalf("apply flag ignored: %#v", ignored.state.Settings.ScanExcludes)
+	}
+	cleared, err := OpenWithOptions(s.root, OpenOptions{ApplyScanExcludes: true, ScanExcludes: nil})
+	if err != nil {
+		t.Fatal(err)
+	}
+	notes, err = cleared.listNotes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !containsPath(notePaths(notes), "node_modules/hidden.md") {
+		t.Fatalf("cleared excludes still hide the note: %#v", notePaths(notes))
+	}
+	if len(cleared.state.Settings.ScanExcludes) != 0 {
+		t.Fatalf("cleared: %#v", cleared.state.Settings.ScanExcludes)
+	}
+	if _, err = OpenWithOptions(s.root, OpenOptions{ApplyScanExcludes: true, ScanExcludes: []string{"*"}}); err == nil {
+		t.Fatal("invalid startup excludes accepted")
+	}
+	preserved, err := Open(s.root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(preserved.state.Settings.ScanExcludes) != 0 {
+		t.Fatalf("failed apply changed excludes: %#v", preserved.state.Settings.ScanExcludes)
+	}
+}
+
+func TestOpenWithOptionsRepairsInvalidStoredExcludes(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, ".echo"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, ".echo", "state.json"), []byte(`{"settings":{"assetsDir":".assets","scanExcludes":["*"]}}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "keep.md"), []byte("# keep\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Open(root); err == nil {
+		t.Fatal("invalid excludes still open")
+	}
+	s, err := OpenWithOptions(root, OpenOptions{ApplyScanExcludes: true, ScanExcludes: []string{"/node_modules/"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(s.state.Settings.ScanExcludes, []string{"/node_modules/"}) {
+		t.Fatalf("repaired: %#v", s.state.Settings.ScanExcludes)
+	}
+	notes, err := s.listNotes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !containsPath(notePaths(notes), "keep.md") {
+		t.Fatalf("notes: %#v", notePaths(notes))
+	}
+}
+
+func TestOpenWorkspaceWithOptionsAppliesExcludes(t *testing.T) {
+	useRepositoryConfig(t)
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "node_modules"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "node_modules", "README.md"), []byte("# hidden\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	ws, err := OpenWorkspaceWithOptions(root, true, OpenOptions{ApplyScanExcludes: true, ScanExcludes: []string{"/node_modules/"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	notes, err := ws.current().listNotes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if containsPath(notePaths(notes), "node_modules/README.md") || !containsPath(notePaths(notes), "欢迎使用 Echo.md") {
+		t.Fatalf("workspace notes: %#v", notePaths(notes))
+	}
+}
+
+func notePaths(notes []Note) []string {
+	paths := make([]string, len(notes))
+	for i, note := range notes {
+		paths[i] = note.Path
+	}
+	return paths
 }
 
 func containsPath(paths []string, want string) bool {

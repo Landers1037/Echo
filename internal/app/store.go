@@ -13,6 +13,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -20,23 +21,23 @@ import (
 )
 
 type Settings struct {
-	Theme               string            `json:"theme"`
-	UIStyle             string            `json:"uiStyle"`
-	Accent              string            `json:"accent"`
-	Animations          bool              `json:"animations"`
-	EditorFontSize      int               `json:"editorFontSize"`
-	EditorLineNumbers   bool              `json:"editorLineNumbers"`
-	PreviewLineNumbers  bool              `json:"previewLineNumbers"`
-	MultiTabs           bool              `json:"multiTabs"`
-	SourceSplitPreview  bool              `json:"sourceSplitPreview"`
-	StrictLineBreaks    bool              `json:"strictLineBreaks"`
-	AutoParseLinks      bool              `json:"autoParseLinks"`
-	NoteWidth           string            `json:"noteWidth"`
-	AssetsDir           string            `json:"assetsDir"`
-	ScanExcludes        []string          `json:"scanExcludes"`
-	Shortcuts           map[string]string `json:"shortcuts"`
-	VersionRepoEnabled  bool              `json:"versionRepoEnabled"`
-	AutoVersionDaily    bool              `json:"autoVersionDaily"`
+	Theme              string            `json:"theme"`
+	UIStyle            string            `json:"uiStyle"`
+	Accent             string            `json:"accent"`
+	Animations         bool              `json:"animations"`
+	EditorFontSize     int               `json:"editorFontSize"`
+	EditorLineNumbers  bool              `json:"editorLineNumbers"`
+	PreviewLineNumbers bool              `json:"previewLineNumbers"`
+	MultiTabs          bool              `json:"multiTabs"`
+	SourceSplitPreview bool              `json:"sourceSplitPreview"`
+	StrictLineBreaks   bool              `json:"strictLineBreaks"`
+	AutoParseLinks     bool              `json:"autoParseLinks"`
+	NoteWidth          string            `json:"noteWidth"`
+	AssetsDir          string            `json:"assetsDir"`
+	ScanExcludes       []string          `json:"scanExcludes"`
+	Shortcuts          map[string]string `json:"shortcuts"`
+	VersionRepoEnabled bool              `json:"versionRepoEnabled"`
+	AutoVersionDaily   bool              `json:"autoVersionDaily"`
 }
 type Note struct {
 	Path          string   `json:"path"`
@@ -108,12 +109,14 @@ type Document struct {
 	Modified string `json:"modified"`
 	Size     int64  `json:"size"`
 }
+
 const docxMediaType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 const pptxMediaType = "application/vnd.openxmlformats-officedocument.presentationml.presentation"
 const xlsxMediaType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 const htmlMediaType = "text/html; charset=utf-8"
 const maxDocumentBytes = 50 * 1024 * 1024
 const maxHtmlDocumentBytes = 5 * 1024 * 1024
+
 type Conflict struct {
 	Current Note
 	message string
@@ -151,7 +154,19 @@ func revision(content []byte) string {
 	return hex.EncodeToString(sum[:])
 }
 
+// OpenOptions controls work that must happen before the first notebook scan.
+// When ApplyScanExcludes is set, ScanExcludes replaces the stored rules before
+// notes are listed, and an existing notebook is updated immediately.
+type OpenOptions struct {
+	ApplyScanExcludes bool
+	ScanExcludes      []string
+}
+
 func Open(root string) (*Store, error) {
+	return OpenWithOptions(root, OpenOptions{})
+}
+
+func OpenWithOptions(root string, opts OpenOptions) (*Store, error) {
 	absolute, err := filepath.Abs(root)
 	if err != nil {
 		return nil, err
@@ -188,8 +203,12 @@ func Open(root string) (*Store, error) {
 	if s.state.Settings.Shortcuts == nil {
 		s.state.Settings.Shortcuts = map[string]string{}
 	}
-	if s.state.Settings.ScanExcludes, err = normalizeScanExcludes(s.state.Settings.ScanExcludes); err != nil {
-		return nil, fmt.Errorf("扫描排除规则无效: %w", err)
+	normalizedExcludes, diskExcludeErr := normalizeScanExcludes(s.state.Settings.ScanExcludes)
+	if diskExcludeErr != nil && !opts.ApplyScanExcludes {
+		return nil, fmt.Errorf("扫描排除规则无效: %w", diskExcludeErr)
+	}
+	if diskExcludeErr == nil {
+		s.state.Settings.ScanExcludes = normalizedExcludes
 	}
 	if err = s.recoverMigration(); err != nil {
 		return nil, err
@@ -205,6 +224,19 @@ func Open(root string) (*Store, error) {
 	}
 	if _, err = s.safePath(s.state.Settings.AssetsDir); err != nil {
 		return nil, err
+	}
+	if opts.ApplyScanExcludes {
+		next, normErr := normalizeScanExcludes(opts.ScanExcludes)
+		if normErr != nil {
+			return nil, fmt.Errorf("扫描排除规则无效: %w", normErr)
+		}
+		current, currentErr := normalizeScanExcludes(s.state.Settings.ScanExcludes)
+		s.state.Settings.ScanExcludes = next
+		if (currentErr != nil || !slices.Equal(current, next)) && !first {
+			if err = s.persist(); err != nil {
+				return nil, err
+			}
+		}
 	}
 	if first {
 		notes, e := s.listNotes()

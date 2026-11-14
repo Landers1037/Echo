@@ -1,8 +1,11 @@
 package app
 
 import (
+	"encoding/json"
 	"fmt"
+	"os"
 	"path"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"unicode/utf8"
@@ -195,6 +198,140 @@ func excludeMatch(patterns []excludePattern, rel string, isDir bool) bool {
 
 func (s *Store) pathExcluded(rel string, isDir bool) bool {
 	return pathExcluded(s.state.Settings.ScanExcludes, rel, isDir)
+}
+
+// NormalizeScanExcludes canonicalizes startup and settings exclude rules.
+func NormalizeScanExcludes(lines []string) ([]string, error) {
+	return normalizeScanExcludes(lines)
+}
+
+// ReadScanExcludes reads scanExcludes from a notebook without creating it or
+// walking its notes. A missing notebook or state file yields an empty list.
+func ReadScanExcludes(root string) ([]string, error) {
+	root = strings.TrimSpace(root)
+	if root == "" {
+		return []string{}, nil
+	}
+	abs, err := filepath.Abs(root)
+	if err != nil {
+		return nil, err
+	}
+	if resolved, evalErr := filepath.EvalSymlinks(abs); evalErr == nil {
+		abs = resolved
+	} else if !os.IsNotExist(evalErr) {
+		return nil, evalErr
+	}
+	data, err := os.ReadFile(filepath.Join(abs, ".echo", "state.json"))
+	if os.IsNotExist(err) {
+		return []string{}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var state diskState
+	if err = json.Unmarshal(data, &state); err != nil {
+		return nil, fmt.Errorf("state.json 损坏，请从备份恢复: %w", err)
+	}
+	return normalizeScanExcludes(state.Settings.ScanExcludes)
+}
+
+// ExcludeDirsToPatterns converts selected directories into anchored directory
+// excludes ("/relative/path/"). Directories outside the notebook, the notebook
+// itself, and the reserved .echo directory are returned in rejected. root must
+// already be a directory; a failure to resolve it is returned in err.
+func ExcludeDirsToPatterns(root string, dirs []string) ([]string, []string, error) {
+	rootDir, err := canonicalDirectory(root)
+	if err != nil {
+		if strings.TrimSpace(root) == "" {
+			return nil, nil, fmt.Errorf("请先选择笔记目录")
+		}
+		return nil, nil, fmt.Errorf("笔记目录无效：%w", err)
+	}
+	accepted := []string{}
+	rejected := []string{}
+	for _, dir := range dirs {
+		dir = strings.TrimSpace(dir)
+		if dir == "" {
+			continue
+		}
+		pattern, reason := excludeDirPattern(rootDir, dir)
+		if reason != "" {
+			rejected = append(rejected, dir+"："+reason)
+			continue
+		}
+		accepted = append(accepted, pattern)
+	}
+	normalized, err := normalizeScanExcludes(accepted)
+	if err != nil {
+		return nil, rejected, err
+	}
+	return normalized, rejected, nil
+}
+
+func excludeDirPattern(root, dir string) (string, string) {
+	resolved, err := canonicalDirectory(dir)
+	if err != nil {
+		return "", err.Error()
+	}
+	rel, err := relativeInsideDirectory(root, resolved)
+	if err != nil {
+		return "", err.Error()
+	}
+	if rel == "." {
+		return "", "不能排除整个笔记库"
+	}
+	pattern := "/" + rel + "/"
+	if _, err = normalizeScanExcludes([]string{pattern}); err != nil {
+		return "", err.Error()
+	}
+	return pattern, ""
+}
+
+func canonicalDirectory(raw string) (string, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "", fmt.Errorf("路径为空")
+	}
+	abs, err := filepath.Abs(raw)
+	if err != nil {
+		return "", err
+	}
+	resolved, err := filepath.EvalSymlinks(abs)
+	if err != nil {
+		return "", fmt.Errorf("无法访问目录：%w", err)
+	}
+	info, err := os.Stat(resolved)
+	if err != nil {
+		return "", fmt.Errorf("无法访问目录：%w", err)
+	}
+	if !info.IsDir() {
+		return "", fmt.Errorf("不是文件夹")
+	}
+	return filepath.Clean(resolved), nil
+}
+
+func relativeInsideDirectory(root, dir string) (string, error) {
+	root = filepath.Clean(root)
+	dir = filepath.Clean(dir)
+	if strings.EqualFold(dir, root) {
+		return ".", nil
+	}
+	if len(dir) <= len(root) || !strings.EqualFold(dir[:len(root)], root) || (dir[len(root)] != filepath.Separator && dir[len(root)] != '/') {
+		return "", fmt.Errorf("不在笔记目录内")
+	}
+	rel := path.Clean(filepath.ToSlash(dir[len(root)+1:]))
+	if rel == "." || rel == "" || rel == ".." || strings.HasPrefix(rel, "../") {
+		return "", fmt.Errorf("不在笔记目录内")
+	}
+	for _, part := range strings.Split(rel, "/") {
+		if strings.EqualFold(part, ".echo") {
+			return "", fmt.Errorf("不能排除 .echo 配置目录")
+		}
+		if part == "" || part == "." || part == ".." {
+			return "", fmt.Errorf("排除目录无效")
+		}
+	}
+	return rel, nil
 }
 
 func (s *Store) ensureScanned(name string, isDir bool) error {

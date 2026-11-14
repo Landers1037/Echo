@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"syscall"
@@ -34,17 +36,23 @@ func main() {
 }
 
 type guiApp struct {
-	app        *walk.Application
-	mw         *walk.MainWindow
-	setup      *walk.Composite
-	logs       *walk.Composite
-	path       *walk.LineEdit
-	host       *walk.LineEdit
-	port       *walk.LineEdit
-	openBtn    *walk.PushButton
-	browserBtn *walk.PushButton
-	pageURL    string
-	log        *guiLog
+	app            *walk.Application
+	mw             *walk.MainWindow
+	setup          *walk.Composite
+	logs           *walk.Composite
+	path           *walk.LineEdit
+	host           *walk.LineEdit
+	port           *walk.LineEdit
+	excludes       *walk.ListBox
+	removeBtn      *walk.PushButton
+	clearBtn       *walk.PushButton
+	openBtn        *walk.PushButton
+	browserBtn     *walk.PushButton
+	pageURL        string
+	log            *guiLog
+	loadedDir      string
+	excludeRules   []string
+	excludeLoadErr error
 
 	mu      sync.Mutex
 	running bool
@@ -59,20 +67,45 @@ func (g *guiApp) create() error {
 		AssignTo: &g.mw,
 		Title:    "Echo",
 		Font:     Font{Family: "Segoe UI", PointSize: 9},
-		MinSize:  Size{Width: 480, Height: 200},
-		Size:     Size{Width: 560, Height: 280},
+		MinSize:  Size{Width: 520, Height: 360},
+		Size:     Size{Width: 600, Height: 440},
 		Layout:   VBox{},
 		Children: []Widget{
 			Composite{
-				AssignTo: &g.setup,
-				Layout:   VBox{},
+				AssignTo:      &g.setup,
+				StretchFactor: 1,
+				Layout:        VBox{},
 				Children: []Widget{
 					Label{Text: "笔记目录"},
 					Composite{
 						Layout: HBox{Spacing: 6},
 						Children: []Widget{
-							LineEdit{AssignTo: &g.path, Text: app.LastRepository(), StretchFactor: 1},
-							PushButton{Text: "浏览...", OnClicked: g.browse, MinSize: Size{Width: 72}},
+							LineEdit{AssignTo: &g.path, Text: app.LastRepository(), StretchFactor: 1, OnEditingFinished: g.onPathEdited},
+							PushButton{Text: "浏览...", OnClicked: g.browse, MinSize: Size{Width: 88}},
+						},
+					},
+					Label{Text: "排除目录（跳过扫描，可多选）"},
+					Composite{
+						Layout:        HBox{Spacing: 6},
+						StretchFactor: 1,
+						Children: []Widget{
+							ListBox{
+								AssignTo:                 &g.excludes,
+								MultiSelection:           true,
+								StretchFactor:            1,
+								MinSize:                  Size{Height: 96},
+								Model:                    []string{},
+								OnSelectedIndexesChanged: g.updateExcludeButtons,
+								OnKeyDown:                g.onExcludeKey,
+							},
+							Composite{
+								Layout: VBox{Spacing: 6},
+								Children: []Widget{
+									PushButton{Text: "添加目录...", OnClicked: g.addExcludes, MinSize: Size{Width: 88}},
+									PushButton{AssignTo: &g.removeBtn, Text: "移除", OnClicked: g.removeExcludes, Enabled: false, MinSize: Size{Width: 88}},
+									PushButton{AssignTo: &g.clearBtn, Text: "清空", OnClicked: g.clearExcludes, Enabled: false, MinSize: Size{Width: 88}},
+								},
+							},
 						},
 					},
 					Composite{
@@ -148,6 +181,7 @@ func (g *guiApp) create() error {
 	g.mw.RequestLayout()
 	g.mw.Closing().Attach(g.onClose)
 	g.log.bind(g.app)
+	g.reloadExcludes()
 	return nil
 }
 
@@ -167,6 +201,151 @@ func (g *guiApp) browse() {
 		return
 	}
 	_ = g.path.SetText(dialog.FilePath)
+	if !sameGUIDir(dialog.FilePath, g.loadedDir) {
+		g.reloadExcludes()
+	}
+}
+
+func (g *guiApp) onPathEdited() {
+	if sameGUIDir(g.path.Text(), g.loadedDir) {
+		return
+	}
+	g.reloadExcludes()
+}
+
+func (g *guiApp) reloadExcludes() {
+	dir := strings.TrimSpace(g.path.Text())
+	g.loadedDir = dir
+	rules, err := app.ReadScanExcludes(dir)
+	if err != nil && !strings.Contains(err.Error(), "排除规则") {
+		g.excludeLoadErr = err
+		g.setExcludeRules(nil)
+		walk.MsgBox(g.mw, "Echo", err.Error(), walk.MsgBoxIconError)
+		return
+	}
+	g.excludeLoadErr = nil
+	if err != nil {
+		g.setExcludeRules(nil)
+		walk.MsgBox(g.mw, "Echo", "已保存的排除规则无效，启动时会改用下面的列表。\n"+err.Error(), walk.MsgBoxIconWarning)
+		return
+	}
+	g.setExcludeRules(rules)
+}
+
+func (g *guiApp) setExcludeRules(rules []string) {
+	if rules == nil {
+		rules = []string{}
+	}
+	g.excludeRules = append([]string{}, rules...)
+	if g.excludes != nil {
+		_ = g.excludes.SetModel(g.excludeRules)
+	}
+	g.updateExcludeButtons()
+}
+
+func (g *guiApp) updateExcludeButtons() {
+	if g.removeBtn == nil || g.clearBtn == nil {
+		return
+	}
+	selected := 0
+	if g.excludes != nil {
+		selected = len(g.excludes.SelectedIndexes())
+	}
+	g.removeBtn.SetEnabled(selected > 0)
+	g.clearBtn.SetEnabled(len(g.excludeRules) > 0)
+}
+
+func (g *guiApp) onExcludeKey(key walk.Key) {
+	if key == walk.KeyDelete {
+		g.removeExcludes()
+	}
+}
+
+func (g *guiApp) addExcludes() {
+	dir := strings.TrimSpace(g.path.Text())
+	info, err := os.Stat(dir)
+	if err != nil || !info.IsDir() {
+		walk.MsgBox(g.mw, "Echo", "请先选择有效的笔记目录", walk.MsgBoxIconInformation)
+		return
+	}
+	picked, err := pickFolders(g.mw.Handle(), dir)
+	if err != nil {
+		walk.MsgBox(g.mw, "Echo", err.Error(), walk.MsgBoxIconError)
+		return
+	}
+	if len(picked) == 0 {
+		return
+	}
+	patterns, rejected, err := app.ExcludeDirsToPatterns(dir, picked)
+	if err != nil {
+		walk.MsgBox(g.mw, "Echo", err.Error(), walk.MsgBoxIconError)
+		return
+	}
+	if len(patterns) == 0 {
+		if len(rejected) > 0 {
+			walk.MsgBox(g.mw, "Echo", "没有添加目录：\n"+formatRejected(rejected), walk.MsgBoxIconInformation)
+		}
+		return
+	}
+	merged, err := app.NormalizeScanExcludes(append(append([]string{}, g.excludeRules...), patterns...))
+	if err != nil {
+		walk.MsgBox(g.mw, "Echo", err.Error(), walk.MsgBoxIconError)
+		return
+	}
+	g.excludeLoadErr = nil
+	g.setExcludeRules(merged)
+	if len(rejected) > 0 {
+		walk.MsgBox(g.mw, "Echo", "以下目录未添加：\n"+formatRejected(rejected), walk.MsgBoxIconInformation)
+	}
+}
+
+func (g *guiApp) removeExcludes() {
+	if g.excludes == nil {
+		return
+	}
+	indexes := append([]int{}, g.excludes.SelectedIndexes()...)
+	if len(indexes) == 0 {
+		return
+	}
+	sort.Sort(sort.Reverse(sort.IntSlice(indexes)))
+	next := append([]string{}, g.excludeRules...)
+	for _, index := range indexes {
+		if index < 0 || index >= len(next) {
+			continue
+		}
+		next = append(next[:index], next[index+1:]...)
+	}
+	g.excludeLoadErr = nil
+	g.setExcludeRules(next)
+}
+
+func (g *guiApp) clearExcludes() {
+	if len(g.excludeRules) == 0 {
+		return
+	}
+	g.excludeLoadErr = nil
+	g.setExcludeRules(nil)
+}
+
+func formatRejected(rejected []string) string {
+	const maxLines = 8
+	if len(rejected) <= maxLines {
+		return strings.Join(rejected, "\n")
+	}
+	return strings.Join(rejected[:maxLines], "\n") + fmt.Sprintf("\n另外 %d 个目录未添加", len(rejected)-maxLines)
+}
+
+func sameGUIDir(left, right string) bool {
+	left, right = strings.TrimSpace(left), strings.TrimSpace(right)
+	if left == "" || right == "" {
+		return strings.EqualFold(left, right)
+	}
+	leftAbs, leftErr := filepath.Abs(left)
+	rightAbs, rightErr := filepath.Abs(right)
+	if leftErr != nil || rightErr != nil {
+		return strings.EqualFold(left, right)
+	}
+	return strings.EqualFold(filepath.Clean(leftAbs), filepath.Clean(rightAbs))
 }
 
 func (g *guiApp) start() {
@@ -175,6 +354,16 @@ func (g *guiApp) start() {
 		walk.MsgBox(g.mw, "Echo", "请先选择笔记目录", walk.MsgBoxIconInformation)
 		return
 	}
+	if g.excludeLoadErr != nil && sameGUIDir(dir, g.loadedDir) {
+		walk.MsgBox(g.mw, "Echo", g.excludeLoadErr.Error(), walk.MsgBoxIconError)
+		return
+	}
+	excludes, err := app.NormalizeScanExcludes(g.excludeRules)
+	if err != nil {
+		walk.MsgBox(g.mw, "Echo", err.Error(), walk.MsgBoxIconInformation)
+		return
+	}
+	g.setExcludeRules(excludes)
 	listen, err := parseGUIListen(g.host.Text(), g.port.Text())
 	if err != nil {
 		walk.MsgBox(g.mw, "Echo", err.Error(), walk.MsgBoxIconInformation)
@@ -211,7 +400,7 @@ func (g *guiApp) start() {
 		})
 	})
 	go func() {
-		err := runServer(ctx, dir, true, listen.Addr, false, false, g.log)
+		err := runServerWithOptions(ctx, dir, true, listen.Addr, false, false, app.OpenOptions{ApplyScanExcludes: true, ScanExcludes: excludes}, g.log)
 		g.mu.Lock()
 		g.running = false
 		closed := g.closed

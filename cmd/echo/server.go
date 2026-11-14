@@ -24,6 +24,10 @@ func listenAllowsRemote(host string) bool {
 }
 
 func runServer(ctx context.Context, dataDir string, explicit bool, addr string, dev bool, loopbackOnly bool, out io.Writer) error {
+	return runServerWithOptions(ctx, dataDir, explicit, addr, dev, loopbackOnly, app.OpenOptions{}, out)
+}
+
+func runServerWithOptions(ctx context.Context, dataDir string, explicit bool, addr string, dev bool, loopbackOnly bool, opts app.OpenOptions, out io.Writer) error {
 	host, _, err := net.SplitHostPort(addr)
 	if err != nil {
 		return err
@@ -37,7 +41,7 @@ func runServer(ctx context.Context, dataDir string, explicit bool, addr string, 
 	if err != nil {
 		return err
 	}
-	workspace, err := app.OpenWorkspace(dataDir, explicit)
+	workspace, err := app.OpenWorkspaceWithOptions(dataDir, explicit, opts)
 	if err != nil {
 		_ = listener.Close()
 		return err
