@@ -170,7 +170,7 @@ describe('editor selection', () => {
     const editor = EditorView.findFromDOM(document.querySelector('.cm-editor')!)
     if (!editor) throw new Error('编辑器尚未挂载')
     editor.dispatch({ selection: { anchor: 0, head: 2 } })
-    expect(document.querySelector('.cm-selectionLayer')).toBeInTheDocument()
+    expect(document.querySelector('.cm-textSelection')).toBeInTheDocument()
     expect(editor.state.selection.main.from).toBe(0)
     expect(editor.state.selection.main.to).toBe(2)
   })

@@ -3,9 +3,9 @@ import type { CSSProperties } from 'react'
 import CodeMirror from '@uiw/react-codemirror'
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
 import { languages } from '@codemirror/language-data'
-import { Decoration, drawSelection, EditorView, keymap } from '@codemirror/view'
+import { Decoration, Direction, EditorView, keymap, layer, RectangleMarker } from '@codemirror/view'
 import type { DecorationSet, ViewUpdate } from '@codemirror/view'
-import { Annotation, Compartment, EditorState, StateEffect, StateField, type Extension } from '@codemirror/state'
+import { Annotation, Compartment, EditorState, Prec, StateEffect, StateField, type Extension } from '@codemirror/state'
 import { NoteAiSession } from '../agent/editorSession'
 import { autocompletion } from '@codemirror/autocomplete'
 import { searchKeymap } from '@codemirror/search'
@@ -26,6 +26,66 @@ const cardInsertItems: { id: EchoCardKind; label: string }[] = [
 const aiAnnotation = Annotation.define<true>()
 const setAiHighlight = StateEffect.define<DecorationSet>()
 const aiEditMark = Decoration.mark({ class: 'cm-ai-edit' })
+function selectionOrigin(view: EditorView) {
+  const rect = view.scrollDOM.getBoundingClientRect()
+  const left = view.textDirection === Direction.LTR ? rect.left : rect.right - view.scrollDOM.clientWidth * view.scaleX
+  return { left: left - view.scrollDOM.scrollLeft * view.scaleX, top: rect.top - view.scrollDOM.scrollTop * view.scaleY }
+}
+
+function textSelectionMarkers(view: EditorView) {
+  const markers: RectangleMarker[] = []
+  const origin = selectionOrigin(view)
+  for (const range of view.state.selection.ranges) {
+    if (range.empty || range.to <= view.viewport.from || range.from >= view.viewport.to) continue
+    let pos = Math.max(range.from, view.viewport.from)
+    const end = Math.min(range.to, view.viewport.to)
+    while (pos < end) {
+      const line = view.state.doc.lineAt(pos)
+      const from = Math.max(pos, range.from)
+      const to = Math.min(line.to, end)
+      if (from < to) appendTextSelection(view, origin, from, to, markers)
+      pos = line.to + 1
+    }
+  }
+  return markers
+}
+
+function appendTextSelection(view: EditorView, origin: { left: number; top: number }, from: number, to: number, markers: RectangleMarker[]) {
+  const start = view.domAtPos(from)
+  const end = view.domAtPos(to)
+  const range = document.createRange()
+  try {
+    range.setStart(start.node, start.offset)
+    range.setEnd(end.node, end.offset)
+  } catch {
+    const startCoords = view.coordsAtPos(from)
+    const endCoords = view.coordsAtPos(to)
+    if (!startCoords || !endCoords) return
+    markers.push(new RectangleMarker('cm-selectionBackground', startCoords.left - origin.left, Math.min(startCoords.top, endCoords.top) - origin.top, Math.max(0, endCoords.right - startCoords.left), Math.max(startCoords.bottom, endCoords.bottom) - Math.min(startCoords.top, endCoords.top)))
+    return
+  }
+  const boxes = range.getClientRects()
+  for (let index = 0; index < boxes.length; index++) {
+    const box = boxes[index]
+    if (box.width < 0.5 || box.height < 0.5) continue
+    markers.push(new RectangleMarker('cm-selectionBackground', box.left - origin.left, box.top - origin.top, box.width, box.height))
+  }
+}
+
+// 按文字本身的矩形上色。默认选区层会把换行后的每一行铺到编辑区右边缘。
+const textSelectionLayer = layer({
+  above: false,
+  class: 'cm-textSelection',
+  markers: textSelectionMarkers,
+  update(update) {
+    return update.docChanged || update.selectionSet || update.viewportChanged || update.geometryChanged
+  },
+})
+
+const hideNativeSelection = Prec.highest(EditorView.theme({
+  '.cm-line': { '& ::selection, &::selection': { backgroundColor: 'transparent !important' } },
+}))
+
 const aiHighlightField = StateField.define<DecorationSet>({
   create: () => Decoration.none,
   update(value, transaction) {
@@ -329,7 +389,8 @@ export function Editor(props: EditorProps) {
   const extensions = useMemo<Extension[]>(() => [
     markdown({ base: markdownLanguage, codeLanguages: languages }),
     autocompletion(),
-    drawSelection(),
+    textSelectionLayer,
+    hideNativeSelection,
     EditorView.lineWrapping,
     EditorView.updateListener.of((update: ViewUpdate) => {
       if (!update.docChanged) return
@@ -380,7 +441,6 @@ export function Editor(props: EditorProps) {
       '.cm-activeLineGutter': { backgroundColor: 'transparent' },
       '&.cm-focused': { outline: 'none' },
       '.cm-selectionBackground': { backgroundColor: 'var(--selection) !important' },
-      '.cm-cursor, .cm-dropCursor': { borderLeftColor: 'var(--accent)' },
       '.cm-ai-edit': { backgroundColor: 'color-mix(in srgb, var(--accent) 32%, transparent)', borderRadius: '2px' },
     }),
   ], [commands, props.shortcuts, readOnlyCompartment, shortcutCompartment])
@@ -513,7 +573,7 @@ export function Editor(props: EditorProps) {
       <span>{upload.file.name} · {upload.status === 'uploading' ? '正在上传…' : upload.error}</span>
       {upload.status === 'error' && <><button type="button" onClick={() => void performUpload(upload)}><RefreshCw size={13} /> 重试</button><button type="button" aria-label="取消上传" onClick={() => { anchors.current.delete(upload.id); setUploads(items => items.filter(item => item.id !== upload.id)) }}><X size={13} /></button></>}
     </div>)}</div>}
-    <CodeMirror value={props.value} theme={props.dark ? 'dark' : 'light'} extensions={extensions} basicSetup={{ lineNumbers: props.lineNumbers, foldGutter: true, highlightActiveLineGutter: false, highlightActiveLine: true, autocompletion: true, closeBrackets: true, searchKeymap: true }} onCreateEditor={editor => { view.current = editor; latest.current.onReady?.(controller.current!) }} onChange={props.onChange} className="codemirror-editor" aria-label="Markdown 源码编辑器" />
+    <CodeMirror value={props.value} theme={props.dark ? 'dark' : 'light'} extensions={extensions} basicSetup={{ lineNumbers: props.lineNumbers, foldGutter: true, highlightActiveLineGutter: false, highlightActiveLine: true, autocompletion: true, closeBrackets: true, searchKeymap: true, drawSelection: false }} onCreateEditor={editor => { view.current = editor; latest.current.onReady?.(controller.current!) }} onChange={props.onChange} className="codemirror-editor" aria-label="Markdown 源码编辑器" />
     {contextMenu && <EditorContextMenu left={contextMenu.left} top={contextMenu.top} items={contextMenuItems} onClose={() => setContextMenu(null)} />}
     {cardMenu && <EditorContextMenu left={cardMenu.left} top={cardMenu.top} items={cardMenuItems} onClose={() => setCardMenu(null)} />}
   </div>
