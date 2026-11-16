@@ -1356,6 +1356,7 @@ describe('repository switcher', () => {
     localStorage.setItem('echo:last-note', '测试.md')
     localStorage.setItem('echo:tabs', JSON.stringify(['测试.md']))
     localStorage.setItem('echo:draft:测试.md', JSON.stringify({ content: '# 草稿' }))
+    localStorage.setItem('echo:temp-md:abc', JSON.stringify({ id: 'abc', name: '临时.md', content: '# 临时', createdAt: '' }))
     fireEvent.click(screen.getByRole('button', { name: '切换仓库' }))
     const dialog = await screen.findByRole('dialog', { name: '切换仓库' })
     expect(dialog).toHaveTextContent('本地笔记')
@@ -1391,6 +1392,7 @@ describe('repository switcher', () => {
     expect(localStorage.getItem('echo:last-note')).toBeNull()
     expect(localStorage.getItem('echo:tabs')).toBeNull()
     expect(localStorage.getItem('echo:draft:测试.md')).toBeNull()
+    expect(localStorage.getItem('echo:temp-md:abc')).toBeNull()
     expect(localStorage.getItem('echo:settings')).not.toBeNull()
   })
 
@@ -1462,5 +1464,140 @@ describe('note version snapshots', () => {
     fireEvent.click(within(screen.getByRole('dialog', { name: '管理历史版本' })).getByRole('button', { name: '删除 发布前定稿' }))
     fireEvent.click(within(await screen.findByRole('dialog', { name: '确认删除版本' })).getByRole('button', { name: '删除' }))
     await waitFor(() => expect(server.calls.some(call => call.path === '/api/note-versions' && call.method === 'DELETE')).toBe(true))
+  })
+})
+
+function markdownFile(name: string, content: string) {
+  return new File([content], name, { type: 'text/markdown' })
+}
+
+function tempStorageKeys() {
+  const keys: string[] = []
+  for (let index = 0; index < localStorage.length; index++) {
+    const key = localStorage.key(index)
+    if (key?.startsWith('echo:temp-md:')) keys.push(key)
+  }
+  return keys
+}
+
+function dropFiles(target: Element, files: File[]) {
+  const dataTransfer = { types: ['Files'], files, dropEffect: 'copy' }
+  fireEvent.dragEnter(target, { dataTransfer })
+  fireEvent.dragOver(target, { dataTransfer })
+  fireEvent.drop(target, { dataTransfer })
+}
+
+describe('dragged markdown preview', () => {
+  it('previews a dropped markdown file from local storage without writing it into the notebook', async () => {
+    const server = createServer()
+    const editor = await openApp(server)
+    fireEvent.change(editor, { target: { value: '# 拖入前的草稿\n' } })
+    const shell = document.querySelector('.app-shell')!
+    fireEvent.dragEnter(shell, { dataTransfer: { types: ['Files'], files: [markdownFile('说明.md', '# 外部标题\n\n## 小节\n\n正文\n')] } })
+    expect(screen.getByText('松开以预览 Markdown')).toBeInTheDocument()
+    dropFiles(editor, [markdownFile('说明.md', '# 外部标题\n\n## 小节\n\n正文\n')])
+    const preview = await screen.findByRole('region', { name: '预览 说明.md' })
+    expect(preview).toHaveTextContent('正文')
+    expect(within(preview).getByRole('heading', { name: '外部标题' })).toBeInTheDocument()
+    expect(preview).toHaveTextContent('说明.md · 临时只读预览（仅保存在浏览器中，关闭标签页后清除）')
+    expect(screen.queryByText('松开以预览 Markdown')).not.toBeInTheDocument()
+    expect(screen.queryByRole('textbox', { name: '笔记源码' })).not.toBeInTheDocument()
+    const tabs = openTabs()
+    expect(tabs.getByRole('tab', { name: '说明' })).toHaveAttribute('aria-selected', 'true')
+    expect(tabs.getByRole('tab', { name: '说明' })).toHaveAttribute('title', '临时预览 · 说明.md')
+    expect(tabs.getByRole('tab', { name: '说明' }).closest('.note-tab')).toHaveClass('temporary')
+    expect(tempStorageKeys()).toHaveLength(1)
+    expect(JSON.parse(localStorage.getItem(tempStorageKeys()[0])!).content).toContain('## 小节')
+    await waitFor(() => expect(server.current().content).toBe('# 拖入前的草稿\n'))
+    expect(server.calls.filter(call => call.path === '/api/notes' && call.method === 'POST')).toHaveLength(0)
+
+    fireEvent.click(within(preview).getByRole('button', { name: '导航' }))
+    expect(screen.getByRole('button', { name: '2 级标题：小节' })).toBeInTheDocument()
+    fireEvent.click(within(preview).getByRole('button', { name: '全屏预览' }))
+    const fullscreen = screen.getByRole('region', { name: '全屏预览' })
+    expect(fullscreen).toHaveTextContent('正文')
+    expect(within(fullscreen).getByRole('heading', { name: '外部标题' })).toBeInTheDocument()
+    fireEvent.click(within(fullscreen).getByRole('button', { name: '退出全屏' }))
+    expect(screen.queryByRole('region', { name: '全屏预览' })).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: '拖入前的草稿' }))
+    expect(await screen.findByRole('textbox', { name: '笔记源码' })).toHaveValue('# 拖入前的草稿\n')
+    expect(tempStorageKeys()).toHaveLength(1)
+    fireEvent.click(openTabs().getByRole('tab', { name: '说明' }))
+    expect(await screen.findByRole('region', { name: '预览 说明.md' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '关闭临时预览' }))
+    expect(await screen.findByRole('textbox', { name: '笔记源码' })).toHaveValue('# 拖入前的草稿\n')
+    expect(screen.queryByRole('tablist', { name: '已打开的笔记' })).not.toBeInTheDocument()
+    expect(tempStorageKeys()).toEqual([])
+  })
+
+  it('keeps same-named files apart and still shows tabs when multi-note tabs are off', async () => {
+    const server = createServer()
+    const editor = await openApp(server)
+    dropFiles(document.querySelector('.app-shell')!, [
+      markdownFile('重复.md', '# 第一份\n'),
+      markdownFile('重复.md', '# 第二份\n'),
+    ])
+    expect(await screen.findByText('已打开 2 个 Markdown 预览。')).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: '预览 重复.md' })).toHaveTextContent('# 第二份')
+    const tabs = openTabs().getAllByRole('tab', { name: '重复' })
+    expect(tabs).toHaveLength(2)
+    expect(tabs[1]).toHaveAttribute('aria-selected', 'true')
+    expect(tempStorageKeys()).toHaveLength(2)
+    fireEvent.click(tabs[0])
+    await waitFor(() => expect(screen.getByRole('region', { name: '预览 重复.md' })).toHaveTextContent('# 第一份'))
+    fireEvent.click(openTabs().getAllByRole('button', { name: '关闭 重复' })[1])
+    expect(await screen.findByRole('region', { name: '预览 重复.md' })).toHaveTextContent('# 第一份')
+    expect(tempStorageKeys()).toHaveLength(1)
+    expect(server.calls.filter(call => call.path === '/api/notes' && call.method !== 'GET')).toHaveLength(0)
+    expect(editor).not.toBeInTheDocument()
+  })
+
+  it('opens the preview beside existing notes when multi-note tabs are enabled', async () => {
+    const server = createServer([], [], { multiTabs: true })
+    await openApp(server)
+    dropFiles(document.querySelector('.app-shell')!, [markdownFile('旁路.md', '# 旁路\n')])
+    expect(await screen.findByRole('region', { name: '预览 旁路.md' })).toBeInTheDocument()
+    const tabs = openTabs()
+    expect(tabs.getByRole('tab', { name: '测试' })).toHaveAttribute('aria-selected', 'false')
+    expect(tabs.getByRole('tab', { name: '旁路' })).toHaveAttribute('aria-selected', 'true')
+    fireEvent.click(tabs.getByRole('button', { name: '关闭 旁路' }))
+    expect(await screen.findByRole('textbox', { name: '笔记源码' })).toHaveValue('# 初始笔记\n')
+    expect(openTabs().getByRole('tab', { name: '测试' })).toHaveAttribute('aria-selected', 'true')
+    expect(tempStorageKeys()).toEqual([])
+    expect(server.calls.filter(call => call.path === '/api/notes' && call.method === 'POST')).toHaveLength(0)
+  })
+
+  it('ignores images and tells the user when the dropped file is not markdown', async () => {
+    await openApp(createServer())
+    const shell = document.querySelector('.app-shell')!
+    dropFiles(shell, [new File(['x'], '图片.png', { type: 'image/png' })])
+    expect(screen.queryByText('请拖入 .md 文件进行预览。')).not.toBeInTheDocument()
+    expect(screen.getByRole('textbox', { name: '笔记源码' })).toBeInTheDocument()
+    dropFiles(shell, [new File(['hello'], '笔记.txt', { type: 'text/plain' })])
+    expect(screen.getByText('请拖入 .md 文件进行预览。')).toBeInTheDocument()
+    expect(tempStorageKeys()).toEqual([])
+  })
+
+  it('restores stored previews, drops missing ones, and frees storage that no longer has a tab', async () => {
+    const ids = Array.from({ length: 10 }, (_, index) => `id-${index}`)
+    localStorage.setItem('echo:tabs', JSON.stringify(ids.map(id => `temp-md:${id}`)))
+    localStorage.setItem('echo:last-note', '测试.md')
+    for (const id of ids) localStorage.setItem(`echo:temp-md:${id}`, JSON.stringify({ id, name: `${id}.md`, content: `# ${id}\n`, createdAt: '' }))
+    localStorage.setItem('echo:temp-md:orphan', JSON.stringify({ id: 'orphan', name: '孤儿.md', content: '# 孤儿\n', createdAt: '' }))
+    localStorage.setItem('echo:temp-md:gone', '{')
+    const server = createServer([], [], { multiTabs: true })
+    vi.stubGlobal('fetch', server.fetch)
+    render(<App />)
+    expect(await screen.findByRole('textbox', { name: '笔记源码' })).toHaveValue('# 初始笔记\n')
+    await waitFor(() => expect(localStorage.getItem('echo:temp-md:id-0')).toBeNull())
+    expect(localStorage.getItem('echo:temp-md:orphan')).toBeNull()
+    expect(localStorage.getItem('echo:temp-md:gone')).toBeNull()
+    expect(localStorage.getItem('echo:temp-md:id-9')).not.toBeNull()
+    const tabs = openTabs()
+    expect(tabs.queryByRole('tab', { name: 'id-0' })).not.toBeInTheDocument()
+    expect(tabs.getByRole('tab', { name: 'id-9' })).toBeInTheDocument()
+    fireEvent.click(tabs.getByRole('tab', { name: 'id-9' }))
+    expect(await screen.findByRole('region', { name: '预览 id-9.md' })).toHaveTextContent('# id-9')
   })
 })

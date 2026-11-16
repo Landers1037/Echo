@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { ReactNode } from 'react'
+import type { DragEvent as ReactDragEvent, ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { MotionConfig, AnimatePresence, motion } from 'motion/react'
 import { PanelLeft, ChevronRight, Download, Bell, Sun, Moon, Check, Cloud, LoaderCircle, FileText, FileType, Plus, FolderOpen, FolderPlus, Tag, MoreHorizontal, Pencil, ArrowRightLeft, Trash2, Unlink, X, AlertTriangle, RotateCcw, Copy, CheckCheck, BookOpen, ListTree, Maximize2, Focus, PenTool, Bot, Workflow, Highlighter, Eye, EyeOff, History, Info, GitCompare } from 'lucide-react'
@@ -30,6 +30,8 @@ import { diffLines, type DiffLine } from './versionDiff'
 import { applyNoteTitle } from './noteTitle'
 import { applyTableEdit, type TableEditAction } from './markdownTable'
 import { NoteTabs } from './components/NoteTabs'
+import { TempMarkdownPreview } from './components/TempMarkdownPreview'
+import { createTempMarkdown, isTempMarkdownPath, pruneTempMarkdownStorage, readDroppedText, readTempMarkdown, removeTempMarkdown, tempMarkdownLabel, tempMarkdownPath, tempMarkdownStoragePrefix } from './tempMarkdown'
 import { TasksView } from './components/TasksView'
 import { CalendarView } from './components/CalendarView'
 import { planScheduleLabel, PlansView } from './components/PlansView'
@@ -83,7 +85,7 @@ function clearRepositorySession() {
   const keys: string[] = []
   for (let index = 0; index < localStorage.length; index++) {
     const key = localStorage.key(index)
-    if (key && (key === 'echo:last-note' || key === tabsKey || key.startsWith('echo:draft:'))) keys.push(key)
+    if (key && (key === 'echo:last-note' || key === tabsKey || key.startsWith('echo:draft:') || key.startsWith(tempMarkdownStoragePrefix))) keys.push(key)
   }
   keys.forEach(key => localStorage.removeItem(key))
 }
@@ -100,6 +102,15 @@ export default function App() {
   const [reminders, setReminders] = useState<Reminder[]>([])
   const [note, setNote] = useState<Note | null>(null)
   const [tabs, setTabs] = useState<string[]>(readTabs)
+  const [tempMdPath, setTempMdPathState] = useState<string | null>(null)
+  const tempMdPathRef = useRef<string | null>(null)
+  const setTempMdPath = useCallback((value: string | null | ((current: string | null) => string | null)) => {
+    const next = typeof value === 'function' ? value(tempMdPathRef.current) : value
+    tempMdPathRef.current = next
+    setTempMdPathState(next)
+  }, [])
+  const dropDepth = useRef(0)
+  const [dropActive, setDropActive] = useState(false)
   const [content, setContent] = useState('')
   const [dirty, setDirty] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -167,6 +178,15 @@ export default function App() {
   const noteRef = useRef(note); noteRef.current = note
   const settingsRef = useRef(settings); settingsRef.current = settings
   const tabsRef = useRef(tabs); tabsRef.current = tabs
+  const applyTabs = useCallback((next: string[]) => {
+    if (next === tabsRef.current) return
+    for (const path of tabsRef.current) {
+      if (isTempMarkdownPath(path) && !next.includes(path)) removeTempMarkdown(path)
+    }
+    tabsRef.current = next
+    setTabs(next)
+    setTempMdPath(current => current && next.includes(current) ? current : null)
+  }, [setTempMdPath])
   const contentRef = useRef(content); contentRef.current = content
   const dirtyRef = useRef(dirty); dirtyRef.current = dirty
   const conflictRef = useRef(conflict); conflictRef.current = conflict
@@ -200,10 +220,8 @@ export default function App() {
   const acceptNote = useCallback((next: Note) => {
     noteRef.current = next; contentRef.current = next.content; dirtyRef.current = false; setNote(next); setContent(next.content); setDirty(false); setSaveError(''); localStorage.setItem('echo:last-note', next.path)
     if (!settingsRef.current.multiTabs) return
-    const open = pushTab(tabsRef.current, next.path)
-    if (open === tabsRef.current) return
-    tabsRef.current = open; setTabs(open)
-  }, [])
+    applyTabs(pushTab(tabsRef.current, next.path))
+  }, [applyTabs])
   const refresh = useCallback(async () => {
     const results = await Promise.all([api<NoteSummary[]>('/notes'), api<TreeEntry[]>('/tree'), api<string[]>('/groups'), api<string[]>('/tags'), api<Task[]>('/tasks'), api<Reminder[]>('/reminders'), api<Plan[]>('/plans'), api<CustomTask[]>('/custom-tasks')])
     if (!mounted.current) return { notes: [] as NoteSummary[], tree: [] as TreeEntry[] }
@@ -250,26 +268,93 @@ export default function App() {
     if (save) await saveActive()
     const next = await api<Note>(`/notes?path=${query(path)}`)
     setOfficePath(null)
+    setTempMdPath(null)
     acceptNote(next); setView('note'); if (matchMedia('(max-width: 760px)').matches) setSidebarOpen(false)
     const stored = localStorage.getItem(draftKey(path))
     if (stored) { try { const draft = JSON.parse(stored); if (draft.content !== next.content) { contentRef.current = draft.content; dirtyRef.current = true; setContent(draft.content); setDirty(true); if (draft.revision !== next.revision) { setConflict(next); conflictRef.current = next } else toast('已恢复未保存的本地草稿。') } else localStorage.removeItem(draftKey(path)) } catch { localStorage.removeItem(draftKey(path)) } }
     return next
-  }, [acceptNote, saveActive, toast])
+  }, [acceptNote, saveActive, setTempMdPath, toast])
   async function openOffice(path: string) {
     await saveActive()
     if (flushDrawing.current) await flushDrawing.current()
     setDrawing(null)
+    setTempMdPath(null)
     setOfficePath(path)
     setView('note')
     setRevealEntry({ path })
-    if (settingsRef.current.multiTabs) {
-      const open = pushTab(tabsRef.current, path)
-      if (open !== tabsRef.current) {
-        tabsRef.current = open
-        setTabs(open)
-      }
-    }
+    if (settingsRef.current.multiTabs) applyTabs(pushTab(tabsRef.current, path))
     if (matchMedia('(max-width: 760px)').matches) setSidebarOpen(false)
+  }
+  async function openTempMarkdown(path: string, save = true) {
+    if (save) {
+      await saveActive()
+      if (flushDrawing.current) await flushDrawing.current()
+    }
+    if (!readTempMarkdown(path)) {
+      applyTabs(tabsRef.current.filter(item => item !== path))
+      toast('临时预览已失效。', true)
+      return
+    }
+    setDrawing(null)
+    setOfficePath(null)
+    setTempMdPath(path)
+    setView('note')
+    applyTabs(pushTab(tabsRef.current, path))
+    if (matchMedia('(max-width: 760px)').matches) setSidebarOpen(false)
+  }
+  async function importDroppedMarkdown(files: File[]) {
+    const markdown = files.filter(file => /\.md$/i.test(file.name))
+    if (!markdown.length) {
+      if (files.some(file => !file.type.startsWith('image/'))) toast('请拖入 .md 文件进行预览。', true)
+      return
+    }
+    await saveActive()
+    if (flushDrawing.current) await flushDrawing.current()
+    let last = ''
+    let opened = 0
+    for (const file of markdown) {
+      let content = ''
+      try { content = await readDroppedText(file) } catch { toast(`无法读取 ${file.name}。`, true); continue }
+      try {
+        const created = createTempMarkdown(file.name, content)
+        last = tempMarkdownPath(created.id)
+        applyTabs(pushTab(tabsRef.current, last))
+        opened += 1
+      } catch (error) { toast(error instanceof Error ? error.message : '无法预览该 Markdown 文件。', true) }
+    }
+    if (!last || !readTempMarkdown(last)) return
+    setDrawing(null)
+    setOfficePath(null)
+    setTempMdPath(last)
+    setView('note')
+    if (matchMedia('(max-width: 760px)').matches) setSidebarOpen(false)
+    if (opened > 1) toast(`已打开 ${opened} 个 Markdown 预览。`)
+  }
+  function dragHasFiles(event: { dataTransfer: DataTransfer | null }) {
+    return Array.from(event.dataTransfer?.types || []).includes('Files')
+  }
+  function onMarkdownDragEnter(event: ReactDragEvent) {
+    if (!dragHasFiles(event)) return
+    event.preventDefault()
+    dropDepth.current += 1
+    setDropActive(true)
+  }
+  function onMarkdownDragOver(event: ReactDragEvent) {
+    if (!dragHasFiles(event)) return
+    event.preventDefault()
+    event.dataTransfer.dropEffect = 'copy'
+  }
+  function onMarkdownDragLeave(event: ReactDragEvent) {
+    if (!dragHasFiles(event)) return
+    dropDepth.current = Math.max(0, dropDepth.current - 1)
+    if (dropDepth.current === 0) setDropActive(false)
+  }
+  function onMarkdownDrop(event: ReactDragEvent) {
+    if (!dragHasFiles(event)) return
+    event.preventDefault()
+    dropDepth.current = 0
+    setDropActive(false)
+    void importDroppedMarkdown(Array.from(event.dataTransfer.files || []))
   }
   const refreshCurrent = useRef<() => void>(() => {})
   refreshCurrent.current = () => {
@@ -297,11 +382,11 @@ export default function App() {
         const snapshot = await refresh()
         if (!mounted.current) return
         const list = snapshot?.notes || []
-        if (loadedSettings.multiTabs) {
-          const paths = new Set([...list.map(item => item.path), ...collectOfficePaths(snapshot?.tree || [])])
-          const open = tabsRef.current.filter(path => paths.has(path))
-          if (open.length !== tabsRef.current.length) { tabsRef.current = open; setTabs(open) }
-        }
+        const libraryPaths = new Set([...list.map(item => item.path), ...collectOfficePaths(snapshot?.tree || [])])
+        const open = tabsRef.current.filter(path => isTempMarkdownPath(path) ? Boolean(readTempMarkdown(path)) : !loadedSettings.multiTabs || libraryPaths.has(path))
+        const unchanged = open.length === tabsRef.current.length && open.every((item, index) => item === tabsRef.current[index])
+        if (!unchanged) applyTabs(open)
+        pruneTempMarkdownStorage(tabsRef.current)
         const last = localStorage.getItem('echo:last-note')
         const path = list.find(item => item.path === last)?.path || list[0]?.path
         if (path) await loadNote(path, false)
@@ -323,7 +408,7 @@ export default function App() {
     window.addEventListener('focus', focus)
     const poll = window.setInterval(focus, 30000)
     return () => { mounted.current = false; events.close(); clearTimeout(timer); clearInterval(poll); window.removeEventListener('focus', focus) }
-  }, [refresh, loadNote])
+  }, [applyTabs, refresh, loadNote])
   useEffect(() => {
     if (!note?.path || !versionRepoReady || !settings.versionRepoEnabled) { setNoteVersions([]); setActiveVersionId(''); return }
     let canceled = false
@@ -366,7 +451,8 @@ export default function App() {
     window.addEventListener('beforeunload', before); window.addEventListener('keydown', key)
     return () => { window.removeEventListener('beforeunload', before); window.removeEventListener('keydown', key) }
   }, [saveActive, toast, focusMode, dialog, manage, drawing, fullscreenPreview])
-  useEffect(() => { if (view !== 'note' || officePath || !note) setFocusMode(false) }, [view, officePath, note])
+  useEffect(() => { if (view !== 'note' || officePath || tempMdPath || !note) setFocusMode(false) }, [view, officePath, tempMdPath, note])
+  useEffect(() => { if (tempMdPath && !readTempMarkdown(tempMdPath)) setTempMdPath(null) }, [tempMdPath, setTempMdPath])
   useEffect(() => { if (!search) { setSearchPaths(null); return } let canceled = false; const id = setTimeout(() => { void api<NoteSummary[]>(`/notes?q=${query(search)}`).then(list => { if (!canceled) setSearchPaths(list.map(n => n.path)) }).catch(() => {}) }, 180); return () => { canceled = true; clearTimeout(id) } }, [search, notes])
   const notified = useRef(new Set<string>())
   useEffect(() => {
@@ -420,7 +506,7 @@ export default function App() {
     const path = parent ? `${parent}/${relative}` : relative
     await saveActive()
     const next = await api<Note>('/notes', json('POST', { path, content: '' }))
-    setOfficePath(null); acceptNote(next); setMode('source'); setView('note')
+    setOfficePath(null); setTempMdPath(null); acceptNote(next); setMode('source'); setView('note')
     if (!parent || matchMedia('(max-width: 760px)').matches) setSidebarOpen(false)
     await refresh(); setRevealEntry({ path: next.path }); toast('笔记已创建。')
   }
@@ -493,27 +579,25 @@ export default function App() {
   function clearActive() { editorController.current = null; noteRef.current = null; contentRef.current = ''; dirtyRef.current = false; setNote(null); setContent(''); setDirty(false); setSaveError('') }
   async function closeTab(path: string) {
     if (!tabsRef.current.includes(path)) return
-    const closingOffice = isLibraryDocumentPath(path) && officePath === path
-    const closingNote = !isLibraryDocumentPath(path) && noteRef.current?.path === path && !officePath
-    const closingActive = closingOffice || closingNote
+    const closingTemp = isTempMarkdownPath(path) && tempMdPathRef.current === path
+    const closingOffice = !isTempMarkdownPath(path) && isLibraryDocumentPath(path) && officePath === path
+    const closingNote = !isTempMarkdownPath(path) && !isLibraryDocumentPath(path) && noteRef.current?.path === path && !officePath && !tempMdPathRef.current
+    const closingActive = closingOffice || closingNote || closingTemp
     if (closingNote) agentInterrupt.current()
     if (closingNote) await saveActive()
     const current = tabsRef.current
     if (!current.includes(path)) return
     const neighbor = neighborTab(current, path, item => item !== path)
     if (closingActive && neighbor) {
-      if (isLibraryDocumentPath(neighbor)) await openOffice(neighbor)
+      if (isTempMarkdownPath(neighbor)) await openTempMarkdown(neighbor, false)
+      else if (isLibraryDocumentPath(neighbor)) await openOffice(neighbor)
       else await loadNote(neighbor, false)
     }
-    const remaining = tabsRef.current.filter(item => item !== path)
-    tabsRef.current = remaining
-    setTabs(remaining)
+    applyTabs(tabsRef.current.filter(item => item !== path))
     if (closingOffice && !neighbor) setOfficePath(null)
-    if (!closingActive || neighbor) return
-    if (!isLibraryDocumentPath(path)) {
-      localStorage.removeItem(draftKey(path))
-      clearActive()
-    }
+    if (!closingActive || neighbor || closingTemp || isLibraryDocumentPath(path)) return
+    localStorage.removeItem(draftKey(path))
+    clearActive()
   }
   async function manageAction(action: 'rename' | 'move' | 'delete') {
     if (!manage) return
@@ -531,8 +615,7 @@ export default function App() {
       const removed = (path: string) => affectsPath(path, item.path)
       const previous = tabsRef.current
       const remaining = previous.filter(path => !removed(path))
-      tabsRef.current = remaining
-      setTabs(remaining)
+      applyTabs(remaining)
       previous.filter(removed).forEach(path => localStorage.removeItem(draftKey(path)))
       const active = noteRef.current?.path
       if (active && removed(active)) {
@@ -565,8 +648,7 @@ export default function App() {
     setOfficePath(currentPath => currentPath ? retargetPath(currentPath, item.path, target) : currentPath)
     const mapped = tabsRef.current.map(path => retargetPath(path, item.path, target))
     const unique = mapped.filter((path, index) => mapped.indexOf(path) === index)
-    tabsRef.current = unique
-    setTabs(unique)
+    applyTabs(unique)
     const active = noteRef.current?.path
     if (active && !isLibraryDocumentTreeType(item.type)) await loadNote(retargetPath(active, item.path, target), false)
     setSelected([])
@@ -700,15 +782,17 @@ export default function App() {
   const selectedCount = selected.length
   const showAnnotations = Boolean(annotations.state?.visible && note && annotations.state.path === note.path)
   const annotationLayer = (readOnly: boolean) => showAnnotations && annotations.state ? <AnnotationLayer items={annotations.state.items} tool={readOnly || !annotations.toolOpen ? null : annotations.tool} color={annotations.color} strokePixels={annotations.strokePixels} onCreate={annotations.create} onUpdate={annotations.update} onDelete={annotations.remove} onStaleChange={annotations.setStaleIds} /> : null
+  const tempFile = tempMdPath ? readTempMarkdown(tempMdPath) : null
+  const visibleTabs = settings.multiTabs ? tabs : tabs.filter(isTempMarkdownPath)
   if (loading || fatal) return <div className="loading-screen"><Logo /><h1>echo.</h1>{fatal ? <><p role="alert">{fatal}</p><button className="button primary" onClick={() => location.reload()}>重新连接</button></> : <><LoaderCircle className="spin" size={20} /><p>正在打开你的本地空间…</p></>}</div>
   return <MotionConfig skipAnimations={!settings.animations} reducedMotion={settings.animations ? 'user' : 'always'} transition={{ duration: settings.animations ? .18 : 0 }}>
-    <div className={`app-shell${focusMode ? ' focus-mode' : ''}`} style={{ '--sidebar-width': `${sidebarWidth}px` } as React.CSSProperties}>
+    <div className={`app-shell${focusMode ? ' focus-mode' : ''}`} style={{ '--sidebar-width': `${sidebarWidth}px` } as React.CSSProperties} onDragEnter={onMarkdownDragEnter} onDragOver={onMarkdownDragOver} onDragLeave={onMarkdownDragLeave} onDrop={onMarkdownDrop}>
       <Sidebar notes={notes} tree={tree} groups={groups} tags={tags} active={note?.path || ''} view={view} open={sidebarOpen} revealEntry={revealEntry} search={search} setSearch={setSearch} searchPaths={searchPaths} group={group} setGroup={setGroup} filterTags={filterTags} setFilterTags={setFilterTags} selected={selected} setSelected={setSelected} onSelect={path => run(() => loadNote(path))} onView={next => run(async () => { await saveActive(); setOfficePath(null); setView(next); if (matchMedia('(max-width: 760px)').matches) setSidebarOpen(false); await refresh() })} onCreate={() => run(createNote)} onFolder={() => run(newFolder)} onCreateDrawing={() => run(() => createDrawing())} onDraw={() => run(() => createDrawio())} onOpenDrawing={editDrawing} activeDrawing={drawing?.path || ''} onOpenOffice={path => run(() => openOffice(path))} activeOffice={officePath || ''} onManage={(path, type) => setManage({ path, type })} onOpenDirectory={() => run(openLocalDirectory)} openingDirectory={openingDirectory} onSettings={() => setDialog('settings')} onTrash={() => run(async () => { setTrash(await api<TrashEntry[]>('/trash')); setDialog('trash') })} onRepositories={() => setDialog('repositories')} onCategories={() => setDialog('categories')} onClose={() => setSidebarOpen(false)} />
       <div className="sidebar-resizer" hidden={!sidebarOpen} role="separator" aria-label="调整目录宽度" aria-orientation="vertical" tabIndex={0} onKeyDown={e => { if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') { const width = Math.max(220, Math.min(430, sidebarWidth + (e.key === 'ArrowRight' ? 10 : -10))); setSidebarWidth(width); localStorage.setItem('echo:sidebar-width', String(width)) } }} onPointerDown={e => { const start = e.clientX, width = sidebarWidth; e.currentTarget.setPointerCapture(e.pointerId); e.currentTarget.onpointermove = event => setSidebarWidth(Math.max(220, Math.min(430, width + event.clientX - start))); e.currentTarget.onpointerup = event => { const value = Math.max(220, Math.min(430, width + event.clientX - start)); localStorage.setItem('echo:sidebar-width', String(value)); e.currentTarget.onpointermove = null; e.currentTarget.onpointerup = null } }} />
-      <main className="main-panel"><header className="topbar"><div className="topbar-left"><button className="icon-button" aria-label={sidebarOpen ? '折叠目录' : '展开目录'} title={sidebarOpen ? '折叠目录' : '展开目录'} aria-expanded={sidebarOpen} aria-controls="note-sidebar" onClick={() => setSidebarOpen(open => !open)}><PanelLeft size={18} /></button><div className="breadcrumb"><span>我的空间</span><ChevronRight size={13} /><span>{view === 'note' ? (officePath || note?.path || '全部笔记') : view === 'plans' ? '计划与提醒' : view === 'calendar' ? '日历视图' : '任务看板'}</span></div></div><div className="topbar-actions">{view === 'note' && note && !officePath && <button className={`save-status ${dirty ? 'unsaved' : 'saved'}`} title={saveError || 'Ctrl+S 保存'} onClick={() => run(saveActive)}>{saving ? <LoaderCircle size={13} className="spin" /> : saveError ? <AlertTriangle size={13} /> : dirty ? <Cloud size={14} /> : <CheckCheck size={14} />}<span>{saving ? '保存中' : saveError ? '保存失败' : dirty ? '待保存' : '已保存'}</span></button>}{agentConfig?.enabled && <button className="icon-button" aria-label={agentOpen ? '关闭 Agent' : '打开 Agent'} title="笔记 Agent" aria-expanded={agentOpen} onClick={toggleAgent}><Bot size={17} /></button>}<button className="icon-button" aria-label={dark ? '切换明亮模式' : '切换暗黑模式'} onClick={() => run(() => saveSettings({ ...settings, theme: dark ? 'light' : 'dark' }))}>{dark ? <Sun size={17} /> : <Moon size={17} />}</button><button className="icon-button notification-button" aria-label="提醒中心" onClick={() => setDialog('reminders')}><Bell size={17} />{reminders.length > 0 && <i />}</button><button className="icon-button" aria-label="关于 Echo" title="关于" onClick={() => setDialog('about')}><Info size={17} /></button><span className="topbar-divider" /><button className="button export-button" onClick={() => { setExportNotePath(null); setExportScope(selected.length ? 'selected' : note ? 'current' : 'filtered'); setDialog('export') }}><Download size={15} /><span>导出</span></button></div></header>
-      {settings.multiTabs && view === 'note' && tabs.length > 0 && <NoteTabs tabs={tabs} active={officePath || note?.path || ''} dirty={Boolean(dirty && !officePath)} onSelect={path => { if (path === (officePath || noteRef.current?.path)) return; run(() => isLibraryDocumentPath(path) ? openOffice(path) : loadNote(path)) }} onClose={path => run(() => closeTab(path))} />}
+      <main className="main-panel"><header className="topbar"><div className="topbar-left"><button className="icon-button" aria-label={sidebarOpen ? '折叠目录' : '展开目录'} title={sidebarOpen ? '折叠目录' : '展开目录'} aria-expanded={sidebarOpen} aria-controls="note-sidebar" onClick={() => setSidebarOpen(open => !open)}><PanelLeft size={18} /></button><div className="breadcrumb"><span>我的空间</span><ChevronRight size={13} /><span>{view === 'note' ? (tempFile?.name || officePath || note?.path || '全部笔记') : view === 'plans' ? '计划与提醒' : view === 'calendar' ? '日历视图' : '任务看板'}</span></div></div><div className="topbar-actions">{view === 'note' && note && !officePath && !tempMdPath && <button className={`save-status ${dirty ? 'unsaved' : 'saved'}`} title={saveError || 'Ctrl+S 保存'} onClick={() => run(saveActive)}>{saving ? <LoaderCircle size={13} className="spin" /> : saveError ? <AlertTriangle size={13} /> : dirty ? <Cloud size={14} /> : <CheckCheck size={14} />}<span>{saving ? '保存中' : saveError ? '保存失败' : dirty ? '待保存' : '已保存'}</span></button>}{agentConfig?.enabled && <button className="icon-button" aria-label={agentOpen ? '关闭 Agent' : '打开 Agent'} title="笔记 Agent" aria-expanded={agentOpen} onClick={toggleAgent}><Bot size={17} /></button>}<button className="icon-button" aria-label={dark ? '切换明亮模式' : '切换暗黑模式'} onClick={() => run(() => saveSettings({ ...settings, theme: dark ? 'light' : 'dark' }))}>{dark ? <Sun size={17} /> : <Moon size={17} />}</button><button className="icon-button notification-button" aria-label="提醒中心" onClick={() => setDialog('reminders')}><Bell size={17} />{reminders.length > 0 && <i />}</button><button className="icon-button" aria-label="关于 Echo" title="关于" onClick={() => setDialog('about')}><Info size={17} /></button><span className="topbar-divider" /><button className="button export-button" onClick={() => { setExportNotePath(null); setExportScope(selected.length ? 'selected' : note ? 'current' : 'filtered'); setDialog('export') }}><Download size={15} /><span>导出</span></button></div></header>
+      {view === 'note' && visibleTabs.length > 0 && <NoteTabs tabs={visibleTabs} active={tempMdPath || officePath || note?.path || ''} dirty={Boolean(dirty && !officePath && !tempMdPath)} getTabLabel={path => isTempMarkdownPath(path) ? tempMarkdownLabel(path) : undefined} getTabTitle={path => isTempMarkdownPath(path) ? `临时预览 · ${readTempMarkdown(path)?.name || tempMarkdownLabel(path)}` : undefined} onSelect={path => { if (path === (tempMdPath || officePath || noteRef.current?.path)) return; run(() => isTempMarkdownPath(path) ? openTempMarkdown(path) : isLibraryDocumentPath(path) ? openOffice(path) : loadNote(path)) }} onClose={path => run(() => closeTab(path))} />}
       {selectedCount > 0 && <div className="selection-bar"><span>已选择 {selectedCount} 篇笔记</span><button onClick={() => openClassification(true)}>批量设置分类</button><button onClick={() => { setExportNotePath(null); setExportScope('selected'); setDialog('export') }}>导出所选</button><button className="icon-button" aria-label="取消选择" onClick={() => setSelected([])}><X size={14} /></button></div>}
-      {view === 'note' ? officePath ? (isHtmlPath(officePath) ? <HtmlPreview key={officePath} path={officePath} onClose={() => setOfficePath(null)} onError={message => toast(message, true)} /> : <OfficePreview key={officePath} path={officePath} onClose={() => setOfficePath(null)} onError={message => toast(message, true)} />) : note ? <div className="note-workspace"><section className="note-heading"><div className="note-title-row"><NoteTitle key={note.path} title={note.title || note.path.replace(/\.md$/i, '')} onSave={saveNoteTitle} /><div className="note-title-actions">{settings.versionRepoEnabled && versionRepoReady && <NoteVersionSelect versions={noteVersions} currentId={activeVersionId} onSelect={id => run(() => restoreNoteVersion(id))} />}<button className="icon-button" aria-label="笔记操作" onClick={() => setManage({ path: note.path, type: 'note' })}><MoreHorizontal size={19} /></button></div></div><div className="note-meta"><button className="meta-button" onClick={() => openClassification()}><FolderOpen size={13} />{note.metadata.group || '未分组'}<ChevronRight size={11} /></button><span className="meta-divider" />{note.metadata.tags.map(tag => <button className="tag" key={tag} onClick={() => setFilterTags(filterTags.includes(tag) ? filterTags.filter(t => t !== tag) : [...filterTags, tag])}># {tag}</button>)}<button className="tag-add" onClick={() => openClassification()}><Plus size={12} />{note.metadata.tags.length ? '编辑标签' : '添加标签'}</button></div>{note.metadataError && <p className="form-error">文件头格式有误：{note.metadataError}。请在源码中修复后修改分类。</p>}</section>
+      {view === 'note' ? tempFile ? <TempMarkdownPreview key={tempFile.id} file={tempFile} fontSize={appearance.editorFontSize} lineNumbers={settings.previewLineNumbers} dark={dark} strictLineBreaks={settings.strictLineBreaks} autoParseLinks={settings.autoParseLinks} animations={settings.animations} onClose={() => run(() => closeTab(tempMarkdownPath(tempFile.id)))} /> : officePath ? (isHtmlPath(officePath) ? <HtmlPreview key={officePath} path={officePath} onClose={() => setOfficePath(null)} onError={message => toast(message, true)} /> : <OfficePreview key={officePath} path={officePath} onClose={() => setOfficePath(null)} onError={message => toast(message, true)} />) : note ? <div className="note-workspace"><section className="note-heading"><div className="note-title-row"><NoteTitle key={note.path} title={note.title || note.path.replace(/\.md$/i, '')} onSave={saveNoteTitle} /><div className="note-title-actions">{settings.versionRepoEnabled && versionRepoReady && <NoteVersionSelect versions={noteVersions} currentId={activeVersionId} onSelect={id => run(() => restoreNoteVersion(id))} />}<button className="icon-button" aria-label="笔记操作" onClick={() => setManage({ path: note.path, type: 'note' })}><MoreHorizontal size={19} /></button></div></div><div className="note-meta"><button className="meta-button" onClick={() => openClassification()}><FolderOpen size={13} />{note.metadata.group || '未分组'}<ChevronRight size={11} /></button><span className="meta-divider" />{note.metadata.tags.map(tag => <button className="tag" key={tag} onClick={() => setFilterTags(filterTags.includes(tag) ? filterTags.filter(t => t !== tag) : [...filterTags, tag])}># {tag}</button>)}<button className="tag-add" onClick={() => openClassification()}><Plus size={12} />{note.metadata.tags.length ? '编辑标签' : '添加标签'}</button></div>{note.metadataError && <p className="form-error">文件头格式有误：{note.metadataError}。请在源码中修复后修改分类。</p>}</section>
         <div className="mode-bar"><div className="mode-tabs" role="tablist" aria-label="编辑模式"><button role="tab" aria-selected={mode === 'source'} className={mode === 'source' ? 'active' : ''} onClick={() => setMode('source')}><span>〈/〉</span>源码</button><button role="tab" aria-selected={mode === 'preview'} className={mode === 'preview' ? 'active' : ''} onClick={() => setMode('preview')}><BookOpen size={13} />预览</button></div><button ref={fullscreenButton} type="button" className="outline-toggle" aria-label="全屏预览" onClick={() => setFullscreenPreview(true)}><Maximize2 size={15} />全屏</button><button ref={focusButton} type="button" className="outline-toggle" aria-label="聚焦" aria-pressed={focusMode} onClick={() => setFocusMode(open => !open)}><Focus size={15} />聚焦</button>{mode === 'preview' && <button type="button" className="outline-toggle" aria-label="标注" aria-expanded={annotations.toolOpen} onClick={() => { void annotations.toggleTool().catch(() => {}) }}><Highlighter size={15} />标注</button>}<button ref={outlineButton} type="button" className="outline-toggle" aria-label="导航" aria-expanded={outlineOpen} aria-controls="note-outline" onClick={() => setOutlineOpen(open => !open)}><ListTree size={15} />导航</button></div>
         <div className="note-body">
           {outlineOpen && <NoteOutline key={note.path} content={content} onNavigate={navigateHeading} onClose={closeOutline} />}
@@ -721,6 +805,7 @@ export default function App() {
       </main>
       {agentConfig?.enabled && agentOpen && <div className="agent-resizer" role="separator" aria-label="调整 Agent 宽度" aria-orientation="vertical" tabIndex={0} onKeyDown={event => { if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return; const width = Math.max(280, Math.min(560, agentWidth + (event.key === 'ArrowLeft' ? 16 : -16))); setAgentWidth(width); localStorage.setItem('echo:agent-width', String(width)) }} onPointerDown={event => { const start = event.clientX; const width = agentWidth; event.currentTarget.setPointerCapture(event.pointerId); event.currentTarget.onpointermove = move => setAgentWidth(Math.max(280, Math.min(560, width + start - move.clientX))); event.currentTarget.onpointerup = move => { const value = Math.max(280, Math.min(560, width + start - move.clientX)); setAgentWidth(value); localStorage.setItem('echo:agent-width', String(value)); event.currentTarget.onpointermove = null; event.currentTarget.onpointerup = null } }} />}
       {agentConfig?.enabled && <AgentPanel open={agentOpen} width={agentWidth} note={note ? { path: note.path, title: note.title || note.path.replace(/\.md$/i, '') } : null} getNoteContent={() => contentRef.current} editor={editorController.current} onPendingChange={setAgentPending} onEnsureSource={() => setMode('source')} onEditsResolved={resolveAgentEdits} onRegisterInterrupt={registerAgentInterrupt} onCollapse={() => { setAgentOpen(false); localStorage.setItem('echo:agent-open', '0') }} />}
+      {dropActive && <div className="md-drop-overlay" role="status"><div className="md-drop-card"><FileText size={28} strokeWidth={1.4} /><strong>松开以预览 Markdown</strong><span>内容只保存在浏览器中，关闭标签页后清除</span></div></div>}
     </div>
     <AnimatePresence>{dialog === 'settings' && <SettingsPanel settings={settings} systemDark={systemDark} agent={agentConfig} onPreview={setAppearancePreview} onSave={saveSettings} onSaveAgent={saveAgent} beforeStorageAction={prepareStorageAction} onClose={() => { setAppearancePreview(null); setDialog(null) }} />}
     {dialog === 'repositories' && <RepoSwitcher onClose={() => setDialog(null)} onPrepare={prepareRepositorySwitch} onSwitched={() => leaveRepositoryRef.current()} />}

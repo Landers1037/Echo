@@ -8,4 +8,5 @@
 .note-tab.dirty .note-tab-close{display:none}
 .note-tab.dirty:hover .note-tab-close,.note-tab.dirty:focus-within .note-tab-close{display:inline-flex}
 .note-tab.dirty:hover .note-tab-dirty,.note-tab.dirty:focus-within .note-tab-dirty{display:none}
+.note-tab.temporary button[role=tab]{font-style:italic}
 @media(max-width:760px){.note-tabs{padding:6px 8px 0;gap:2px}.note-tab{max-width:148px}.note-tab button[role=tab]{padding:6px 2px 6px 8px}}
